@@ -1,0 +1,129 @@
+# Secure Pod Template for Session Pods
+# This template demonstrates how session pods should be configured
+# with restricted security settings
+#
+# The controller should use these security settings when creating session pods
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-session-pod
+  namespace: streamspace
+  labels:
+    app: streamspace-session
+    session: example
+spec:
+  # SECURITY: Run as non-root user
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    # Seccomp profile
+    seccompProfile:
+      type: RuntimeDefault
+
+  containers:
+    - name: session
+      image: lscr.io/linuxserver/firefox:latest
+
+      # SECURITY: Container security context
+      securityContext:
+        # Prevent privilege escalation
+        allowPrivilegeEscalation: false
+        # SECURITY: Read-only root filesystem - all writes must go to mounted volumes
+        readOnlyRootFilesystem: true
+        # Run as non-root
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        # Drop all capabilities
+        capabilities:
+          drop:
+            - ALL
+          # Only add back absolutely necessary capabilities
+          # add: []  # None needed for most apps
+
+      # Resource limits
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "1000m"
+
+      # Volume mounts - Required for read-only root filesystem
+      volumeMounts:
+        # User persistent home directory
+        - name: user-home
+          mountPath: /config
+        # Temporary directories (emptyDir for ephemeral data)
+        - name: tmp
+          mountPath: /tmp
+        - name: var-tmp
+          mountPath: /var/tmp
+        - name: cache
+          mountPath: /.cache
+        - name: local
+          mountPath: /.local
+        # Application-specific writable directories
+        - name: run
+          mountPath: /run
+        - name: var-run
+          mountPath: /var/run
+
+      # Environment variables
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+
+      # Health checks
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 3000
+        initialDelaySeconds: 30
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 3
+
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 3000
+        initialDelaySeconds: 10
+        periodSeconds: 5
+        timeoutSeconds: 3
+
+  volumes:
+    # Persistent storage
+    - name: user-home
+      persistentVolumeClaim:
+        claimName: home-example-user
+    # Ephemeral writable volumes (required for read-only root filesystem)
+    - name: tmp
+      emptyDir: {}
+    - name: var-tmp
+      emptyDir: {}
+    - name: cache
+      emptyDir: {}
+    - name: local
+      emptyDir: {}
+    - name: run
+      emptyDir:
+        medium: Memory  # Use memory-backed tmpfs for runtime files
+    - name: var-run
+      emptyDir:
+        medium: Memory
+
+  # Restart policy
+  restartPolicy: Always
+
+  # DNS policy
+  dnsPolicy: ClusterFirst
+
+  # Enable service account token automount: false for security
+  automountServiceAccountToken: false

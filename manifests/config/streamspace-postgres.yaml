@@ -5,7 +5,14 @@ metadata:
   namespace: streamspace
 type: Opaque
 stringData:
-  postgres-password: changeme  # TODO: Change in production!
+  # SECURITY: DO NOT use this default password in production!
+  # Generate a strong password with: openssl rand -base64 32
+  # Then create the secret manually or use sealed-secrets/external-secrets
+  # For production deployments, delete this Secret manifest and create it separately:
+  #   kubectl create secret generic streamspace-secrets \
+  #     --from-literal=postgres-password=$(openssl rand -base64 32) \
+  #     -n streamspace
+  postgres-password: CHANGE_ME_INSECURE_DEFAULT  # INSECURE - Replace before deploying!
 
 ---
 apiVersion: v1

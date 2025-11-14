@@ -3,6 +3,10 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"net"
+	"regexp"
+	"strconv"
+	"strings"
 
 	_ "github.com/lib/pq"
 )
@@ -22,8 +26,80 @@ type Database struct {
 	db *sql.DB
 }
 
+// validateConfig validates database configuration to prevent SQL injection
+func validateConfig(config Config) error {
+	// Validate host (must be valid hostname or IP)
+	if config.Host == "" {
+		return fmt.Errorf("database host cannot be empty")
+	}
+	// Check if it's a valid IP or hostname
+	if net.ParseIP(config.Host) == nil {
+		// Not an IP, validate as hostname
+		hostnameRegex := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,253}[a-zA-Z0-9])?$`)
+		if !hostnameRegex.MatchString(config.Host) {
+			return fmt.Errorf("invalid database host: %s", config.Host)
+		}
+	}
+
+	// Validate port (must be numeric and in valid range)
+	if config.Port == "" {
+		return fmt.Errorf("database port cannot be empty")
+	}
+	port, err := strconv.Atoi(config.Port)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("invalid database port: %s (must be 1-65535)", config.Port)
+	}
+
+	// Validate user (alphanumeric, underscore, hyphen only)
+	if config.User == "" {
+		return fmt.Errorf("database user cannot be empty")
+	}
+	userRegex := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	if !userRegex.MatchString(config.User) {
+		return fmt.Errorf("invalid database user: %s (only alphanumeric, underscore, and hyphen allowed)", config.User)
+	}
+
+	// Validate database name (alphanumeric, underscore, hyphen only)
+	if config.DBName == "" {
+		return fmt.Errorf("database name cannot be empty")
+	}
+	dbNameRegex := regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+	if !dbNameRegex.MatchString(config.DBName) {
+		return fmt.Errorf("invalid database name: %s (only alphanumeric, underscore, and hyphen allowed)", config.DBName)
+	}
+
+	// Validate SSL mode (must be one of the allowed values)
+	validSSLModes := []string{"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
+	if config.SSLMode != "" {
+		valid := false
+		for _, mode := range validSSLModes {
+			if config.SSLMode == mode {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("invalid SSL mode: %s (must be one of: %s)", config.SSLMode, strings.Join(validSSLModes, ", "))
+		}
+	}
+
+	// SECURITY: Warn if SSL is disabled (insecure for production)
+	if config.SSLMode == "" || config.SSLMode == "disable" {
+		fmt.Println("WARNING: Database SSL/TLS is DISABLED - This is INSECURE for production!")
+		fmt.Println("         Set DB_SSL_MODE to 'require', 'verify-ca', or 'verify-full'")
+		fmt.Println("         Example: export DB_SSL_MODE=require")
+	}
+
+	return nil
+}
+
 // NewDatabase creates a new database connection with connection pooling
 func NewDatabase(config Config) (*Database, error) {
+	// SECURITY: Validate configuration to prevent SQL injection
+	if err := validateConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid database configuration: %w", err)
+	}
+
 	if config.SSLMode == "" {
 		config.SSLMode = "disable"
 	}

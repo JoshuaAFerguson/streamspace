@@ -1,0 +1,145 @@
+---
+# Pod Security Standards for streamspace namespace
+# Enforces restricted pod security to prevent privilege escalation
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: streamspace
+  labels:
+    # SECURITY: Enforce restricted pod security standards
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+
+---
+# NetworkPolicy: Default deny all ingress and egress
+# Pods must explicitly define what they need access to
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: streamspace
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# NetworkPolicy: Allow DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: streamspace
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+
+---
+# NetworkPolicy: Allow session pods to communicate with API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-session-to-api
+  namespace: streamspace
+spec:
+  podSelector:
+    matchLabels:
+      app: streamspace-session
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: streamspace
+              component: api
+      ports:
+        - protocol: TCP
+          port: 8000
+
+---
+# NetworkPolicy: Allow ingress to session pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-sessions
+  namespace: streamspace
+spec:
+  podSelector:
+    matchLabels:
+      app: streamspace-session
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5900  # VNC port
+        - protocol: TCP
+          port: 3000  # HTTP/WebSocket port
+
+---
+# ResourceQuota: Limit total resources in namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: streamspace-quota
+  namespace: streamspace
+spec:
+  hard:
+    requests.cpu: "100"
+    requests.memory: 200Gi
+    limits.cpu: "200"
+    limits.memory: 400Gi
+    persistentvolumeclaims: "100"
+    pods: "100"
+
+---
+# LimitRange: Set default resource limits for pods
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: streamspace-limits
+  namespace: streamspace
+spec:
+  limits:
+    - type: Pod
+      max:
+        cpu: "8"
+        memory: 16Gi
+      min:
+        cpu: 100m
+        memory: 128Mi
+    - type: Container
+      default:
+        cpu: 1
+        memory: 2Gi
+      defaultRequest:
+        cpu: 500m
+        memory: 1Gi
+      max:
+        cpu: "8"
+        memory: 16Gi
+      min:
+        cpu: 100m
+        memory: 128Mi
+    - type: PersistentVolumeClaim
+      max:
+        storage: 100Gi
+      min:
+        storage: 1Gi

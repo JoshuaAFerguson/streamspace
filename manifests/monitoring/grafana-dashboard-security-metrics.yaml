@@ -1,0 +1,677 @@
+# Security Metrics and KPIs Dashboard for Grafana
+# Provides comprehensive security monitoring and trend analysis
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-security-metrics
+  namespace: streamspace
+  labels:
+    grafana_dashboard: "1"
+    app: streamspace
+    component: monitoring
+data:
+  security-metrics.json: |
+    {
+      "dashboard": {
+        "title": "StreamSpace Security Metrics & KPIs",
+        "tags": ["security", "compliance", "streamspace"],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 1,
+        "refresh": "30s",
+        "time": {
+          "from": "now-24h",
+          "to": "now"
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "Security Overview",
+            "type": "stat",
+            "gridPos": {"x": 0, "y": 0, "w": 24, "h": 4},
+            "targets": [
+              {
+                "expr": "sum(rate(streamspace_api_auth_failures_total[5m])) * 300",
+                "legendFormat": "Failed Auths (5m)",
+                "refId": "A"
+              },
+              {
+                "expr": "sum(rate(streamspace_api_rate_limit_exceeded_total[5m])) * 300",
+                "legendFormat": "Rate Limit Violations (5m)",
+                "refId": "B"
+              },
+              {
+                "expr": "sum(kube_bench_score{status=\"FAIL\"})",
+                "legendFormat": "CIS Failures",
+                "refId": "C"
+              },
+              {
+                "expr": "sum(rate(falco_events{priority=~\"Critical|Emergency\"}[5m])) * 300",
+                "legendFormat": "Critical Falco Alerts (5m)",
+                "refId": "D"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "green"},
+                    {"value": 5, "color": "yellow"},
+                    {"value": 20, "color": "red"}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 2,
+            "title": "Authentication Metrics",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "rate(streamspace_api_auth_attempts_total[5m])",
+                "legendFormat": "Total Auth Attempts",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(streamspace_api_auth_success_total[5m])",
+                "legendFormat": "Successful Auths",
+                "refId": "B"
+              },
+              {
+                "expr": "rate(streamspace_api_auth_failures_total[5m])",
+                "legendFormat": "Failed Auths",
+                "refId": "C"
+              }
+            ],
+            "yaxes": [
+              {"format": "short", "label": "Requests/sec"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 3,
+            "title": "Rate Limiting Events",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "rate(streamspace_api_rate_limit_exceeded_total{type=\"ip\"}[5m])",
+                "legendFormat": "IP Rate Limits",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(streamspace_api_rate_limit_exceeded_total{type=\"user\"}[5m])",
+                "legendFormat": "User Rate Limits",
+                "refId": "B"
+              },
+              {
+                "expr": "rate(streamspace_api_rate_limit_exceeded_total{type=\"endpoint\"}[5m])",
+                "legendFormat": "Endpoint Rate Limits",
+                "refId": "C"
+              }
+            ],
+            "yaxes": [
+              {"format": "short", "label": "Events/sec"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 4,
+            "title": "Top 10 IPs by Failed Auth Attempts",
+            "type": "table",
+            "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "topk(10, sum by (client_ip) (increase(streamspace_api_auth_failures_total[1h])))",
+                "format": "table",
+                "instant": true,
+                "refId": "A"
+              }
+            ],
+            "transformations": [
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {"Time": true},
+                  "renameByName": {
+                    "client_ip": "Client IP",
+                    "Value": "Failed Attempts (1h)"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": 5,
+            "title": "Top 10 Users by API Usage",
+            "type": "table",
+            "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "topk(10, sum by (username) (increase(streamspace_api_requests_total[1h])))",
+                "format": "table",
+                "instant": true,
+                "refId": "A"
+              }
+            ],
+            "transformations": [
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {"Time": true},
+                  "renameByName": {
+                    "username": "Username",
+                    "Value": "API Requests (1h)"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": 6,
+            "title": "WAF (ModSecurity) Events",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "rate(modsecurity_requests_total[5m])",
+                "legendFormat": "Total Requests",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(modsecurity_blocked_requests_total[5m])",
+                "legendFormat": "Blocked Requests",
+                "refId": "B"
+              },
+              {
+                "expr": "rate(modsecurity_anomaly_score_total[5m])",
+                "legendFormat": "Anomaly Score Events",
+                "refId": "C"
+              }
+            ],
+            "yaxes": [
+              {"format": "short", "label": "Requests/sec"},
+              {"format": "short"}
+            ],
+            "alert": {
+              "name": "High WAF Block Rate",
+              "conditions": [
+                {
+                  "evaluator": {"type": "gt", "params": [100]},
+                  "operator": {"type": "and"},
+                  "query": {"params": ["B", "5m", "now"]},
+                  "reducer": {"type": "avg"}
+                }
+              ],
+              "frequency": "1m",
+              "handler": 1,
+              "message": "WAF is blocking an unusual number of requests",
+              "noDataState": "no_data",
+              "executionErrorState": "alerting"
+            }
+          },
+          {
+            "id": 7,
+            "title": "Falco Runtime Security Alerts",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "rate(falco_events{priority=\"Emergency\"}[5m])",
+                "legendFormat": "Emergency",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(falco_events{priority=\"Critical\"}[5m])",
+                "legendFormat": "Critical",
+                "refId": "B"
+              },
+              {
+                "expr": "rate(falco_events{priority=\"Warning\"}[5m])",
+                "legendFormat": "Warning",
+                "refId": "C"
+              }
+            ],
+            "yaxes": [
+              {"format": "short", "label": "Alerts/sec"},
+              {"format": "short"}
+            ],
+            "alert": {
+              "name": "Critical Falco Alert",
+              "conditions": [
+                {
+                  "evaluator": {"type": "gt", "params": [0]},
+                  "operator": {"type": "and"},
+                  "query": {"params": ["B", "5m", "now"]},
+                  "reducer": {"type": "avg"}
+                }
+              ],
+              "frequency": "1m",
+              "handler": 1,
+              "message": "Critical runtime security event detected by Falco",
+              "noDataState": "ok",
+              "executionErrorState": "alerting"
+            }
+          },
+          {
+            "id": 8,
+            "title": "Image Signature Verification",
+            "type": "stat",
+            "gridPos": {"x": 0, "y": 28, "w": 8, "h": 4},
+            "targets": [
+              {
+                "expr": "sum(kyverno_policy_rule_results_total{policy_name=\"verify-streamspace-images\",rule_result=\"pass\"})",
+                "legendFormat": "Verified Images",
+                "refId": "A"
+              },
+              {
+                "expr": "sum(kyverno_policy_rule_results_total{policy_name=\"verify-streamspace-images\",rule_result=\"fail\"})",
+                "legendFormat": "Failed Verifications",
+                "refId": "B"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "green"},
+                    {"value": 1, "color": "red"}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 9,
+            "title": "CIS Kubernetes Benchmark Score",
+            "type": "gauge",
+            "gridPos": {"x": 8, "y": 28, "w": 8, "h": 4},
+            "targets": [
+              {
+                "expr": "(kube_bench_total_pass / kube_bench_total_checks) * 100",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "min": 0,
+                "max": 100,
+                "unit": "percent",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "red"},
+                    {"value": 70, "color": "yellow"},
+                    {"value": 85, "color": "green"}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 10,
+            "title": "Security Posture Score",
+            "type": "gauge",
+            "gridPos": {"x": 16, "y": 28, "w": 8, "h": 4},
+            "targets": [
+              {
+                "expr": "100 - (sum(kube_bench_score{status=\"FAIL\"}) / sum(kube_bench_total_checks) * 25) - (rate(streamspace_api_auth_failures_total[5m]) * 100) - (rate(falco_events{priority=~\"Critical|Emergency\"}[5m]) * 100)",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "min": 0,
+                "max": 100,
+                "unit": "percent",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "red"},
+                    {"value": 60, "color": "yellow"},
+                    {"value": 80, "color": "green"}
+                  ]
+                }
+              }
+            },
+            "description": "Composite security score based on CIS compliance, authentication failures, and runtime alerts"
+          },
+          {
+            "id": 11,
+            "title": "Vulnerability Scan Results (Last 7 Days)",
+            "type": "table",
+            "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "trivy_image_vulnerabilities{severity=~\"CRITICAL|HIGH\"}",
+                "format": "table",
+                "instant": true,
+                "refId": "A"
+              }
+            ],
+            "transformations": [
+              {
+                "id": "organize",
+                "options": {
+                  "excludeByName": {"Time": true, "__name__": true},
+                  "renameByName": {
+                    "image": "Image",
+                    "severity": "Severity",
+                    "Value": "Count"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": 12,
+            "title": "Audit Log Activity",
+            "type": "graph",
+            "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "rate(streamspace_audit_log_entries_total{action=\"create\"}[5m])",
+                "legendFormat": "Create Actions",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(streamspace_audit_log_entries_total{action=\"update\"}[5m])",
+                "legendFormat": "Update Actions",
+                "refId": "B"
+              },
+              {
+                "expr": "rate(streamspace_audit_log_entries_total{action=\"delete\"}[5m])",
+                "legendFormat": "Delete Actions",
+                "refId": "C"
+              },
+              {
+                "expr": "rate(streamspace_audit_log_entries_total{action=\"login\"}[5m])",
+                "legendFormat": "Login Actions",
+                "refId": "D"
+              }
+            ],
+            "yaxes": [
+              {"format": "short", "label": "Actions/sec"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 13,
+            "title": "TLS Certificate Expiration",
+            "type": "table",
+            "gridPos": {"x": 0, "y": 40, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "(probe_ssl_earliest_cert_expiry - time()) / 86400",
+                "format": "table",
+                "instant": true,
+                "refId": "A"
+              }
+            ],
+            "transformations": [
+              {
+                "id": "organize",
+                "options": {
+                  "renameByName": {
+                    "instance": "Certificate",
+                    "Value": "Days Until Expiration"
+                  }
+                }
+              }
+            ],
+            "fieldConfig": {
+              "overrides": [
+                {
+                  "matcher": {"id": "byName", "options": "Days Until Expiration"},
+                  "properties": [
+                    {
+                      "id": "custom.cellOptions",
+                      "value": {
+                        "type": "color-background",
+                        "mode": "gradient"
+                      }
+                    },
+                    {
+                      "id": "thresholds",
+                      "value": {
+                        "mode": "absolute",
+                        "steps": [
+                          {"value": 0, "color": "red"},
+                          {"value": 7, "color": "yellow"},
+                          {"value": 30, "color": "green"}
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": 14,
+            "title": "Secrets Age (Days Since Last Rotation)",
+            "type": "table",
+            "gridPos": {"x": 12, "y": 40, "w": 12, "h": 8},
+            "targets": [
+              {
+                "expr": "(time() - streamspace_secret_last_rotation_timestamp) / 86400",
+                "format": "table",
+                "instant": true,
+                "refId": "A"
+              }
+            ],
+            "transformations": [
+              {
+                "id": "organize",
+                "options": {
+                  "renameByName": {
+                    "secret_name": "Secret Name",
+                    "Value": "Days Since Rotation"
+                  }
+                }
+              }
+            ],
+            "fieldConfig": {
+              "overrides": [
+                {
+                  "matcher": {"id": "byName", "options": "Days Since Rotation"},
+                  "properties": [
+                    {
+                      "id": "thresholds",
+                      "value": {
+                        "mode": "absolute",
+                        "steps": [
+                          {"value": 0, "color": "green"},
+                          {"value": 60, "color": "yellow"},
+                          {"value": 90, "color": "red"}
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": 15,
+            "title": "Security KPIs (30-Day Trend)",
+            "type": "graph",
+            "gridPos": {"x": 0, "y": 48, "w": 24, "h": 8},
+            "targets": [
+              {
+                "expr": "avg_over_time((kube_bench_total_pass / kube_bench_total_checks)[30d:1d]) * 100",
+                "legendFormat": "CIS Compliance %",
+                "refId": "A"
+              },
+              {
+                "expr": "sum(increase(streamspace_api_auth_failures_total[1d]))",
+                "legendFormat": "Daily Auth Failures",
+                "refId": "B"
+              },
+              {
+                "expr": "sum(increase(falco_events{priority=~\"Critical|Emergency\"}[1d]))",
+                "legendFormat": "Daily Critical Alerts",
+                "refId": "C"
+              },
+              {
+                "expr": "sum(kyverno_policy_rule_results_total{rule_result=\"fail\"})",
+                "legendFormat": "Policy Violations",
+                "refId": "D"
+              }
+            ],
+            "yaxes": [
+              {"format": "short", "label": "Count / Percentage"},
+              {"format": "short"}
+            ]
+          },
+          {
+            "id": 16,
+            "title": "Security Incident Response SLA",
+            "type": "stat",
+            "gridPos": {"x": 0, "y": 56, "w": 6, "h": 4},
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, sum(rate(streamspace_incident_response_duration_seconds_bucket[30d])) by (le))",
+                "legendFormat": "P95 Response Time",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "s",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "green"},
+                    {"value": 3600, "color": "yellow"},
+                    {"value": 14400, "color": "red"}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 17,
+            "title": "Mean Time to Remediate (MTTR)",
+            "type": "stat",
+            "gridPos": {"x": 6, "y": 56, "w": 6, "h": 4},
+            "targets": [
+              {
+                "expr": "avg(streamspace_vulnerability_remediation_duration_seconds) / 3600",
+                "legendFormat": "Average MTTR",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "h",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "green"},
+                    {"value": 48, "color": "yellow"},
+                    {"value": 168, "color": "red"}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 18,
+            "title": "Security Alerts Acknowledged (%)",
+            "type": "stat",
+            "gridPos": {"x": 12, "y": 56, "w": 6, "h": 4},
+            "targets": [
+              {
+                "expr": "(sum(streamspace_security_alerts_acknowledged_total) / sum(streamspace_security_alerts_total)) * 100",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "percent",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "red"},
+                    {"value": 70, "color": "yellow"},
+                    {"value": 95, "color": "green"}
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": 19,
+            "title": "Patch Compliance (%)",
+            "type": "stat",
+            "gridPos": {"x": 18, "y": 56, "w": 6, "h": 4},
+            "targets": [
+              {
+                "expr": "(sum(streamspace_patched_vulnerabilities_total) / sum(streamspace_total_vulnerabilities)) * 100",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "percent",
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {"value": 0, "color": "red"},
+                    {"value": 80, "color": "yellow"},
+                    {"value": 95, "color": "green"}
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "templating": {
+          "list": [
+            {
+              "name": "namespace",
+              "type": "query",
+              "query": "label_values(streamspace_api_requests_total, namespace)",
+              "current": {"text": "streamspace", "value": "streamspace"},
+              "hide": 0,
+              "includeAll": false,
+              "multi": false,
+              "refresh": 1
+            },
+            {
+              "name": "time_range",
+              "type": "interval",
+              "query": "1m,5m,15m,1h,6h,24h,7d,30d",
+              "current": {"text": "5m", "value": "5m"},
+              "hide": 0
+            }
+          ]
+        },
+        "annotations": {
+          "list": [
+            {
+              "name": "Deployments",
+              "datasource": "Prometheus",
+              "expr": "changes(kube_deployment_status_observed_generation{namespace=\"streamspace\"}[5m]) > 0",
+              "step": "60s",
+              "iconColor": "blue",
+              "enable": true
+            },
+            {
+              "name": "Security Incidents",
+              "datasource": "Prometheus",
+              "expr": "streamspace_security_incident_opened_timestamp",
+              "step": "60s",
+              "iconColor": "red",
+              "enable": true
+            }
+          ]
+        }
+      }
+    }

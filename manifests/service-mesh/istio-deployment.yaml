@@ -1,0 +1,273 @@
+# Istio Service Mesh Deployment for StreamSpace
+# Provides automatic mTLS, traffic management, and observability
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-system
+  labels:
+    name: istio-system
+
+---
+# Istio installation using istioctl or Helm is recommended
+# This file provides the configuration for StreamSpace-specific Istio settings
+
+# PeerAuthentication - Enforce mTLS for all services in streamspace namespace
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: streamspace
+spec:
+  mtls:
+    mode: STRICT  # Enforce mTLS for all traffic
+
+---
+# DestinationRule - Configure mTLS for streamspace services
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: streamspace-mtls
+  namespace: streamspace
+spec:
+  host: "*.streamspace.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL  # Use Istio-managed certificates
+
+---
+# AuthorizationPolicy - Default deny all traffic
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: streamspace
+spec:
+  {}  # Empty spec means deny all
+
+---
+# AuthorizationPolicy - Allow traffic to API from UI
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ui-to-api
+  namespace: streamspace
+spec:
+  selector:
+    matchLabels:
+      app: streamspace-api
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/streamspace/sa/streamspace-ui"]
+    to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        paths: ["/api/*"]
+
+---
+# AuthorizationPolicy - Allow traffic to sessions from API
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-api-to-sessions
+  namespace: streamspace
+spec:
+  selector:
+    matchLabels:
+      app: streamspace-session
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/streamspace/sa/streamspace-api"]
+
+---
+# AuthorizationPolicy - Allow ingress to UI
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-ui
+  namespace: streamspace
+spec:
+  selector:
+    matchLabels:
+      app: streamspace-ui
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        namespaces: ["istio-system"]  # From ingress gateway
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+
+---
+# AuthorizationPolicy - Allow ingress to API
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-api
+  namespace: streamspace
+spec:
+  selector:
+    matchLabels:
+      app: streamspace-api
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        namespaces: ["istio-system"]  # From ingress gateway
+    to:
+    - operation:
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        paths: ["/api/*", "/webhooks/*"]
+
+---
+# VirtualService - API routing with fault injection for resilience testing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: streamspace-api
+  namespace: streamspace
+spec:
+  hosts:
+  - streamspace-api
+  http:
+  - match:
+    - headers:
+        x-test-fault-injection:
+          exact: "true"
+    fault:
+      delay:
+        percentage:
+          value: 10
+        fixedDelay: 5s
+    route:
+    - destination:
+        host: streamspace-api
+        port:
+          number: 8000
+  - route:
+    - destination:
+        host: streamspace-api
+        port:
+          number: 8000
+        subset: v1
+      weight: 100
+
+---
+# DestinationRule - Circuit breaker for API
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: streamspace-api-circuit-breaker
+  namespace: streamspace
+spec:
+  host: streamspace-api
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 2
+    outlierDetection:
+      consecutiveErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+
+---
+# ServiceEntry - Allow egress to external services
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: allow-external-apis
+  namespace: streamspace
+spec:
+  hosts:
+  - "*.github.com"
+  - "*.githubusercontent.com"
+  - "api.github.com"
+  ports:
+  - number: 443
+    name: https
+    protocol: HTTPS
+  location: MESH_EXTERNAL
+  resolution: DNS
+
+---
+# Sidecar - Limit egress traffic for session pods
+apiVersion: networking.istio.io/v1beta1
+kind: Sidecar
+metadata:
+  name: session-sidecar
+  namespace: streamspace
+spec:
+  workloadSelector:
+    labels:
+      app: streamspace-session
+  egress:
+  - hosts:
+    - "streamspace/*"  # Only allow access to streamspace namespace services
+    - "istio-system/*"  # Allow access to istio services
+
+---
+# RequestAuthentication - JWT validation
+apiVersion: security.istio.io/v1beta1
+kind: RequestAuthentication
+metadata:
+  name: jwt-auth
+  namespace: streamspace
+spec:
+  selector:
+    matchLabels:
+      app: streamspace-api
+  jwtRules:
+  - issuer: "streamspace-api"
+    jwksUri: "http://streamspace-api.streamspace.svc.cluster.local:8000/.well-known/jwks.json"
+    forwardOriginalToken: true
+
+---
+# Telemetry - Enable access logging
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: access-logging
+  namespace: streamspace
+spec:
+  accessLogging:
+  - providers:
+    - name: envoy
+    disabled: false
+
+---
+# Telemetry - Custom metrics
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: custom-metrics
+  namespace: streamspace
+spec:
+  metrics:
+  - providers:
+    - name: prometheus
+    dimensions:
+      request_path:
+        value: request.path
+      response_code:
+        value: response.code
+      source_workload:
+        value: source.workload.name
+      destination_workload:
+        value: destination.workload.name
+

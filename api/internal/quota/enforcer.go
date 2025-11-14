@@ -7,10 +7,53 @@ import (
 	"strings"
 
 	"github.com/streamspace/streamspace/api/internal/db"
-	"github.com/streamspace/streamspace/api/internal/models"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// Enforcer handles quota enforcement logic
+// Limits represents resource limits for a user or group
+type Limits struct {
+	// Maximum number of concurrent sessions
+	MaxSessions int `json:"max_sessions"`
+
+	// Maximum CPU per session (in millicores)
+	MaxCPUPerSession int64 `json:"max_cpu_per_session"`
+
+	// Maximum memory per session (in MiB)
+	MaxMemoryPerSession int64 `json:"max_memory_per_session"`
+
+	// Maximum total CPU across all sessions (in millicores)
+	MaxTotalCPU int64 `json:"max_total_cpu"`
+
+	// Maximum total memory across all sessions (in MiB)
+	MaxTotalMemory int64 `json:"max_total_memory"`
+
+	// Maximum storage per user (in GiB)
+	MaxStorage int64 `json:"max_storage"`
+
+	// Maximum GPU count per session
+	MaxGPUPerSession int `json:"max_gpu_per_session"`
+}
+
+// Usage represents current resource usage for a user
+type Usage struct {
+	// Current number of active sessions
+	ActiveSessions int `json:"active_sessions"`
+
+	// Total CPU usage across all sessions (in millicores)
+	TotalCPU int64 `json:"total_cpu"`
+
+	// Total memory usage across all sessions (in MiB)
+	TotalMemory int64 `json:"total_memory"`
+
+	// Total storage usage (in GiB)
+	TotalStorage int64 `json:"total_storage"`
+
+	// Total GPU count across all sessions
+	TotalGPU int `json:"total_gpu"`
+}
+
+// Enforcer enforces resource quotas for users and groups
 type Enforcer struct {
 	userDB  *db.UserDB
 	groupDB *db.GroupDB
@@ -24,388 +67,296 @@ func NewEnforcer(userDB *db.UserDB, groupDB *db.GroupDB) *Enforcer {
 	}
 }
 
-// SessionRequest represents a session creation request for quota checking
-type SessionRequest struct {
-	UserID   string
-	Memory   string // e.g., "2Gi", "512Mi"
-	CPU      string // e.g., "1000m", "2"
-	Storage  string // e.g., "50Gi"
+// GetUserLimits retrieves the resource limits for a user
+// It combines user-specific limits with group limits (taking the most restrictive)
+func (e *Enforcer) GetUserLimits(ctx context.Context, username string) (*Limits, error) {
+	// Get user from database
+	user, err := e.userDB.GetByUsername(ctx, username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Start with default limits (for free tier users)
+	limits := &Limits{
+		MaxSessions:         5,
+		MaxCPUPerSession:    2000,  // 2 CPU cores
+		MaxMemoryPerSession: 4096,  // 4 GiB
+		MaxTotalCPU:         4000,  // 4 CPU cores total
+		MaxTotalMemory:      8192,  // 8 GiB total
+		MaxStorage:          50,    // 50 GiB
+		MaxGPUPerSession:    0,     // No GPU by default
+	}
+
+	// Override with user-specific limits if set
+	if user.Quota != nil {
+		if user.Quota.MaxSessions > 0 {
+			limits.MaxSessions = user.Quota.MaxSessions
+		}
+		if user.Quota.MaxCPUPerSession > 0 {
+			limits.MaxCPUPerSession = user.Quota.MaxCPUPerSession
+		}
+		if user.Quota.MaxMemoryPerSession > 0 {
+			limits.MaxMemoryPerSession = user.Quota.MaxMemoryPerSession
+		}
+		if user.Quota.MaxTotalCPU > 0 {
+			limits.MaxTotalCPU = user.Quota.MaxTotalCPU
+		}
+		if user.Quota.MaxTotalMemory > 0 {
+			limits.MaxTotalMemory = user.Quota.MaxTotalMemory
+		}
+		if user.Quota.MaxStorage > 0 {
+			limits.MaxStorage = user.Quota.MaxStorage
+		}
+		if user.Quota.MaxGPUPerSession >= 0 {
+			limits.MaxGPUPerSession = user.Quota.MaxGPUPerSession
+		}
+	}
+
+	// Check group limits and apply the most restrictive
+	if len(user.Groups) > 0 {
+		for _, groupName := range user.Groups {
+			group, err := e.groupDB.GetByName(ctx, groupName)
+			if err != nil {
+				continue // Skip groups that don't exist
+			}
+
+			if group.Quota != nil {
+				// Apply most restrictive limits
+				if group.Quota.MaxSessions > 0 && group.Quota.MaxSessions < limits.MaxSessions {
+					limits.MaxSessions = group.Quota.MaxSessions
+				}
+				if group.Quota.MaxCPUPerSession > 0 && group.Quota.MaxCPUPerSession < limits.MaxCPUPerSession {
+					limits.MaxCPUPerSession = group.Quota.MaxCPUPerSession
+				}
+				if group.Quota.MaxMemoryPerSession > 0 && group.Quota.MaxMemoryPerSession < limits.MaxMemoryPerSession {
+					limits.MaxMemoryPerSession = group.Quota.MaxMemoryPerSession
+				}
+				if group.Quota.MaxTotalCPU > 0 && group.Quota.MaxTotalCPU < limits.MaxTotalCPU {
+					limits.MaxTotalCPU = group.Quota.MaxTotalCPU
+				}
+				if group.Quota.MaxTotalMemory > 0 && group.Quota.MaxTotalMemory < limits.MaxTotalMemory {
+					limits.MaxTotalMemory = group.Quota.MaxTotalMemory
+				}
+				if group.Quota.MaxStorage > 0 && group.Quota.MaxStorage < limits.MaxStorage {
+					limits.MaxStorage = group.Quota.MaxStorage
+				}
+				if group.Quota.MaxGPUPerSession >= 0 && group.Quota.MaxGPUPerSession < limits.MaxGPUPerSession {
+					limits.MaxGPUPerSession = group.Quota.MaxGPUPerSession
+				}
+			}
+		}
+	}
+
+	return limits, nil
 }
 
-// QuotaCheckResult contains the result of a quota check
-type QuotaCheckResult struct {
-	Allowed       bool
-	Reason        string
-	CurrentUsage  *QuotaUsage
-	RequestedUsage *QuotaUsage
-	AvailableQuota *QuotaUsage
-}
-
-// QuotaUsage represents resource usage in normalized units
-type QuotaUsage struct {
-	Sessions int
-	CPUMilli int64  // CPU in millicores (1000m = 1 core)
-	MemoryMB int64  // Memory in MB
-	StorageGB int64 // Storage in GB
-}
-
-// CheckSessionQuota verifies if a user can create a session within their quota
-func (e *Enforcer) CheckSessionQuota(ctx context.Context, req *SessionRequest) (*QuotaCheckResult, error) {
-	// Get user quota
-	userQuota, err := e.userDB.GetUserQuota(ctx, req.UserID)
+// CheckSessionCreation validates if a user can create a new session with the requested resources
+func (e *Enforcer) CheckSessionCreation(ctx context.Context, username string, requestedCPU, requestedMemory int64, requestedGPU int, currentUsage *Usage) error {
+	limits, err := e.GetUserLimits(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user quota: %w", err)
-	}
-
-	// Parse requested resources
-	requestedCPU, err := parseResourceCPU(req.CPU)
-	if err != nil {
-		return nil, fmt.Errorf("invalid CPU value: %w", err)
-	}
-
-	requestedMemory, err := parseResourceMemory(req.Memory)
-	if err != nil {
-		return nil, fmt.Errorf("invalid memory value: %w", err)
-	}
-
-	requestedStorage, err := parseResourceStorage(req.Storage)
-	if err != nil {
-		return nil, fmt.Errorf("invalid storage value: %w", err)
-	}
-
-	// Parse current usage
-	usedCPU, _ := parseResourceCPU(userQuota.UsedCPU)
-	usedMemory, _ := parseResourceMemory(userQuota.UsedMemory)
-	usedStorage, _ := parseResourceStorage(userQuota.UsedStorage)
-
-	// Parse quota limits
-	maxCPU, _ := parseResourceCPU(userQuota.MaxCPU)
-	maxMemory, _ := parseResourceMemory(userQuota.MaxMemory)
-	maxStorage, _ := parseResourceStorage(userQuota.MaxStorage)
-
-	// Build result
-	result := &QuotaCheckResult{
-		Allowed: true,
-		CurrentUsage: &QuotaUsage{
-			Sessions:  userQuota.UsedSessions,
-			CPUMilli:  usedCPU,
-			MemoryMB:  usedMemory,
-			StorageGB: usedStorage,
-		},
-		RequestedUsage: &QuotaUsage{
-			Sessions:  1,
-			CPUMilli:  requestedCPU,
-			MemoryMB:  requestedMemory,
-			StorageGB: requestedStorage,
-		},
-		AvailableQuota: &QuotaUsage{
-			Sessions:  userQuota.MaxSessions,
-			CPUMilli:  maxCPU,
-			MemoryMB:  maxMemory,
-			StorageGB: maxStorage,
-		},
+		return fmt.Errorf("failed to get user limits: %w", err)
 	}
 
 	// Check session count
-	if userQuota.UsedSessions+1 > userQuota.MaxSessions {
-		result.Allowed = false
-		result.Reason = fmt.Sprintf("session quota exceeded: using %d/%d sessions",
-			userQuota.UsedSessions, userQuota.MaxSessions)
-		return result, nil
+	if currentUsage.ActiveSessions >= limits.MaxSessions {
+		return fmt.Errorf("session quota exceeded: %d/%d sessions active", currentUsage.ActiveSessions, limits.MaxSessions)
 	}
 
-	// Check CPU quota
-	if usedCPU+requestedCPU > maxCPU {
-		result.Allowed = false
-		result.Reason = fmt.Sprintf("CPU quota exceeded: requesting %dm would use %dm/%dm",
-			requestedCPU, usedCPU+requestedCPU, maxCPU)
-		return result, nil
+	// Check CPU per session
+	if requestedCPU > limits.MaxCPUPerSession {
+		return fmt.Errorf("CPU quota exceeded: requested %dm, limit is %dm per session", requestedCPU, limits.MaxCPUPerSession)
 	}
 
-	// Check memory quota
-	if usedMemory+requestedMemory > maxMemory {
-		result.Allowed = false
-		result.Reason = fmt.Sprintf("memory quota exceeded: requesting %dMB would use %dMB/%dMB",
-			requestedMemory, usedMemory+requestedMemory, maxMemory)
-		return result, nil
+	// Check memory per session
+	if requestedMemory > limits.MaxMemoryPerSession {
+		return fmt.Errorf("memory quota exceeded: requested %dMi, limit is %dMi per session", requestedMemory, limits.MaxMemoryPerSession)
 	}
 
-	// Check storage quota
-	if usedStorage+requestedStorage > maxStorage {
-		result.Allowed = false
-		result.Reason = fmt.Sprintf("storage quota exceeded: requesting %dGB would use %dGB/%dGB",
-			requestedStorage, usedStorage+requestedStorage, maxStorage)
-		return result, nil
+	// Check total CPU
+	totalCPU := currentUsage.TotalCPU + requestedCPU
+	if totalCPU > limits.MaxTotalCPU {
+		return fmt.Errorf("total CPU quota exceeded: would use %dm, limit is %dm", totalCPU, limits.MaxTotalCPU)
 	}
 
-	return result, nil
+	// Check total memory
+	totalMemory := currentUsage.TotalMemory + requestedMemory
+	if totalMemory > limits.MaxTotalMemory {
+		return fmt.Errorf("total memory quota exceeded: would use %dMi, limit is %dMi", totalMemory, limits.MaxTotalMemory)
+	}
+
+	// Check GPU per session
+	if requestedGPU > limits.MaxGPUPerSession {
+		return fmt.Errorf("GPU quota exceeded: requested %d, limit is %d per session", requestedGPU, limits.MaxGPUPerSession)
+	}
+
+	return nil
 }
 
-// UpdateSessionQuota updates user quota usage when a session is created
-func (e *Enforcer) UpdateSessionQuota(ctx context.Context, userID string, memory, cpu, storage string, increment bool) error {
-	cpuMilli, err := parseResourceCPU(cpu)
-	if err != nil {
-		return err
-	}
+// CalculateUsage calculates current resource usage from a list of pods
+func (e *Enforcer) CalculateUsage(pods []corev1.Pod) *Usage {
+	usage := &Usage{}
 
-	memoryMB, err := parseResourceMemory(memory)
-	if err != nil {
-		return err
-	}
-
-	storageGB, err := parseResourceStorage(storage)
-	if err != nil {
-		return err
-	}
-
-	sessionDelta := 1
-	if !increment {
-		sessionDelta = -1
-		cpuMilli = -cpuMilli
-		memoryMB = -memoryMB
-		storageGB = -storageGB
-	}
-
-	// Update usage
-	return e.userDB.UpdateQuotaUsage(ctx, userID, sessionDelta,
-		formatResourceCPU(cpuMilli),
-		formatResourceMemory(memoryMB),
-		formatResourceStorage(storageGB))
-}
-
-// parseResourceCPU parses CPU values like "1000m", "2", "500m" to millicores
-func parseResourceCPU(cpu string) (int64, error) {
-	if cpu == "" || cpu == "0" {
-		return 0, nil
-	}
-
-	cpu = strings.TrimSpace(cpu)
-
-	// Handle millicores (e.g., "1000m")
-	if strings.HasSuffix(cpu, "m") {
-		cpuStr := strings.TrimSuffix(cpu, "m")
-		return strconv.ParseInt(cpuStr, 10, 64)
-	}
-
-	// Handle cores (e.g., "2" = 2000m)
-	cores, err := strconv.ParseFloat(cpu, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid CPU format: %s", cpu)
-	}
-
-	return int64(cores * 1000), nil
-}
-
-// parseResourceMemory parses memory values like "2Gi", "512Mi", "1G" to MB
-func parseResourceMemory(memory string) (int64, error) {
-	if memory == "" || memory == "0" {
-		return 0, nil
-	}
-
-	memory = strings.TrimSpace(memory)
-
-	// Parse Kubernetes-style memory (Gi, Mi, Gi, Ki, G, M, K)
-	var multiplier int64 = 1
-	var valueStr string
-
-	if strings.HasSuffix(memory, "Gi") {
-		multiplier = 1024 // GiB to MiB
-		valueStr = strings.TrimSuffix(memory, "Gi")
-	} else if strings.HasSuffix(memory, "Mi") {
-		multiplier = 1 // MiB to MiB
-		valueStr = strings.TrimSuffix(memory, "Mi")
-	} else if strings.HasSuffix(memory, "Ki") {
-		multiplier = 1 / 1024 // KiB to MiB (will be fractional)
-		valueStr = strings.TrimSuffix(memory, "Ki")
-	} else if strings.HasSuffix(memory, "G") {
-		multiplier = 1000 // GB to MB (decimal)
-		valueStr = strings.TrimSuffix(memory, "G")
-	} else if strings.HasSuffix(memory, "M") {
-		multiplier = 1 // MB to MB
-		valueStr = strings.TrimSuffix(memory, "M")
-	} else if strings.HasSuffix(memory, "K") {
-		multiplier = 1 / 1000 // KB to MB (will be fractional)
-		valueStr = strings.TrimSuffix(memory, "K")
-	} else {
-		// Assume bytes
-		value, err := strconv.ParseInt(memory, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid memory format: %s", memory)
+	for _, pod := range pods {
+		// Only count running pods
+		if pod.Status.Phase != corev1.PodRunning {
+			continue
 		}
-		return value / (1024 * 1024), nil // bytes to MiB
+
+		usage.ActiveSessions++
+
+		// Sum up resource requests from all containers
+		for _, container := range pod.Spec.Containers {
+			// CPU
+			if cpu := container.Resources.Requests[corev1.ResourceCPU]; !cpu.IsZero() {
+				usage.TotalCPU += cpu.MilliValue()
+			}
+
+			// Memory (convert to MiB)
+			if memory := container.Resources.Requests[corev1.ResourceMemory]; !memory.IsZero() {
+				usage.TotalMemory += memory.Value() / (1024 * 1024)
+			}
+
+			// GPU (nvidia.com/gpu)
+			if gpu := container.Resources.Requests["nvidia.com/gpu"]; !gpu.IsZero() {
+				usage.TotalGPU += int(gpu.Value())
+			}
+		}
 	}
 
-	value, err := strconv.ParseFloat(valueStr, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid memory format: %s", memory)
-	}
-
-	return int64(value * float64(multiplier)), nil
+	return usage
 }
 
-// parseResourceStorage parses storage values like "50Gi", "100G" to GB
-func parseResourceStorage(storage string) (int64, error) {
-	if storage == "" || storage == "0" {
+// ParseResourceQuantity parses a Kubernetes resource quantity string (e.g., "2000m", "4Gi")
+func ParseResourceQuantity(quantity string, resourceType string) (int64, error) {
+	q, err := resource.ParseQuantity(quantity)
+	if err != nil {
+		return 0, fmt.Errorf("invalid resource quantity: %w", err)
+	}
+
+	switch resourceType {
+	case "cpu":
+		// Return millicores
+		return q.MilliValue(), nil
+	case "memory":
+		// Return MiB
+		return q.Value() / (1024 * 1024), nil
+	default:
+		return q.Value(), nil
+	}
+}
+
+// FormatResourceQuantity formats a resource value back to Kubernetes format
+func FormatResourceQuantity(value int64, resourceType string) string {
+	switch resourceType {
+	case "cpu":
+		// Convert millicores to string
+		return fmt.Sprintf("%dm", value)
+	case "memory":
+		// Convert MiB to string
+		return fmt.Sprintf("%dMi", value)
+	default:
+		return fmt.Sprintf("%d", value)
+	}
+}
+
+// ValidateResourceRequest validates that a resource request is within acceptable bounds
+func (e *Enforcer) ValidateResourceRequest(cpuStr, memoryStr string) (cpu, memory int64, err error) {
+	// Parse CPU
+	if cpuStr != "" {
+		cpu, err = ParseResourceQuantity(cpuStr, "cpu")
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid CPU quantity: %w", err)
+		}
+
+		// Minimum 100m (0.1 CPU)
+		if cpu < 100 {
+			return 0, 0, fmt.Errorf("CPU request too low: minimum 100m")
+		}
+
+		// Maximum 64 CPUs (64000m)
+		if cpu > 64000 {
+			return 0, 0, fmt.Errorf("CPU request too high: maximum 64000m")
+		}
+	}
+
+	// Parse memory
+	if memoryStr != "" {
+		memory, err = ParseResourceQuantity(memoryStr, "memory")
+		if err != nil {
+			return 0, 0, fmt.Errorf("invalid memory quantity: %w", err)
+		}
+
+		// Minimum 128Mi
+		if memory < 128 {
+			return 0, 0, fmt.Errorf("memory request too low: minimum 128Mi")
+		}
+
+		// Maximum 512Gi (524288Mi)
+		if memory > 524288 {
+			return 0, 0, fmt.Errorf("memory request too high: maximum 512Gi")
+		}
+	}
+
+	return cpu, memory, nil
+}
+
+// GetDefaultResources returns default resource requests based on template category
+func GetDefaultResources(category string) (cpu, memory string) {
+	switch strings.ToLower(category) {
+	case "browsers", "web browsers":
+		return "1000m", "2048Mi" // 1 CPU, 2 GiB
+	case "development", "ide":
+		return "2000m", "4096Mi" // 2 CPUs, 4 GiB
+	case "design", "graphics":
+		return "2000m", "8192Mi" // 2 CPUs, 8 GiB
+	case "gaming", "emulation":
+		return "2000m", "4096Mi" // 2 CPUs, 4 GiB
+	case "productivity", "office":
+		return "1000m", "2048Mi" // 1 CPU, 2 GiB
+	case "media", "video editing":
+		return "4000m", "8192Mi" // 4 CPUs, 8 GiB
+	case "ai", "machine learning":
+		return "4000m", "16384Mi" // 4 CPUs, 16 GiB
+	default:
+		return "1000m", "2048Mi" // 1 CPU, 2 GiB (default)
+	}
+}
+
+// QuotaExceededError represents a quota exceeded error
+type QuotaExceededError struct {
+	Message string
+	Limit   interface{}
+	Current interface{}
+}
+
+func (e *QuotaExceededError) Error() string {
+	return e.Message
+}
+
+// IsQuotaExceeded checks if an error is a quota exceeded error
+func IsQuotaExceeded(err error) bool {
+	_, ok := err.(*QuotaExceededError)
+	return ok
+}
+
+// ParseGPURequest parses a GPU request from a string
+func ParseGPURequest(gpuStr string) (int, error) {
+	if gpuStr == "" || gpuStr == "0" {
 		return 0, nil
 	}
 
-	storage = strings.TrimSpace(storage)
-
-	var multiplier float64 = 1
-	var valueStr string
-
-	if strings.HasSuffix(storage, "Ti") {
-		multiplier = 1024 // TiB to GiB
-		valueStr = strings.TrimSuffix(storage, "Ti")
-	} else if strings.HasSuffix(storage, "Gi") {
-		multiplier = 1 // GiB to GiB
-		valueStr = strings.TrimSuffix(storage, "Gi")
-	} else if strings.HasSuffix(storage, "Mi") {
-		multiplier = 1.0 / 1024 // MiB to GiB
-		valueStr = strings.TrimSuffix(storage, "Mi")
-	} else if strings.HasSuffix(storage, "T") {
-		multiplier = 1000 // TB to GB (decimal)
-		valueStr = strings.TrimSuffix(storage, "T")
-	} else if strings.HasSuffix(storage, "G") {
-		multiplier = 1 // GB to GB
-		valueStr = strings.TrimSuffix(storage, "G")
-	} else if strings.HasSuffix(storage, "M") {
-		multiplier = 1.0 / 1000 // MB to GB
-		valueStr = strings.TrimSuffix(storage, "M")
-	} else {
-		// Assume bytes
-		value, err := strconv.ParseInt(storage, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid storage format: %s", storage)
-		}
-		return value / (1024 * 1024 * 1024), nil // bytes to GiB
-	}
-
-	value, err := strconv.ParseFloat(valueStr, 64)
+	gpu, err := strconv.Atoi(gpuStr)
 	if err != nil {
-		return 0, fmt.Errorf("invalid storage format: %s", storage)
+		return 0, fmt.Errorf("invalid GPU count: %w", err)
 	}
 
-	return int64(value * multiplier), nil
-}
-
-// formatResourceCPU formats millicores to string (e.g., 1000 -> "1000m")
-func formatResourceCPU(milli int64) string {
-	if milli == 0 {
-		return "0"
-	}
-	return fmt.Sprintf("%dm", milli)
-}
-
-// formatResourceMemory formats MB to string (e.g., 1024 -> "1Gi")
-func formatResourceMemory(mb int64) string {
-	if mb == 0 {
-		return "0"
-	}
-	if mb >= 1024 && mb%1024 == 0 {
-		return fmt.Sprintf("%dGi", mb/1024)
-	}
-	return fmt.Sprintf("%dMi", mb)
-}
-
-// formatResourceStorage formats GB to string (e.g., 50 -> "50Gi")
-func formatResourceStorage(gb int64) string {
-	if gb == 0 {
-		return "0"
-	}
-	if gb >= 1024 && gb%1024 == 0 {
-		return fmt.Sprintf("%dTi", gb/1024)
-	}
-	return fmt.Sprintf("%dGi", gb)
-}
-
-// CheckGroupQuota verifies if a group can accommodate a session within their quota
-func (e *Enforcer) CheckGroupQuota(ctx context.Context, groupID string, req *SessionRequest) (*QuotaCheckResult, error) {
-	// Get group quota
-	groupQuota, err := e.groupDB.GetGroupQuota(ctx, groupID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get group quota: %w", err)
+	if gpu < 0 {
+		return 0, fmt.Errorf("GPU count cannot be negative")
 	}
 
-	// Parse requested resources
-	requestedCPU, err := parseResourceCPU(req.CPU)
-	if err != nil {
-		return nil, fmt.Errorf("invalid CPU value: %w", err)
+	if gpu > 8 {
+		return 0, fmt.Errorf("GPU count too high: maximum 8")
 	}
 
-	requestedMemory, err := parseResourceMemory(req.Memory)
-	if err != nil {
-		return nil, fmt.Errorf("invalid memory value: %w", err)
-	}
-
-	requestedStorage, err := parseResourceStorage(req.Storage)
-	if err != nil {
-		return nil, fmt.Errorf("invalid storage value: %w", err)
-	}
-
-	// Parse current usage
-	usedCPU, _ := parseResourceCPU(groupQuota.UsedCPU)
-	usedMemory, _ := parseResourceMemory(groupQuota.UsedMemory)
-	usedStorage, _ := parseResourceStorage(groupQuota.UsedStorage)
-
-	// Parse quota limits
-	maxCPU, _ := parseResourceCPU(groupQuota.MaxCPU)
-	maxMemory, _ := parseResourceMemory(groupQuota.MaxMemory)
-	maxStorage, _ := parseResourceStorage(groupQuota.MaxStorage)
-
-	result := &QuotaCheckResult{
-		Allowed: true,
-		CurrentUsage: &QuotaUsage{
-			Sessions:  groupQuota.UsedSessions,
-			CPUMilli:  usedCPU,
-			MemoryMB:  usedMemory,
-			StorageGB: usedStorage,
-		},
-		RequestedUsage: &QuotaUsage{
-			Sessions:  1,
-			CPUMilli:  requestedCPU,
-			MemoryMB:  requestedMemory,
-			StorageGB: requestedStorage,
-		},
-		AvailableQuota: &QuotaUsage{
-			Sessions:  groupQuota.MaxSessions,
-			CPUMilli:  maxCPU,
-			MemoryMB:  maxMemory,
-			StorageGB: maxStorage,
-		},
-	}
-
-	// Check session count
-	if groupQuota.UsedSessions+1 > groupQuota.MaxSessions {
-		result.Allowed = false
-		result.Reason = fmt.Sprintf("group session quota exceeded: using %d/%d sessions",
-			groupQuota.UsedSessions, groupQuota.MaxSessions)
-		return result, nil
-	}
-
-	// Check CPU quota
-	if usedCPU+requestedCPU > maxCPU {
-		result.Allowed = false
-		result.Reason = fmt.Sprintf("group CPU quota exceeded: requesting %dm would use %dm/%dm",
-			requestedCPU, usedCPU+requestedCPU, maxCPU)
-		return result, nil
-	}
-
-	// Check memory quota
-	if usedMemory+requestedMemory > maxMemory {
-		result.Allowed = false
-		result.Reason = fmt.Sprintf("group memory quota exceeded: requesting %dMB would use %dMB/%dMB",
-			requestedMemory, usedMemory+requestedMemory, maxMemory)
-		return result, nil
-	}
-
-	// Check storage quota
-	if usedStorage+requestedStorage > maxStorage {
-		result.Allowed = false
-		result.Reason = fmt.Sprintf("group storage quota exceeded: requesting %dGB would use %dGB/%dGB",
-			requestedStorage, usedStorage+requestedStorage, maxStorage)
-		return result, nil
-	}
-
-	return result, nil
+	return gpu, nil
 }

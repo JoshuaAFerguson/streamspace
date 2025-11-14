@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,6 +34,7 @@ func main() {
 	dbUser := getEnv("DB_USER", "streamspace")
 	dbPassword := getEnv("DB_PASSWORD", "streamspace")
 	dbName := getEnv("DB_NAME", "streamspace")
+	dbSSLMode := getEnv("DB_SSL_MODE", "disable") // SECURITY: Should be "require" in production
 
 	log.Println("Starting StreamSpace API Server...")
 
@@ -44,6 +46,7 @@ func main() {
 		User:     dbUser,
 		Password: dbPassword,
 		DBName:   dbName,
+		SSLMode:  dbSSLMode,
 	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
@@ -142,7 +145,37 @@ func main() {
 	router := gin.New()
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
+
+	// SECURITY: Restrict HTTP methods to prevent abuse
+	router.Use(middleware.AllowedHTTPMethods())
+
 	router.Use(corsMiddleware())
+
+	// SECURITY: Add security headers (HSTS, CSP, X-Frame-Options, etc.)
+	router.Use(middleware.SecurityHeaders())
+
+	// SECURITY: Add input validation and sanitization
+	inputValidator := middleware.NewInputValidator()
+	router.Use(inputValidator.Middleware())
+	router.Use(inputValidator.SanitizeJSONMiddleware())
+
+	// SECURITY: Add request size limits to prevent large payload attacks
+	// Maximum 10MB for general requests
+	router.Use(middleware.RequestSizeLimit(10 * 1024 * 1024))
+
+	// SECURITY: Add rate limiting to prevent DoS attacks
+	// Layer 1: IP-based rate limiting (100 req/sec per IP with burst of 200)
+	rateLimiter := middleware.NewRateLimiter(100, 200)
+	router.Use(rateLimiter.Middleware())
+
+	// Layer 2: Per-user rate limiting (1000 req/hour per authenticated user)
+	// Prevents abuse from compromised tokens
+	userRateLimiter := middleware.NewUserRateLimiter(1000, 50)
+	router.Use(userRateLimiter.Middleware())
+
+	// SECURITY: Add audit logging for all requests
+	auditLogger := middleware.NewAuditLogger(database, false) // Don't log request bodies by default
+	router.Use(auditLogger.Middleware())
 
 	// Add gzip compression (exclude WebSocket endpoints)
 	router.Use(middleware.GzipWithExclusions(
@@ -161,8 +194,17 @@ func main() {
 	quotaEnforcer := quota.NewEnforcer(userDB, groupDB)
 
 	// Initialize JWT manager for authentication
+	// SECURITY: JWT_SECRET must be set in production - no fallback allowed
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("SECURITY ERROR: JWT_SECRET environment variable must be set. Generate with: openssl rand -base64 32")
+	}
+	if len(jwtSecret) < 32 {
+		log.Fatal("SECURITY ERROR: JWT_SECRET must be at least 32 characters long for security")
+	}
+
 	jwtConfig := &auth.JWTConfig{
-		SecretKey:     getEnv("JWT_SECRET", "streamspace-secret-change-in-production"),
+		SecretKey:     jwtSecret,
 		Issuer:        "streamspace-api",
 		TokenDuration: 24 * time.Hour,
 	}
@@ -178,8 +220,21 @@ func main() {
 	sharingHandler := handlers.NewSharingHandler(database)
 	pluginHandler := handlers.NewPluginHandler(database)
 
+	// SECURITY: Initialize webhook authentication
+	webhookSecret := os.Getenv("WEBHOOK_SECRET")
+	if webhookSecret == "" {
+		log.Println("WARNING: WEBHOOK_SECRET not set. Webhook authentication will be disabled.")
+		log.Println("         Generate a secret with: openssl rand -hex 32")
+	}
+
+	// SECURITY: Initialize CSRF protection
+	csrfProtection := middleware.NewCSRFProtection(24 * time.Hour)
+
+	// SECURITY: Create stricter rate limiter for auth endpoints
+	authRateLimiter := middleware.NewRateLimiter(5, 10) // 5 req/sec with burst of 10
+
 	// Setup routes
-	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, jwtManager, userDB, redisCache)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, jwtManager, userDB, redisCache, webhookSecret, csrfProtection, authRateLimiter)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -213,119 +268,197 @@ func main() {
 	log.Println("Server stopped")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache) {
-	// Health check (public)
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string, csrfProtection *middleware.CSRFProtection, authRateLimiter *middleware.RateLimiter) {
+	// SECURITY: Create authentication middleware
+	authMiddleware := auth.Middleware(jwtManager, userDB)
+	adminMiddleware := auth.RequireRole("admin")
+	operatorMiddleware := auth.RequireAnyRole("admin", "operator")
+
+	// SECURITY: Create webhook authentication middleware
+	var webhookAuth *middleware.WebhookAuth
+	if webhookSecret != "" {
+		webhookAuth = middleware.NewWebhookAuth(webhookSecret)
+	}
+
+	// Health check (public - no auth required)
 	router.GET("/health", h.Health)
 	router.GET("/version", h.Version)
+
+	// SECURITY: CSRF token endpoint (public - issues CSRF tokens)
+	router.GET("/api/v1/csrf-token", csrfProtection.IssueTokenHandler())
 
 	// API v1
 	v1 := router.Group("/api/v1")
 	{
-		// Authentication routes (public)
-		authHandler.RegisterRoutes(v1)
-		// Sessions
-		sessions := v1.Group("/sessions")
+		// Authentication routes (public - no auth required, but rate limited)
+		authGroup := v1.Group("/auth")
+		authGroup.Use(authRateLimiter.Middleware()) // SECURITY: Brute force protection
 		{
-			// Cache session lists for 30 seconds (frequently changing)
-			sessions.GET("", cache.CacheMiddleware(redisCache, 30*time.Second), h.ListSessions)
-			sessions.POST("", cache.InvalidateCacheMiddleware(redisCache, cache.SessionPattern()), h.CreateSession)
-			sessions.GET("/by-tags", cache.CacheMiddleware(redisCache, 30*time.Second), h.ListSessionsByTags)
-			sessions.GET("/:id", cache.CacheMiddleware(redisCache, 30*time.Second), h.GetSession)
-			sessions.PATCH("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.SessionPattern()), h.UpdateSession)
-			sessions.DELETE("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.SessionPattern()), h.DeleteSession)
-			sessions.PATCH("/:id/tags", cache.InvalidateCacheMiddleware(redisCache, cache.SessionPattern()), h.UpdateSessionTags)
-			sessions.GET("/:id/connect", h.ConnectSession)
-			sessions.POST("/:id/disconnect", h.DisconnectSession)
-			sessions.POST("/:id/heartbeat", h.SessionHeartbeat)
+			authHandler.RegisterRoutes(authGroup)
 		}
 
-		// Templates
-		templates := v1.Group("/templates")
+		// PROTECTED ROUTES - Require authentication
+		protected := v1.Group("")
+		protected.Use(authMiddleware)
+		protected.Use(csrfProtection.Middleware()) // SECURITY: CSRF protection for all state-changing operations
 		{
-			// Cache template lists for 5 minutes (rarely changing)
-			templates.GET("", cache.CacheMiddleware(redisCache, 5*time.Minute), h.ListTemplates)
-			templates.POST("", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.CreateTemplate)
-			templates.GET("/:id", cache.CacheMiddleware(redisCache, 5*time.Minute), h.GetTemplate)
-			templates.PATCH("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.UpdateTemplate)
-			templates.DELETE("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.DeleteTemplate)
+			// Sessions (authenticated users only)
+			sessions := protected.Group("/sessions")
+			{
+				// Cache session lists for 30 seconds (frequently changing)
+				sessions.GET("", cache.CacheMiddleware(redisCache, 30*time.Second), h.ListSessions)
+				sessions.POST("", cache.InvalidateCacheMiddleware(redisCache, cache.SessionPattern()), h.CreateSession)
+				sessions.GET("/by-tags", cache.CacheMiddleware(redisCache, 30*time.Second), h.ListSessionsByTags)
+				sessions.GET("/:id", cache.CacheMiddleware(redisCache, 30*time.Second), h.GetSession)
+				sessions.PATCH("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.SessionPattern()), h.UpdateSession)
+				sessions.DELETE("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.SessionPattern()), h.DeleteSession)
+				sessions.PATCH("/:id/tags", cache.InvalidateCacheMiddleware(redisCache, cache.SessionPattern()), h.UpdateSessionTags)
+				sessions.GET("/:id/connect", h.ConnectSession)
+				sessions.POST("/:id/disconnect", h.DisconnectSession)
+				sessions.POST("/:id/heartbeat", h.SessionHeartbeat)
+			}
+
+			// Templates (read: all users, write: operators/admins)
+			templates := protected.Group("/templates")
+			{
+				// Cache template lists for 5 minutes (rarely changing)
+				templates.GET("", cache.CacheMiddleware(redisCache, 5*time.Minute), h.ListTemplates)
+				templates.GET("/:id", cache.CacheMiddleware(redisCache, 5*time.Minute), h.GetTemplate)
+
+				// Write operations require operator role
+				templatesWrite := templates.Group("")
+				templatesWrite.Use(operatorMiddleware)
+				{
+					templatesWrite.POST("", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.CreateTemplate)
+					templatesWrite.PATCH("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.UpdateTemplate)
+					templatesWrite.DELETE("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.DeleteTemplate)
+				}
+			}
+
+			// Catalog (read: all users, write: operators/admins)
+			catalog := protected.Group("/catalog")
+			{
+				// Cache catalog data for 10 minutes (changes on sync)
+				catalog.GET("/repositories", cache.CacheMiddleware(redisCache, 10*time.Minute), h.ListRepositories)
+				catalog.GET("/templates", cache.CacheMiddleware(redisCache, 10*time.Minute), h.BrowseCatalog)
+
+				// Write operations require operator role
+				catalogWrite := catalog.Group("")
+				catalogWrite.Use(operatorMiddleware)
+				{
+					catalogWrite.POST("/repositories", h.AddRepository)
+					catalogWrite.DELETE("/repositories/:id", h.RemoveRepository)
+					catalogWrite.POST("/sync", h.SyncCatalog)
+					catalogWrite.POST("/install", h.InstallTemplate)
+				}
+			}
+
+			// Cluster management (operators/admins only)
+			cluster := protected.Group("/cluster")
+			cluster.Use(operatorMiddleware)
+			{
+				// Cache cluster data for 1 minute (can change frequently)
+				cluster.GET("/nodes", cache.CacheMiddleware(redisCache, 1*time.Minute), h.ListNodes)
+				cluster.GET("/pods", cache.CacheMiddleware(redisCache, 30*time.Second), h.ListPods)
+				cluster.GET("/deployments", cache.CacheMiddleware(redisCache, 30*time.Second), h.ListDeployments)
+				cluster.GET("/services", cache.CacheMiddleware(redisCache, 1*time.Minute), h.ListServices)
+				cluster.GET("/namespaces", cache.CacheMiddleware(redisCache, 2*time.Minute), h.ListNamespaces)
+				cluster.POST("/resources", h.CreateResource)
+				cluster.PATCH("/resources", h.UpdateResource)
+				cluster.DELETE("/resources", h.DeleteResource)
+				cluster.GET("/pods/:namespace/:name/logs", h.GetPodLogs)
+			}
+
+			// Configuration (admins only)
+			config := protected.Group("/config")
+			config.Use(adminMiddleware)
+			{
+				// Cache configuration for 5 minutes (rarely changes)
+				config.GET("", cache.CacheMiddleware(redisCache, 5*time.Minute), h.GetConfig)
+				config.PATCH("", cache.InvalidateCacheMiddleware(redisCache, cache.ConfigKey("*")), h.UpdateConfig)
+			}
+
+			// User management - using dedicated handler (with auth applied in handler)
+			userHandler.RegisterRoutes(protected)
+
+			// Group management - using dedicated handler (with auth applied in handler)
+			groupHandler.RegisterRoutes(protected)
+
+			// Activity tracking - using dedicated handler
+			activityHandler.RegisterRoutes(protected)
+
+			// Enhanced catalog - using dedicated handler
+			catalogHandler.RegisterRoutes(protected)
+
+			// Session sharing and collaboration - using dedicated handler
+			sharingHandler.RegisterRoutes(protected)
+
+			// Plugin system - using dedicated handler
+			pluginHandler.RegisterRoutes(protected)
+
+			// Metrics (operators/admins only)
+			protected.GET("/metrics", operatorMiddleware, h.GetMetrics)
 		}
-
-		// Catalog
-		catalog := v1.Group("/catalog")
-		{
-			// Cache catalog data for 10 minutes (changes on sync)
-			catalog.GET("/repositories", cache.CacheMiddleware(redisCache, 10*time.Minute), h.ListRepositories)
-			catalog.POST("/repositories", h.AddRepository)
-			catalog.DELETE("/repositories/:id", h.RemoveRepository)
-			catalog.POST("/sync", h.SyncCatalog)
-			catalog.GET("/templates", cache.CacheMiddleware(redisCache, 10*time.Minute), h.BrowseCatalog)
-			catalog.POST("/install", h.InstallTemplate)
-		}
-
-		// Cluster management
-		cluster := v1.Group("/cluster")
-		{
-			// Cache cluster data for 1 minute (can change frequently)
-			cluster.GET("/nodes", cache.CacheMiddleware(redisCache, 1*time.Minute), h.ListNodes)
-			cluster.GET("/pods", cache.CacheMiddleware(redisCache, 30*time.Second), h.ListPods)
-			cluster.GET("/deployments", cache.CacheMiddleware(redisCache, 30*time.Second), h.ListDeployments)
-			cluster.GET("/services", cache.CacheMiddleware(redisCache, 1*time.Minute), h.ListServices)
-			cluster.GET("/namespaces", cache.CacheMiddleware(redisCache, 2*time.Minute), h.ListNamespaces)
-			cluster.POST("/resources", h.CreateResource)
-			cluster.PATCH("/resources", h.UpdateResource)
-			cluster.DELETE("/resources", h.DeleteResource)
-			cluster.GET("/pods/:namespace/:name/logs", h.GetPodLogs)
-		}
-
-		// Configuration
-		config := v1.Group("/config")
-		{
-			// Cache configuration for 5 minutes (rarely changes)
-			config.GET("", cache.CacheMiddleware(redisCache, 5*time.Minute), h.GetConfig)
-			config.PATCH("", cache.InvalidateCacheMiddleware(redisCache, cache.ConfigKey("*")), h.UpdateConfig)
-		}
-
-		// User management - using dedicated handler
-		userHandler.RegisterRoutes(v1)
-
-		// Group management - using dedicated handler
-		groupHandler.RegisterRoutes(v1)
-
-		// Activity tracking - using dedicated handler
-		activityHandler.RegisterRoutes(v1)
-
-		// Enhanced catalog - using dedicated handler
-		catalogHandler.RegisterRoutes(v1)
-
-		// Session sharing and collaboration - using dedicated handler
-		sharingHandler.RegisterRoutes(v1)
-
-		// Plugin system - using dedicated handler
-		pluginHandler.RegisterRoutes(v1)
-
-		// Metrics
-		v1.GET("/metrics", h.GetMetrics)
 	}
 
-	// WebSocket endpoints
+	// WebSocket endpoints (require authentication)
 	ws := router.Group("/api/v1/ws")
+	ws.Use(authMiddleware)
 	{
 		ws.GET("/sessions", h.SessionsWebSocket)
-		ws.GET("/cluster", h.ClusterWebSocket)
-		ws.GET("/logs/:namespace/:pod", h.LogsWebSocket)
+		ws.GET("/cluster", operatorMiddleware, h.ClusterWebSocket)
+		ws.GET("/logs/:namespace/:pod", operatorMiddleware, h.LogsWebSocket)
 	}
 
-	// Webhook endpoints (no auth required)
+	// Webhook endpoints (HMAC signature validation required)
 	webhooks := router.Group("/webhooks")
 	{
-		webhooks.POST("/repository/sync", h.WebhookRepositorySync)
+		if webhookAuth != nil {
+			// SECURITY: Require webhook signature validation
+			webhooks.POST("/repository/sync", webhookAuth.Middleware(), h.WebhookRepositorySync)
+		} else {
+			// WARNING: Running without webhook authentication
+			log.Println("WARNING: Webhook endpoints running without authentication")
+			webhooks.POST("/repository/sync", h.WebhookRepositorySync)
+		}
 	}
 }
 
 func corsMiddleware() gin.HandlerFunc {
+	// SECURITY: Get allowed origins from environment
+	allowedOriginsEnv := getEnv("CORS_ALLOWED_ORIGINS", "")
+	var allowedOrigins []string
+
+	if allowedOriginsEnv != "" {
+		// Parse comma-separated list of origins
+		for _, origin := range strings.Split(allowedOriginsEnv, ",") {
+			allowedOrigins = append(allowedOrigins, strings.TrimSpace(origin))
+		}
+	}
+
+	// If no origins specified, use localhost only for development
+	if len(allowedOrigins) == 0 {
+		log.Println("WARNING: No CORS_ALLOWED_ORIGINS set, defaulting to localhost only")
+		allowedOrigins = []string{"http://localhost:3000", "http://localhost:8000"}
+	}
+
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		origin := c.Request.Header.Get("Origin")
+
+		// Check if origin is allowed
+		allowed := false
+		for _, allowedOrigin := range allowedOrigins {
+			if origin == allowedOrigin {
+				allowed = true
+				break
+			}
+		}
+
+		if allowed {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, PATCH, DELETE")
 

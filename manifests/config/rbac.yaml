@@ -1,41 +1,64 @@
 ---
+# SECURITY: Least-privilege RBAC for StreamSpace controller
+# Controller only has access to streamspace namespace, not cluster-wide
+
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: workspace-controller
-  namespace: workspaces
+  name: streamspace-controller
+  namespace: streamspace
+  labels:
+    app: streamspace
+    component: controller
+automountServiceAccountToken: true
+
 ---
+# Namespace-scoped Role (not ClusterRole) for streamspace resources
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: workspace-controller
+  name: streamspace-controller
+  namespace: streamspace
 rules:
-  # Manage WorkspaceSessions and WorkspaceTemplates
-  - apiGroups: [workspaces.aiinfra.io]
-    resources: [workspacesessions, workspacetemplates]
+  # Manage Sessions and Templates (new API group)
+  - apiGroups: [stream.space]
+    resources: [sessions, templates]
     verbs: [get, list, watch, create, update, patch, delete]
-  - apiGroups: [workspaces.aiinfra.io]
-    resources: [workspacesessions/status, workspacetemplates/status]
+  - apiGroups: [stream.space]
+    resources: [sessions/status, templates/status]
     verbs: [get, update, patch]
 
-  # Manage workspace pods
+  # Legacy CRDs for backwards compatibility (read-only)
+  - apiGroups: [workspaces.aiinfra.io]
+    resources: [workspacesessions, workspacetemplates]
+    verbs: [get, list, watch]
+
+  # Manage session pods (only in streamspace namespace)
   - apiGroups: [""]
-    resources: [pods, services]
+    resources: [pods]
     verbs: [get, list, watch, create, update, patch, delete]
 
-  # Manage deployments for workspaces
+  # Manage session services (only in streamspace namespace)
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch, create, update, patch, delete]
+
+  # Manage session deployments (only in streamspace namespace)
   - apiGroups: [apps]
     resources: [deployments]
     verbs: [get, list, watch, create, update, patch, delete]
 
-  # Manage PVCs for user home directories
+  # Manage user PVCs (only in streamspace namespace)
   - apiGroups: [""]
     resources: [persistentvolumeclaims]
-    verbs: [get, list, watch, create, update, patch, delete]
+    verbs: [get, list, watch, create, update, patch]
 
-  # Read configmaps and secrets
+  # Read-only access to configmaps and secrets
   - apiGroups: [""]
-    resources: [configmaps, secrets]
+    resources: [configmaps]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [secrets]
     verbs: [get, list, watch]
 
   # Create events for logging
@@ -43,20 +66,55 @@ rules:
     resources: [events]
     verbs: [create, patch]
 
-  # Manage ingress for workspace access
+  # Manage ingress for session access (only in streamspace namespace)
   - apiGroups: [networking.k8s.io]
     resources: [ingresses]
     verbs: [get, list, watch, create, update, patch, delete]
+
+  # Read pod logs for debugging
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get, list]
+
 ---
+# RoleBinding (namespace-scoped, not cluster-scoped)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: streamspace-controller
+  namespace: streamspace
+subjects:
+  - kind: ServiceAccount
+    name: streamspace-controller
+    namespace: streamspace
+roleRef:
+  kind: Role
+  name: streamspace-controller
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Minimal ClusterRole for CRD access only (read CRD definitions)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: streamspace-controller-crd-reader
+rules:
+  # Read CRD definitions (needed for controller to understand resource schemas)
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, list, watch]
+
+---
+# ClusterRoleBinding for CRD reading only
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: workspace-controller
+  name: streamspace-controller-crd-reader
 subjects:
   - kind: ServiceAccount
-    name: workspace-controller
-    namespace: workspaces
+    name: streamspace-controller
+    namespace: streamspace
 roleRef:
   kind: ClusterRole
-  name: workspace-controller
+  name: streamspace-controller-crd-reader
   apiGroup: rbac.authorization.k8s.io

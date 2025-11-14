@@ -1,23 +1,33 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: workspace-platform
-  namespace: workspaces
+  name: streamspace-platform
+  namespace: streamspace
   annotations:
+    # SECURITY: Force HTTPS
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
-    # Optional: Enable cert-manager for TLS
-    # cert-manager.io/cluster-issuer: letsencrypt-cloudflare
-    # Optional: Enable Authentik SSO protection
+    # SECURITY: Redirect HTTP to HTTPS
+    traefik.ingress.kubernetes.io/redirect-scheme: https
+    traefik.ingress.kubernetes.io/redirect-permanent: "true"
+    # SECURITY: Enable HSTS
+    traefik.ingress.kubernetes.io/hsts-max-age: "31536000"
+    traefik.ingress.kubernetes.io/hsts-include-subdomains: "true"
+    traefik.ingress.kubernetes.io/hsts-preload: "true"
+    # Enable cert-manager for automatic TLS certificate management
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Optional: Enable Authentik/Keycloak SSO protection
     # traefik.ingress.kubernetes.io/router.middlewares: authentik-forwardauth@kubernetescrd
 spec:
-  # tls:
-  #   - hosts:
-  #       - workspaces.local
-  #     secretName: workspace-platform-tls
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - streamspace.local
+        - "*.streamspace.local"
+      secretName: streamspace-platform-tls
   rules:
-    # Main UI
-    - host: workspaces.local
+    # Main UI and API
+    - host: streamspace.local
       http:
         paths:
           # API endpoints
@@ -25,7 +35,15 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: workspace-api
+                name: streamspace-api
+                port:
+                  number: 8000
+          # Webhooks
+          - path: /webhooks
+            pathType: Prefix
+            backend:
+              service:
+                name: streamspace-api
                 port:
                   number: 8000
           # UI (catch-all)
@@ -33,31 +51,39 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: workspace-ui
+                name: streamspace-ui
                 port:
                   number: 80
 ---
+# Session ingress (dynamically managed by controller)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: workspace-sessions
-  namespace: workspaces
+  name: streamspace-sessions
+  namespace: streamspace
   annotations:
+    # SECURITY: Force HTTPS for session access
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/redirect-scheme: https
+    traefik.ingress.kubernetes.io/redirect-permanent: "true"
     # This ingress will be dynamically updated by the controller
-    # to route *.workspaces.local to individual workspace pods
+    # to route *.streamspace.local to individual session pods
 spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - "*.streamspace.local"
+      secretName: streamspace-sessions-tls
   rules:
     # Example session route (controller will add more dynamically)
-    # - host: session-abc123.workspaces.local
+    # - host: user1-firefox.streamspace.local
     #   http:
     #     paths:
     #       - path: /
     #         pathType: Prefix
     #         backend:
     #           service:
-    #             name: ws-user1-firefox-abc123
+    #             name: ss-user1-firefox-svc
     #             port:
     #               number: 3000
-  ingressClassName: traefik

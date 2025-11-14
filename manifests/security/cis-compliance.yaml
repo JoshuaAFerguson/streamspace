@@ -1,0 +1,541 @@
+# CIS Kubernetes Benchmark Compliance Automation
+# Runs automated compliance scanning and reporting
+
+---
+# Namespace for security scanning tools
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security-scanning
+  labels:
+    name: security-scanning
+    app.kubernetes.io/name: security-scanning
+
+---
+# ServiceAccount for kube-bench
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-bench
+  namespace: security-scanning
+automountServiceAccountToken: true
+
+---
+# ClusterRole for kube-bench with read-only access
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-bench
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services", "componentstatuses", "configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list"]
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding for kube-bench
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-bench
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-bench
+subjects:
+  - kind: ServiceAccount
+    name: kube-bench
+    namespace: security-scanning
+
+---
+# ConfigMap for CIS benchmark configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kube-bench-config
+  namespace: security-scanning
+data:
+  config.yaml: |
+    ---
+    # CIS Kubernetes Benchmark Configuration for StreamSpace
+    # Aligned with CIS Kubernetes V1.8
+
+    ## Version-specific config ##
+    # Which version of Kubernetes to run CIS Benchmark for
+    # Options: 1.8, 1.11, 1.12, 1.13, 1.14, 1.15, etc.
+    version: "1.24"
+
+    ## Node config ##
+    node:
+      # This is the path where the kubelet executable is located
+      kubelet: "/usr/local/bin/kubelet"
+      # This is the path where the kubelet config file is located
+      kubeletconf: "/var/lib/kubelet/config.yaml"
+      # This is the path where the kubelet service file is located
+      kubeletservice: "/etc/systemd/system/kubelet.service.d/10-kubeadm.conf"
+      # This is the path where the certificate authorities are located
+      cafile: "/etc/kubernetes/pki/ca.crt"
+
+    ## Control Plane config ##
+    controlplane:
+      # This is the path where the API server manifest is located
+      apiserver: "/etc/kubernetes/manifests/kube-apiserver.yaml"
+      # This is the path where the scheduler manifest is located
+      scheduler: "/etc/kubernetes/manifests/kube-scheduler.yaml"
+      # This is the path where the controller manager manifest is located
+      controllermanager: "/etc/kubernetes/manifests/kube-controller-manager.yaml"
+
+    ## ETCD config ##
+    etcd:
+      # This is the path where the etcd manifest is located
+      etcd: "/etc/kubernetes/manifests/etcd.yaml"
+
+    ## Scoring ##
+    # Set this to true to skip tests that have scored results
+    skip_scored: false
+    # Set this to true to skip tests that have not scored results
+    skip_unscored: false
+
+---
+# CronJob for daily CIS benchmark scanning
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kube-bench-daily
+  namespace: security-scanning
+  labels:
+    app: kube-bench
+    type: compliance-scan
+spec:
+  # Run daily at 2 AM UTC
+  schedule: "0 2 * * *"
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: kube-bench
+            scan-type: cis-benchmark
+        spec:
+          serviceAccountName: kube-bench
+          restartPolicy: Never
+          hostPID: true
+          hostNetwork: true
+          tolerations:
+            - key: node-role.kubernetes.io/master
+              operator: Exists
+              effect: NoSchedule
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: ""
+          containers:
+            - name: kube-bench
+              image: aquasec/kube-bench:v0.7.0
+              command: ["kube-bench"]
+              args:
+                - "--config-dir=/etc/kube-bench/cfg"
+                - "--benchmark=cis-1.24"
+                - "--json"
+                - "--outputfile=/var/log/kube-bench/results.json"
+              volumeMounts:
+                - name: var-lib-etcd
+                  mountPath: /var/lib/etcd
+                  readOnly: true
+                - name: var-lib-kubelet
+                  mountPath: /var/lib/kubelet
+                  readOnly: true
+                - name: etc-systemd
+                  mountPath: /etc/systemd
+                  readOnly: true
+                - name: etc-kubernetes
+                  mountPath: /etc/kubernetes
+                  readOnly: true
+                - name: usr-bin
+                  mountPath: /usr/local/mount-from-host/bin
+                  readOnly: true
+                - name: results
+                  mountPath: /var/log/kube-bench
+                - name: config
+                  mountPath: /etc/kube-bench/cfg
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+
+            # Sidecar to upload results to monitoring
+            - name: results-uploader
+              image: curlimages/curl:latest
+              command: ["/bin/sh"]
+              args:
+                - -c
+                - |
+                  echo "Waiting for scan to complete..."
+                  sleep 60
+
+                  if [ -f /var/log/kube-bench/results.json ]; then
+                    echo "Uploading results to metrics endpoint..."
+                    curl -X POST http://streamspace-api.streamspace.svc.cluster.local:8000/api/v1/admin/compliance-scan \
+                      -H "Content-Type: application/json" \
+                      --data-binary @/var/log/kube-bench/results.json \
+                      -H "Authorization: Bearer ${API_TOKEN}"
+
+                    echo "Results uploaded successfully"
+                  else
+                    echo "ERROR: Results file not found"
+                    exit 1
+                  fi
+              volumeMounts:
+                - name: results
+                  mountPath: /var/log/kube-bench
+                  readOnly: true
+              env:
+                - name: API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: compliance-scanner-token
+                      key: token
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+
+          volumes:
+            - name: var-lib-etcd
+              hostPath:
+                path: /var/lib/etcd
+            - name: var-lib-kubelet
+              hostPath:
+                path: /var/lib/kubelet
+            - name: etc-systemd
+              hostPath:
+                path: /etc/systemd
+            - name: etc-kubernetes
+              hostPath:
+                path: /etc/kubernetes
+            - name: usr-bin
+              hostPath:
+                path: /usr/bin
+            - name: results
+              emptyDir: {}
+            - name: config
+              configMap:
+                name: kube-bench-config
+
+---
+# Job for on-demand CIS scanning
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-bench-manual
+  namespace: security-scanning
+  labels:
+    app: kube-bench
+    type: manual-scan
+spec:
+  ttlSecondsAfterFinished: 86400  # Clean up after 24 hours
+  template:
+    metadata:
+      labels:
+        app: kube-bench
+        scan-type: cis-benchmark-manual
+    spec:
+      serviceAccountName: kube-bench
+      restartPolicy: Never
+      hostPID: true
+      hostNetwork: true
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      containers:
+        - name: kube-bench
+          image: aquasec/kube-bench:v0.7.0
+          command: ["kube-bench"]
+          args:
+            - "--config-dir=/etc/kube-bench/cfg"
+            - "--benchmark=cis-1.24"
+            - "--json"
+          volumeMounts:
+            - name: var-lib-etcd
+              mountPath: /var/lib/etcd
+              readOnly: true
+            - name: var-lib-kubelet
+              mountPath: /var/lib/kubelet
+              readOnly: true
+            - name: etc-systemd
+              mountPath: /etc/systemd
+              readOnly: true
+            - name: etc-kubernetes
+              mountPath: /etc/kubernetes
+              readOnly: true
+            - name: usr-bin
+              mountPath: /usr/local/mount-from-host/bin
+              readOnly: true
+            - name: config
+              mountPath: /etc/kube-bench/cfg
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: var-lib-etcd
+          hostPath:
+            path: /var/lib/etcd
+        - name: var-lib-kubelet
+          hostPath:
+            path: /var/lib/kubelet
+        - name: etc-systemd
+          hostPath:
+            path: /etc/systemd
+        - name: etc-kubernetes
+          hostPath:
+            path: /etc/kubernetes
+        - name: usr-bin
+          hostPath:
+            path: /usr/bin
+        - name: config
+          configMap:
+            name: kube-bench-config
+
+---
+# Secret for compliance scanner API token (create manually)
+# kubectl create secret generic compliance-scanner-token \
+#   --from-literal=token=<your-api-token> \
+#   -n security-scanning
+apiVersion: v1
+kind: Secret
+metadata:
+  name: compliance-scanner-token
+  namespace: security-scanning
+type: Opaque
+stringData:
+  token: "REPLACE_WITH_ACTUAL_TOKEN"
+
+---
+# PrometheusRule for CIS compliance alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cis-compliance-alerts
+  namespace: security-scanning
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: streamspace.compliance
+      interval: 30s
+      rules:
+        - alert: CISBenchmarkFailed
+          expr: |
+            kube_bench_score{status="FAIL"} > 0
+          for: 5m
+          labels:
+            severity: high
+            component: security-compliance
+          annotations:
+            summary: "CIS Kubernetes Benchmark checks failed"
+            description: |
+              {{ $value }} CIS Kubernetes Benchmark checks have failed.
+              Review the kube-bench results for details.
+
+              Check: {{ $labels.check }}
+              Node: {{ $labels.node }}
+
+        - alert: CISComplianceScoreDropped
+          expr: |
+            (kube_bench_total_pass / kube_bench_total_checks) < 0.85
+          for: 10m
+          labels:
+            severity: warning
+            component: security-compliance
+          annotations:
+            summary: "CIS compliance score below 85%"
+            description: |
+              The CIS Kubernetes Benchmark compliance score has dropped below 85%.
+              Current score: {{ $value | humanizePercentage }}
+
+              This indicates a degradation in security posture. Review recent changes
+              and run manual compliance scan for details.
+
+        - alert: CISScanFailed
+          expr: |
+            increase(kube_bench_scan_errors_total[1h]) > 0
+          for: 5m
+          labels:
+            severity: warning
+            component: security-compliance
+          annotations:
+            summary: "CIS benchmark scan failed"
+            description: |
+              The automated CIS benchmark scan has failed {{ $value }} times in the last hour.
+              Check kube-bench pod logs for error details.
+
+        - alert: CISScanNotRunRecently
+          expr: |
+            (time() - kube_bench_last_scan_timestamp) > 172800
+          for: 1h
+          labels:
+            severity: warning
+            component: security-compliance
+          annotations:
+            summary: "CIS benchmark scan hasn't run in 48 hours"
+            description: |
+              The automated CIS compliance scan hasn't run successfully in over 48 hours.
+              Last successful scan: {{ $value | humanizeDuration }} ago
+
+              Verify the kube-bench CronJob is functioning correctly.
+
+---
+# ConfigMap with remediation guide
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cis-remediation-guide
+  namespace: security-scanning
+  labels:
+    app: kube-bench
+    type: documentation
+data:
+  README.md: |
+    # CIS Kubernetes Benchmark Remediation Guide
+
+    ## Running Manual Scan
+
+    To run an on-demand CIS compliance scan:
+
+    ```bash
+    # Delete previous manual scan job if exists
+    kubectl delete job kube-bench-manual -n security-scanning
+
+    # Create new scan job
+    kubectl create -f manifests/security/cis-compliance.yaml
+
+    # View results
+    kubectl logs -n security-scanning job/kube-bench-manual
+    ```
+
+    ## Common Failures and Remediation
+
+    ### 1.2.1 - Ensure that the --anonymous-auth argument is set to false
+
+    **Remediation**:
+    Edit `/etc/kubernetes/manifests/kube-apiserver.yaml`:
+    ```yaml
+    - --anonymous-auth=false
+    ```
+
+    ### 1.2.6 - Ensure that the --kubelet-certificate-authority argument is set
+
+    **Remediation**:
+    ```yaml
+    - --kubelet-certificate-authority=/etc/kubernetes/pki/ca.crt
+    ```
+
+    ### 5.1.5 - Ensure that default service accounts are not actively used
+
+    **Remediation**:
+    ```yaml
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: default
+    automountServiceAccountToken: false
+    ```
+
+    ### 5.2.2 - Minimize the admission of containers wishing to share the host PID
+
+    **Remediation** (PodSecurityPolicy):
+    ```yaml
+    apiVersion: policy/v1beta1
+    kind: PodSecurityPolicy
+    metadata:
+      name: restricted
+    spec:
+      hostPID: false
+      hostIPC: false
+      hostNetwork: false
+    ```
+
+    ### 5.7.3 - Apply Security Context to Pods
+
+    **Remediation**:
+    ```yaml
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: app
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+    ```
+
+    ## Viewing Historical Scans
+
+    ```bash
+    # List all scan jobs
+    kubectl get jobs -n security-scanning -l app=kube-bench
+
+    # View specific scan result
+    kubectl logs -n security-scanning job/kube-bench-daily-<timestamp>
+    ```
+
+    ## Compliance Dashboard
+
+    View compliance metrics in Grafana:
+    - Dashboard: "Security Compliance"
+    - Panel: "CIS Benchmark Score Trend"
+
+    Access: http://grafana.streamspace.local/d/security-compliance
+
+    ## Automated Remediation
+
+    Some checks can be automatically remediated:
+
+    ```bash
+    # Apply StreamSpace security baselines
+    kubectl apply -f manifests/security/pod-security-standards.yaml
+    kubectl apply -f manifests/security/network-policies.yaml
+
+    # Verify improvements
+    kubectl create job kube-bench-verify --from=cronjob/kube-bench-daily -n security-scanning
+    kubectl logs -n security-scanning job/kube-bench-verify
+    ```
