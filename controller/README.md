@@ -9,11 +9,14 @@ This is the Kubernetes controller for StreamSpace, built using the controller-ru
 - **Template CRD** (`api/v1alpha1/template_types.go`): Defines application templates with VNC-agnostic configuration
 
 ### Controllers
-- **Session Controller** (`controllers/session_controller.go`): Manages session lifecycle
+- **Session Controller** (`controllers/session_controller.go`): Manages complete session lifecycle
   - Creates/scales Deployments based on session state
   - Handles running (replicas=1), hibernated (replicas=0), and terminated (delete) states
+  - **Creates Services** for VNC port exposure
+  - **Provisions PVCs** for persistent user home directories
   - Uses generic VNC configuration (not Kasm-specific)
   - Updates session status with pod name, URL, phase
+  - Automatic resource cleanup via owner references
 
 - **Template Controller** (`controllers/template_controller.go`): Validates templates
   - Ensures required fields (baseImage, displayName)
@@ -91,23 +94,45 @@ kubectl get pods -n streamspace -l session=testuser-firefox
 
 ## Deployment to Cluster
 
-### 1. Build Docker image
+### Quick Deploy with Kustomize (Recommended)
+
+```bash
+# Deploy everything at once
+kubectl apply -k config/default/
+
+# Verify
+kubectl get pods -n streamspace
+kubectl get crds | grep streamspace
+```
+
+### Manual Deployment
+
+#### 1. Build Docker image
 
 ```bash
 docker build -t streamspace-controller:latest .
-docker tag streamspace-controller:latest your-registry/streamspace-controller:v0.1.0
-docker push your-registry/streamspace-controller:v0.1.0
+docker tag streamspace-controller:latest ghcr.io/your-org/streamspace-controller:v0.1.0
+docker push ghcr.io/your-org/streamspace-controller:v0.1.0
 ```
 
-### 2. Deploy controller
+#### 2. Deploy controller
 
 ```bash
-# Update image in ../manifests/config/controller-deployment.yaml
-# Then apply:
-kubectl apply -f ../manifests/config/rbac.yaml
-kubectl apply -f ../manifests/config/controller-deployment.yaml
-kubectl apply -f ../manifests/config/controller-configmap.yaml
+# Install CRDs
+kubectl apply -f config/crd/bases/
+
+# Install RBAC
+kubectl apply -f config/rbac/rbac.yaml
+
+# Deploy controller
+kubectl apply -f config/manager/deployment.yaml
+kubectl apply -f config/manager/service.yaml
+
+# Verify
+kubectl get pods -n streamspace
 ```
+
+See [INSTALL.md](INSTALL.md) for complete installation guide.
 
 ## Key Design Features
 
@@ -138,16 +163,32 @@ Sessions use a state machine:
 - Owner references ensure garbage collection
 - Labels enable efficient querying
 
-## Next Steps
+## Features Complete
 
-To complete the prototype:
+✅ **Core functionality implemented**:
+- ✅ Session and Template CRDs
+- ✅ State-driven session lifecycle management
+- ✅ Deployment creation and scaling
+- ✅ Service creation for VNC access
+- ✅ PVC provisioning for persistent user homes
+- ✅ VNC-agnostic architecture
+- ✅ RBAC configuration
+- ✅ Kustomize deployment
+- ✅ Dockerfile for containerization
+- ✅ Prometheus metrics endpoint
+- ✅ Health and readiness probes
+- ✅ Leader election support
 
-1. **Build and test**: Once network access is available, run `go mod tidy` and `make test`
-2. **Add PVC provisioning**: Create persistent home directories for users
-3. **Add Service creation**: Expose VNC ports via Kubernetes Services
-4. **Add Ingress creation**: Create ingress routes for browser access
-5. **Implement hibernation logic**: Add idle timeout detection
-6. **Add metrics**: Expose Prometheus metrics for monitoring
+## Next Enhancements
+
+Future improvements (not needed for basic functionality):
+
+1. **Ingress creation**: Auto-create ingress routes for browser access
+2. **Idle timeout detection**: Implement automatic hibernation based on activity
+3. **Resource quotas**: Per-user resource limits and quotas
+4. **Custom metrics**: Add session-specific Prometheus metrics
+5. **Webhooks**: Add validating/mutating webhooks for CRDs
+6. **Phase 3**: TigerVNC migration (see `/docs/VNC_MIGRATION.md`)
 
 ## File Structure
 
@@ -161,13 +202,27 @@ controller/
 │   └── main.go             # Controller entry point
 ├── config/
 │   ├── crd/bases/          # Generated CRD manifests
+│   │   ├── stream.streamspace.io_sessions.yaml
+│   │   └── stream.streamspace.io_templates.yaml
+│   ├── default/            # Kustomize deployment
+│   │   ├── kustomization.yaml
+│   │   └── namespace.yaml
+│   ├── manager/            # Controller deployment
+│   │   ├── deployment.yaml
+│   │   └── service.yaml
+│   ├── rbac/               # RBAC configuration
+│   │   └── rbac.yaml
 │   └── samples/            # Example resources
+│       ├── template_firefox.yaml
+│       └── session_test.yaml
 ├── controllers/            # Reconciliation logic
-│   ├── session_controller.go
+│   ├── session_controller.go  (380+ lines)
 │   └── template_controller.go
+├── Dockerfile              # Container build
 ├── go.mod                  # Go module definition
 ├── Makefile               # Build automation
-└── README.md              # This file
+├── README.md              # This file
+└── INSTALL.md             # Installation guide
 ```
 
 ## Development Notes

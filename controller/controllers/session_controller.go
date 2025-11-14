@@ -7,6 +7,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,6 +30,7 @@ type SessionReconciler struct {
 //+kubebuilder:rbac:groups=stream.streamspace.io,resources=templates,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is the main reconciliation loop
 func (r *SessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -72,6 +74,7 @@ func (r *SessionReconciler) handleRunning(ctx context.Context, session *streamv1
 	log := log.FromContext(ctx)
 
 	deploymentName := fmt.Sprintf("ss-%s-%s", session.Spec.User, session.Spec.Template)
+	serviceName := fmt.Sprintf("%s-svc", deploymentName)
 
 	// Check if deployment exists
 	deployment := &appsv1.Deployment{}
@@ -96,6 +99,41 @@ func (r *SessionReconciler) handleRunning(ctx context.Context, session *streamv1
 				return ctrl.Result{}, err
 			}
 			log.Info("Scaled up Deployment", "name", deploymentName)
+		}
+	}
+
+	// Ensure Service exists
+	service := &corev1.Service{}
+	err = r.Get(ctx, types.NamespacedName{Name: serviceName, Namespace: session.Namespace}, service)
+
+	if errors.IsNotFound(err) {
+		// Create new service
+		service = r.createService(session, template)
+		if err := r.Create(ctx, service); err != nil {
+			log.Error(err, "Failed to create Service")
+			return ctrl.Result{}, err
+		}
+		log.Info("Created Service", "name", serviceName)
+	} else if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Ensure user PVC exists if persistent home is enabled
+	if session.Spec.PersistentHome {
+		pvcName := fmt.Sprintf("home-%s", session.Spec.User)
+		pvc := &corev1.PersistentVolumeClaim{}
+		err = r.Get(ctx, types.NamespacedName{Name: pvcName, Namespace: session.Namespace}, pvc)
+
+		if errors.IsNotFound(err) {
+			// Create new PVC
+			pvc = r.createUserPVC(session)
+			if err := r.Create(ctx, pvc); err != nil {
+				log.Error(err, "Failed to create PVC")
+				return ctrl.Result{}, err
+			}
+			log.Info("Created user PVC", "name", pvcName)
+		} else if err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -202,6 +240,37 @@ func (r *SessionReconciler) createDeployment(session *streamv1alpha1.Session, te
 		container.Resources = template.Spec.DefaultResources
 	}
 
+	// Build pod spec
+	podSpec := corev1.PodSpec{
+		Containers: []corev1.Container{container},
+	}
+
+	// Add user home volume if persistent home is enabled
+	if session.Spec.PersistentHome {
+		pvcName := fmt.Sprintf("home-%s", session.Spec.User)
+
+		// Add volume mount to container
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      "user-home",
+			MountPath: "/config",
+		})
+
+		// Add volume to pod spec
+		podSpec.Volumes = []corev1.Volume{
+			{
+				Name: "user-home",
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: pvcName,
+					},
+				},
+			},
+		}
+	}
+
+	// Update pod spec with modified container
+	podSpec.Containers[0] = container
+
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -220,14 +289,85 @@ func (r *SessionReconciler) createDeployment(session *streamv1alpha1.Session, te
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
 				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{container},
-				},
+				Spec: podSpec,
 			},
 		},
 	}
 
 	return deployment
+}
+
+func (r *SessionReconciler) createService(session *streamv1alpha1.Session, template *streamv1alpha1.Template) *corev1.Service {
+	deploymentName := fmt.Sprintf("ss-%s-%s", session.Spec.User, session.Spec.Template)
+	serviceName := fmt.Sprintf("%s-svc", deploymentName)
+	labels := map[string]string{
+		"app":      "streamspace-session",
+		"user":     session.Spec.User,
+		"template": session.Spec.Template,
+		"session":  session.Name,
+	}
+
+	// Determine VNC port
+	vncPort := int32(5900)
+	if template.Spec.VNC.Port != 0 {
+		vncPort = int32(template.Spec.VNC.Port)
+	}
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: session.Namespace,
+			Labels:    labels,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(session, streamv1alpha1.GroupVersion.WithKind("Session")),
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: labels,
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "vnc",
+					Port:     vncPort,
+					Protocol: corev1.ProtocolTCP,
+				},
+			},
+			Type: corev1.ServiceTypeClusterIP,
+		},
+	}
+
+	return service
+}
+
+func (r *SessionReconciler) createUserPVC(session *streamv1alpha1.Session) *corev1.PersistentVolumeClaim {
+	pvcName := fmt.Sprintf("home-%s", session.Spec.User)
+	labels := map[string]string{
+		"app":  "streamspace-user-home",
+		"user": session.Spec.User,
+	}
+
+	// Default home directory size
+	storageSize := "50Gi"
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName,
+			Namespace: session.Namespace,
+			Labels:    labels,
+			// Note: No owner reference - PVC persists across sessions
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				corev1.ReadWriteMany, // NFS support
+			},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(storageSize),
+				},
+			},
+		},
+	}
+
+	return pvc
 }
 
 func (r *SessionReconciler) getTemplate(ctx context.Context, templateName, namespace string) (*streamv1alpha1.Template, error) {
