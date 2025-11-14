@@ -122,6 +122,7 @@ export interface User {
 
 export interface UserQuota {
   userId: string;
+  username?: string;  // Add username for admin quota endpoints
   maxSessions: number;
   maxCpu: string;
   maxMemory: string;
@@ -130,6 +131,19 @@ export interface UserQuota {
   usedCpu: string;
   usedMemory: string;
   usedStorage: string;
+  // Alternative nested format for compatibility
+  limits?: {
+    maxSessions: number;
+    maxCpu: string;
+    maxMemory: string;
+    maxStorage: string;
+  };
+  used?: {
+    sessions: number;
+    cpu: string;
+    memory: string;
+    storage: string;
+  };
 }
 
 export interface CreateUserRequest {
@@ -139,6 +153,7 @@ export interface CreateUserRequest {
   role?: string;
   provider?: string;
   password?: string;
+  active?: boolean;
 }
 
 export interface UpdateUserRequest {
@@ -154,6 +169,7 @@ export interface SetQuotaRequest {
   maxCpu?: string;
   maxMemory?: string;
   maxStorage?: string;
+  username?: string;  // For admin quota endpoints
 }
 
 // Group Management Types
@@ -578,22 +594,22 @@ class APIClient {
   // User Quota Management (Admin)
   // ============================================================================
 
-  async listUserQuotas(): Promise<UserQuota[]> {
+  async listAllUserQuotas(): Promise<UserQuota[]> {
     const response = await this.client.get<{ quotas: UserQuota[] }>('/admin/quotas');
     return response.data.quotas;
   }
 
-  async getUserQuota(username: string): Promise<UserQuota> {
+  async getAdminUserQuota(username: string): Promise<UserQuota> {
     const response = await this.client.get<UserQuota>(`/admin/quotas/${username}`);
     return response.data;
   }
 
-  async setUserQuota(data: SetQuotaRequest): Promise<UserQuota> {
+  async setAdminUserQuota(data: SetQuotaRequest): Promise<UserQuota> {
     const response = await this.client.put<UserQuota>('/admin/quotas', data);
     return response.data;
   }
 
-  async deleteUserQuota(username: string): Promise<void> {
+  async deleteAdminUserQuota(username: string): Promise<void> {
     await this.client.delete(`/admin/quotas/${username}`);
   }
 

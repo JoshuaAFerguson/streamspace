@@ -9,7 +9,6 @@ import {
   Grid,
   Chip,
   IconButton,
-  CircularProgress,
   Alert,
   Dialog,
   DialogTitle,
@@ -26,18 +25,17 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { useUpdateSessionState, useDeleteSession, useConnectSession } from '../hooks/useApi';
+import { useUpdateSessionState, useDeleteSession } from '../hooks/useApi';
 import { useSessionsWebSocket } from '../hooks/useWebSocket';
 import { useUserStore } from '../store/userStore';
 import { Session } from '../lib/api';
 
 export default function Sessions() {
   const navigate = useNavigate();
-  const username = useUserStore((state) => state.username);
+  const username = useUserStore((state) => state.user?.username);
   const [sessions, setSessions] = useState<Session[]>([]);
   const updateSessionState = useUpdateSessionState();
   const deleteSession = useDeleteSession();
-  const connectSession = useConnectSession();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
 

@@ -15,7 +15,7 @@ import { useUserStore } from '../store/userStore';
 import type { Session } from '../lib/api';
 
 export default function Dashboard() {
-  const username = useUserStore((state) => state.username);
+  const username = useUserStore((state) => state.user?.username);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [metrics, setMetrics] = useState<any>(null);
 

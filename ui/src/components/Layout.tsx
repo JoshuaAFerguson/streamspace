@@ -42,7 +42,9 @@ export default function Layout({ children }: LayoutProps) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { username, role, clearUser } = useUserStore();
+  const { user, clearAuth } = useUserStore();
+  const username = user?.username;
+  const role = user?.role;
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -57,7 +59,7 @@ export default function Layout({ children }: LayoutProps) {
   };
 
   const handleLogout = () => {
-    clearUser();
+    clearAuth();
     navigate('/login');
   };
 

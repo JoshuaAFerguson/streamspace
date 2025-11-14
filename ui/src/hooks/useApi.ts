@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api, { CreateSessionRequest } from '@/lib/api';
+import api, { CreateSessionRequest } from '../lib/api';
 
 // ============================================================================
 // Session Hooks

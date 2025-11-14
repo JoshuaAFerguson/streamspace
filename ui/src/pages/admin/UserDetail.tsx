@@ -27,7 +27,7 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
+  
   Typography,
 } from '@mui/material';
 import {
@@ -39,7 +39,7 @@ import {
   Groups as GroupsIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, type User, type UserQuota, type UpdateUserRequest, type SetQuotaRequest } from '../../lib/api';
+import { api, type UpdateUserRequest, type SetQuotaRequest } from '../../lib/api';
 
 export default function UserDetail() {
   const { userId } = useParams<{ userId: string }>();

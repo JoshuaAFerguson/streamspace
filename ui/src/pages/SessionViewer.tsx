@@ -29,7 +29,7 @@ import { useUserStore } from '../store/userStore';
 export default function SessionViewer() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
-  const username = useUserStore((state) => state.username);
+  const username = useUserStore((state) => state.user?.username);
 
   const [session, setSession] = useState<any>(null);
   const [connectionId, setConnectionId] = useState<string | null>(null);

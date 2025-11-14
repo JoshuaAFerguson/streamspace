@@ -81,7 +81,7 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
 
   // Real-time metrics updates
-  const metricsWs = useMetricsWebSocket((updatedMetrics) => {
+  useMetricsWebSocket((updatedMetrics) => {
     if (updatedMetrics.cluster) {
       setMetrics(updatedMetrics.cluster);
     }

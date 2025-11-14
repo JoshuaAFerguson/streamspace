@@ -42,12 +42,9 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   api,
-  type Group,
-  type GroupQuota,
   type UpdateGroupRequest,
   type SetQuotaRequest,
   type AddGroupMemberRequest,
-  type User,
 } from '../../lib/api';
 
 export default function GroupDetail() {
@@ -209,7 +206,7 @@ export default function GroupDetail() {
 
   // Filter out users who are already members
   const availableUsers = allUsers.filter(
-    (user) => !membersData?.members.some((m) => m.userId === user.id)
+    (user) => !membersData?.members.some((m) => m.user.id === user.id)
   );
 
   if (isLoading || !group) {
@@ -501,9 +498,9 @@ export default function GroupDetail() {
                     </TableHead>
                     <TableBody>
                       {membersData.members.map((member) => (
-                        <TableRow key={member.userId} hover>
-                          <TableCell>{member.username}</TableCell>
-                          <TableCell>{member.email}</TableCell>
+                        <TableRow key={member.user.id} hover>
+                          <TableCell>{member.user.username}</TableCell>
+                          <TableCell>{member.user.email}</TableCell>
                           <TableCell>
                             <Chip label={member.role.toUpperCase()} size="small" variant="outlined" />
                           </TableCell>
@@ -513,7 +510,7 @@ export default function GroupDetail() {
                               <IconButton
                                 size="small"
                                 color="error"
-                                onClick={() => handleRemoveMemberClick(member.userId)}
+                                onClick={() => handleRemoveMemberClick(member.user.id)}
                               >
                                 <PersonRemoveIcon fontSize="small" />
                               </IconButton>
