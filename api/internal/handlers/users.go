@@ -585,14 +585,3 @@ func (h *UserHandler) DeleteAdminUserQuota(c *gin.Context) {
 		Message: fmt.Sprintf("Quota deleted for user %s", username),
 	})
 }
-
-// ErrorResponse represents an error response
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
-}
-
-// SuccessResponse represents a success response
-type SuccessResponse struct {
-	Message string `json:"message"`
-}
