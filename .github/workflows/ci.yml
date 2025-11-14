@@ -32,6 +32,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Download Controller dependencies
+        working-directory: ./controller
+        run: |
+          go mod tidy
+          go mod download
+
       - name: Lint Controller
         working-directory: ./controller
         run: |
@@ -40,6 +46,12 @@ jobs:
           # Install golangci-lint
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
           golangci-lint run
+
+      - name: Download API dependencies
+        working-directory: ./api
+        run: |
+          go mod tidy
+          go mod download
 
       - name: Lint API
         working-directory: ./api
@@ -72,13 +84,15 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('controller/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('controller/go.sum', 'controller/go.mod') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
       - name: Download dependencies
         working-directory: ./controller
-        run: go mod download
+        run: |
+          go mod download
+          go mod tidy
 
       - name: Run tests
         working-directory: ./controller
@@ -126,13 +140,15 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('api/go.sum', 'api/go.mod') }}
           restore-keys: |
             ${{ runner.os }}-go-
 
       - name: Download dependencies
         working-directory: ./api
-        run: go mod download
+        run: |
+          go mod tidy
+          go mod download
 
       - name: Run tests
         working-directory: ./api
@@ -207,11 +223,23 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Download Controller dependencies
+        working-directory: ./controller
+        run: |
+          go mod tidy
+          go mod download
+
       - name: Build Controller
         working-directory: ./controller
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o bin/manager cmd/main.go
           echo "Controller binary size: $(ls -lh bin/manager | awk '{print $5}')"
+
+      - name: Download API dependencies
+        working-directory: ./api
+        run: |
+          go mod tidy
+          go mod download
 
       - name: Build API
         working-directory: ./api

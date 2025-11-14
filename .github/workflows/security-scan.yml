@@ -87,6 +87,12 @@ jobs:
         with:
           go-version: '1.21'
 
+      - name: Download dependencies
+        run: |
+          cd ${{ matrix.component }}
+          go mod tidy
+          go mod download
+
       - name: Run govulncheck
         run: |
           cd ${{ matrix.component }}
