@@ -23,6 +23,7 @@ import {
   Share as ShareIcon,
   Apps as AppsIcon,
   Folder as FolderIcon,
+  Extension as ExtensionIcon,
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   AdminPanelSettings as AdminIcon,
@@ -69,6 +70,8 @@ export default function Layout({ children }: LayoutProps) {
     { text: 'My Sessions', icon: <ComputerIcon />, path: '/sessions' },
     { text: 'Shared with Me', icon: <ShareIcon />, path: '/shared-sessions' },
     { text: 'Template Catalog', icon: <AppsIcon />, path: '/catalog' },
+    { text: 'Plugin Catalog', icon: <ExtensionIcon />, path: '/plugins/catalog' },
+    { text: 'My Plugins', icon: <ExtensionIcon />, path: '/plugins/installed' },
     { text: 'Repositories', icon: <FolderIcon />, path: '/repositories' },
   ];
 
@@ -76,6 +79,7 @@ export default function Layout({ children }: LayoutProps) {
     { text: 'Admin Dashboard', icon: <AdminIcon />, path: '/admin/dashboard' },
     { text: 'Cluster Nodes', icon: <StorageIcon />, path: '/admin/nodes' },
     { text: 'User Quotas', icon: <PeopleIcon />, path: '/admin/quotas' },
+    { text: 'Plugin Management', icon: <ExtensionIcon />, path: '/admin/plugins' },
   ];
 
   const drawer = (

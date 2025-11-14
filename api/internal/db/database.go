@@ -416,7 +416,7 @@ func (d *Database) Migrate() error {
 		// Catalog plugins (available plugins from repositories)
 		`CREATE TABLE IF NOT EXISTS catalog_plugins (
 			id SERIAL PRIMARY KEY,
-			repository_id INT REFERENCES catalog_repositories(id) ON DELETE CASCADE,
+			repository_id INT REFERENCES repositories(id) ON DELETE CASCADE,
 			name VARCHAR(255) NOT NULL,
 			version VARCHAR(50) NOT NULL,
 			display_name VARCHAR(255),

@@ -132,6 +132,100 @@ export interface Repository {
   updatedAt: string;
 }
 
+// Plugin System Types
+export interface PluginManifest {
+  name: string;
+  version: string;
+  displayName: string;
+  description: string;
+  author: string;
+  type: string;
+  category?: string;
+  tags?: string[];
+  icon?: string;
+  requirements?: PluginRequirements;
+  entrypoints?: PluginEntrypoints;
+  configSchema?: any;
+  defaultConfig?: any;
+  permissions?: string[];
+  dependencies?: Record<string, string>;
+}
+
+export interface PluginRequirements {
+  streamspaceVersion?: string;
+  dependencies?: Record<string, string>;
+}
+
+export interface PluginEntrypoints {
+  main?: string;
+  ui?: string;
+  api?: string;
+  webhook?: string;
+  cli?: string;
+}
+
+export interface CatalogPlugin {
+  id: number;
+  repositoryId: number;
+  name: string;
+  version: string;
+  displayName: string;
+  description: string;
+  category: string;
+  pluginType: 'extension' | 'webhook' | 'api' | 'ui' | 'theme';
+  iconUrl?: string;
+  manifest: PluginManifest;
+  tags: string[];
+  installCount: number;
+  avgRating: number;
+  ratingCount: number;
+  repository: {
+    name: string;
+    url: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InstalledPlugin {
+  id: number;
+  catalogPluginId?: number;
+  name: string;
+  version: string;
+  enabled: boolean;
+  config?: any;
+  installedBy: string;
+  installedAt: string;
+  updatedAt: string;
+  displayName?: string;
+  description?: string;
+  pluginType?: string;
+  iconUrl?: string;
+  manifest?: PluginManifest;
+}
+
+export interface PluginFilters {
+  search?: string;
+  category?: string;
+  pluginType?: 'extension' | 'webhook' | 'api' | 'ui' | 'theme';
+  tag?: string;
+  sort?: 'popular' | 'rating' | 'recent' | 'installs';
+  page?: number;
+  limit?: number;
+}
+
+export interface PluginRating {
+  id: number;
+  pluginId: number;
+  userId: string;
+  username: string;
+  fullName: string;
+  rating: number;
+  review?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CreateSessionRequest {
   user: string;
   template: string;
@@ -597,6 +691,72 @@ class APIClient {
   }> {
     const response = await this.client.get(`/catalog/repositories/${id}/stats`);
     return response.data;
+  }
+
+  // ============================================================================
+  // Plugin Management
+  // ============================================================================
+
+  // Plugin Catalog
+  async browsePlugins(filters?: PluginFilters): Promise<{ plugins: CatalogPlugin[]; total: number }> {
+    const params: Record<string, any> = {};
+    if (filters?.search) params.search = filters.search;
+    if (filters?.category) params.category = filters.category;
+    if (filters?.pluginType) params.type = filters.pluginType;
+    if (filters?.tag) params.tag = filters.tag;
+    if (filters?.sort) params.sort = filters.sort;
+    if (filters?.page) params.page = filters.page;
+    if (filters?.limit) params.limit = filters.limit;
+
+    const response = await this.client.get<{ plugins: CatalogPlugin[]; total: number }>('/plugins/catalog', { params });
+    return response.data;
+  }
+
+  async getPluginDetails(id: number): Promise<CatalogPlugin> {
+    const response = await this.client.get<CatalogPlugin>(`/plugins/catalog/${id}`);
+    return response.data;
+  }
+
+  async ratePlugin(id: number, rating: number, review?: string): Promise<void> {
+    await this.client.post(`/plugins/catalog/${id}/rate`, { rating, review });
+  }
+
+  async getPluginRatings(id: number): Promise<PluginRating[]> {
+    const response = await this.client.get<{ ratings: PluginRating[] }>(`/plugins/catalog/${id}/ratings`);
+    return response.data.ratings;
+  }
+
+  async installPlugin(id: number, config?: any): Promise<{ pluginId: number; message: string }> {
+    const response = await this.client.post(`/plugins/catalog/${id}/install`, { config });
+    return response.data;
+  }
+
+  // Installed Plugins
+  async listInstalledPlugins(enabledOnly?: boolean): Promise<InstalledPlugin[]> {
+    const params = enabledOnly ? { enabled: 'true' } : {};
+    const response = await this.client.get<{ plugins: InstalledPlugin[] }>('/plugins', { params });
+    return response.data.plugins;
+  }
+
+  async getInstalledPlugin(id: number): Promise<InstalledPlugin> {
+    const response = await this.client.get<InstalledPlugin>(`/plugins/${id}`);
+    return response.data;
+  }
+
+  async updatePluginConfig(id: number, config: any): Promise<void> {
+    await this.client.patch(`/plugins/${id}`, { config });
+  }
+
+  async uninstallPlugin(id: number): Promise<void> {
+    await this.client.delete(`/plugins/${id}`);
+  }
+
+  async enablePlugin(id: number): Promise<void> {
+    await this.client.post(`/plugins/${id}/enable`);
+  }
+
+  async disablePlugin(id: number): Promise<void> {
+    await this.client.post(`/plugins/${id}/disable`);
   }
 
   // ============================================================================
