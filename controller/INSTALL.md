@@ -96,8 +96,26 @@ kubectl logs -n streamspace deployment/streamspace-controller
 
 ## Installing Sample Templates
 
-Deploy the Firefox template to get started:
+StreamSpace includes 6 pre-built application templates:
 
+| Template | Description | Category | Base Image |
+|----------|-------------|----------|------------|
+| firefox-browser | Mozilla Firefox | Web Browsers | lscr.io/linuxserver/firefox |
+| chrome-browser | Google Chrome | Web Browsers | lscr.io/linuxserver/chromium |
+| vscode | Visual Studio Code | Development | lscr.io/linuxserver/code-server |
+| libreoffice | LibreOffice Suite | Productivity | lscr.io/linuxserver/libreoffice |
+| gimp | GIMP Image Editor | Design | lscr.io/linuxserver/gimp |
+| ubuntu-desktop | Full Ubuntu Desktop | Desktop Environments | lscr.io/linuxserver/webtop |
+
+**Install all templates**:
+```bash
+kubectl apply -f config/samples/template_*.yaml
+
+# Or use kustomize (automatically includes all templates)
+kubectl apply -k config/default/
+```
+
+**Install specific template**:
 ```bash
 kubectl apply -f config/samples/template_firefox.yaml
 
@@ -135,6 +153,51 @@ kubectl describe session testuser-firefox -n streamspace
 
 # View pod logs
 kubectl logs -n streamspace -l session=testuser-firefox
+```
+
+## Using Helper Scripts
+
+StreamSpace includes helper scripts for common operations. See [scripts/README.md](scripts/README.md) for full documentation.
+
+### Create a Session
+
+```bash
+# Create Firefox session for user Alice
+./scripts/create-session.sh alice firefox-browser alice-firefox
+
+# Output shows:
+# ✓ Session created
+# ✓ Session is running
+# 🌐 Access your session at: https://alice-firefox.streamspace.local
+```
+
+### List Sessions
+
+```bash
+./scripts/list-sessions.sh
+
+# Output:
+# NAME            USER   TEMPLATE         STATE     PHASE     URL
+# alice-firefox   alice  firefox-browser  running   Running   https://alice-firefox.streamspace.local
+```
+
+### Hibernate/Wake Sessions
+
+```bash
+# Hibernate to save resources
+./scripts/hibernate-session.sh alice-firefox
+
+# Wake when needed
+./scripts/wake-session.sh alice-firefox
+```
+
+### View Metrics
+
+```bash
+./scripts/get-metrics.sh
+
+# Opens port-forward and displays StreamSpace metrics
+# Press Ctrl+C to exit
 ```
 
 ## Configuration

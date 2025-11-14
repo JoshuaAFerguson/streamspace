@@ -7,9 +7,18 @@ resources:
 - ../crd/bases/stream.streamspace.io_sessions.yaml
 - ../crd/bases/stream.streamspace.io_templates.yaml
 - ../rbac/rbac.yaml
+- ../manager/configmap.yaml
 - ../manager/deployment.yaml
 - ../manager/service.yaml
 - namespace.yaml
+
+# Optional: Include sample templates (comment out if not needed)
+- ../samples/template_firefox.yaml
+- ../samples/template_chrome.yaml
+- ../samples/template_vscode.yaml
+- ../samples/template_libreoffice.yaml
+- ../samples/template_gimp.yaml
+- ../samples/template_ubuntu-desktop.yaml
 
 # Add common labels to all resources
 commonLabels:
