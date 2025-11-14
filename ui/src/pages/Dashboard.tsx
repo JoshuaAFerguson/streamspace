@@ -1,20 +1,40 @@
+import { useState } from 'react';
 import { Grid, Paper, Typography, Box, Card, CardContent, Chip } from '@mui/material';
 import {
   Computer as ComputerIcon,
   Apps as AppsIcon,
   Folder as FolderIcon,
   Timeline as TimelineIcon,
+  SignalWifiStatusbar4Bar as ConnectedIcon,
+  SignalWifiStatusbarConnectedNoInternet4 as DisconnectedIcon,
 } from '@mui/icons-material';
 import Layout from '../components/Layout';
-import { useSessions, useTemplates, useRepositories, useMetrics } from '../hooks/useApi';
+import { useTemplates, useRepositories } from '../hooks/useApi';
+import { useMetricsWebSocket, useSessionsWebSocket } from '../hooks/useWebSocket';
 import { useUserStore } from '../store/userStore';
+import type { Session } from '../lib/api';
 
 export default function Dashboard() {
   const username = useUserStore((state) => state.username);
-  const { data: sessions = [], isLoading: sessionsLoading } = useSessions(username || undefined);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [metrics, setMetrics] = useState<any>(null);
+
   const { data: templates = [], isLoading: templatesLoading } = useTemplates();
   const { data: repositories = [], isLoading: reposLoading } = useRepositories();
-  const { data: metrics } = useMetrics();
+
+  // Real-time sessions updates via WebSocket
+  const sessionsWs = useSessionsWebSocket((updatedSessions) => {
+    // Filter to only show current user's sessions
+    const userSessions = username
+      ? updatedSessions.filter((s: Session) => s.user === username)
+      : updatedSessions;
+    setSessions(userSessions);
+  });
+
+  // Real-time metrics updates via WebSocket
+  const metricsWs = useMetricsWebSocket((updatedMetrics) => {
+    setMetrics(updatedMetrics);
+  });
 
   const stats = [
     {
@@ -22,7 +42,7 @@ export default function Dashboard() {
       value: sessions.length,
       icon: <ComputerIcon sx={{ fontSize: 40 }} />,
       color: '#3f51b5',
-      loading: sessionsLoading,
+      loading: false,
     },
     {
       title: 'Available Templates',
@@ -43,7 +63,7 @@ export default function Dashboard() {
       value: metrics?.activeConnections || 0,
       icon: <TimelineIcon sx={{ fontSize: 40 }} />,
       color: '#ff9800',
-      loading: false,
+      loading: !metricsWs.isConnected,
     },
   ];
 
@@ -53,9 +73,25 @@ export default function Dashboard() {
   return (
     <Layout>
       <Box>
-        <Typography variant="h4" sx={{ mb: 3, fontWeight: 700 }}>
-          Welcome back, {username}!
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4" sx={{ fontWeight: 700 }}>
+            Welcome back, {username}!
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <Chip
+              icon={sessionsWs.isConnected ? <ConnectedIcon /> : <DisconnectedIcon />}
+              label={sessionsWs.isConnected ? 'Live Updates' : 'Reconnecting...'}
+              color={sessionsWs.isConnected ? 'success' : 'warning'}
+              size="small"
+              variant="outlined"
+            />
+            {sessionsWs.reconnectAttempts > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                Attempt {sessionsWs.reconnectAttempts}
+              </Typography>
+            )}
+          </Box>
+        </Box>
 
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {stats.map((stat) => (

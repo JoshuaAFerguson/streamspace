@@ -21,21 +21,32 @@ import {
   Pause as PauseIcon,
   Delete as DeleteIcon,
   OpenInNew as OpenIcon,
-  Refresh as RefreshIcon,
+  SignalWifiStatusbar4Bar as ConnectedIcon,
+  SignalWifiStatusbarConnectedNoInternet4 as DisconnectedIcon,
 } from '@mui/icons-material';
 import Layout from '../components/Layout';
-import { useSessions, useUpdateSessionState, useDeleteSession, useConnectSession } from '../hooks/useApi';
+import { useUpdateSessionState, useDeleteSession, useConnectSession } from '../hooks/useApi';
+import { useSessionsWebSocket } from '../hooks/useWebSocket';
 import { useUserStore } from '../store/userStore';
 import { Session } from '../lib/api';
 
 export default function Sessions() {
   const username = useUserStore((state) => state.username);
-  const { data: sessions = [], isLoading, refetch } = useSessions(username || undefined);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const updateSessionState = useUpdateSessionState();
   const deleteSession = useDeleteSession();
   const connectSession = useConnectSession();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+
+  // Real-time sessions updates via WebSocket
+  const sessionsWs = useSessionsWebSocket((updatedSessions) => {
+    // Filter to only show current user's sessions
+    const userSessions = username
+      ? updatedSessions.filter((s: Session) => s.user === username)
+      : updatedSessions;
+    setSessions(userSessions);
+  });
 
   const handleStateChange = (id: string, state: 'running' | 'hibernated') => {
     updateSessionState.mutate({ id, state });
@@ -99,16 +110,6 @@ export default function Sessions() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <Layout>
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
-          <CircularProgress />
-        </Box>
-      </Layout>
-    );
-  }
-
   return (
     <Layout>
       <Box>
@@ -116,9 +117,20 @@ export default function Sessions() {
           <Typography variant="h4" sx={{ fontWeight: 700 }}>
             My Sessions
           </Typography>
-          <IconButton onClick={() => refetch()} color="primary">
-            <RefreshIcon />
-          </IconButton>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <Chip
+              icon={sessionsWs.isConnected ? <ConnectedIcon /> : <DisconnectedIcon />}
+              label={sessionsWs.isConnected ? 'Live Updates' : 'Reconnecting...'}
+              color={sessionsWs.isConnected ? 'success' : 'warning'}
+              size="small"
+              variant="outlined"
+            />
+            {sessionsWs.reconnectAttempts > 0 && (
+              <Typography variant="caption" color="text.secondary">
+                Attempt {sessionsWs.reconnectAttempts}
+              </Typography>
+            )}
+          </Box>
         </Box>
 
         {sessions.length === 0 ? (
