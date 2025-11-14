@@ -83,6 +83,13 @@ func validateConfig(config Config) error {
 		}
 	}
 
+	// SECURITY: Warn if SSL is disabled (insecure for production)
+	if config.SSLMode == "" || config.SSLMode == "disable" {
+		fmt.Println("WARNING: Database SSL/TLS is DISABLED - This is INSECURE for production!")
+		fmt.Println("         Set DB_SSL_MODE to 'require', 'verify-ca', or 'verify-full'")
+		fmt.Println("         Example: export DB_SSL_MODE=require")
+	}
+
 	return nil
 }
 

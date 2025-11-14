@@ -34,6 +34,7 @@ func main() {
 	dbUser := getEnv("DB_USER", "streamspace")
 	dbPassword := getEnv("DB_PASSWORD", "streamspace")
 	dbName := getEnv("DB_NAME", "streamspace")
+	dbSSLMode := getEnv("DB_SSL_MODE", "disable") // SECURITY: Should be "require" in production
 
 	log.Println("Starting StreamSpace API Server...")
 
@@ -45,6 +46,7 @@ func main() {
 		User:     dbUser,
 		Password: dbPassword,
 		DBName:   dbName,
+		SSLMode:  dbSSLMode,
 	})
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
@@ -147,6 +149,11 @@ func main() {
 
 	// SECURITY: Add security headers (HSTS, CSP, X-Frame-Options, etc.)
 	router.Use(middleware.SecurityHeaders())
+
+	// SECURITY: Add input validation and sanitization
+	inputValidator := middleware.NewInputValidator()
+	router.Use(inputValidator.Middleware())
+	router.Use(inputValidator.SanitizeJSONMiddleware())
 
 	// SECURITY: Add request size limits to prevent large payload attacks
 	// Maximum 10MB for general requests
