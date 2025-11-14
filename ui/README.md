@@ -6,7 +6,11 @@ React TypeScript frontend for StreamSpace - Stream any containerized application
 
 ### ✅ Implemented
 
-- **User Authentication** (Demo mode - username only)
+- **User Authentication**
+  - JWT-based authentication
+  - Demo mode support
+  - SAML/OIDC integration support
+  - Token refresh and session management
 - **Dashboard**
   - Session statistics
   - Active connections count
@@ -28,6 +32,13 @@ React TypeScript frontend for StreamSpace - Stream any containerized application
   - Sync repositories (individual or all)
   - Delete repositories
   - Repository status tracking
+- **Admin Panel**
+  - User management (create, edit, delete users)
+  - User quota management (sessions, CPU, memory, storage)
+  - Group management (create, edit, delete groups)
+  - Group member management (add, remove members)
+  - Group quota management
+  - Role-based access control
 
 ## Tech Stack
 
@@ -51,22 +62,36 @@ ui/
 │   ├── hooks/
 │   │   └── useApi.ts          # React Query hooks for API
 │   ├── lib/
-│   │   └── api.ts             # API client (Axios)
+│   │   └── api.ts             # API client with JWT auth
 │   ├── pages/
-│   │   ├── Login.tsx          # Login page (demo mode)
+│   │   ├── Login.tsx          # Login page with JWT auth
 │   │   ├── Dashboard.tsx      # Overview dashboard
 │   │   ├── Sessions.tsx       # Session management
+│   │   ├── SessionViewer.tsx  # Session viewer
 │   │   ├── Catalog.tsx        # Template catalog browser
-│   │   └── Repositories.tsx   # Repository management
+│   │   ├── Repositories.tsx   # Repository management
+│   │   └── admin/             # Admin pages (protected)
+│   │       ├── Dashboard.tsx  # Admin dashboard
+│   │       ├── Nodes.tsx      # Node management
+│   │       ├── Quotas.tsx     # Quota management
+│   │       ├── Users.tsx      # User list and management
+│   │       ├── UserDetail.tsx # User detail and edit
+│   │       ├── CreateUser.tsx # Create new user
+│   │       ├── Groups.tsx     # Group list and management
+│   │       ├── GroupDetail.tsx # Group detail and members
+│   │       └── CreateGroup.tsx # Create new group
 │   ├── store/
-│   │   └── userStore.ts       # Zustand user state
-│   ├── App.tsx                # Main app component with routing
+│   │   └── userStore.ts       # Zustand auth state with JWT
+│   ├── App.tsx                # Main app with protected routes
 │   ├── main.tsx               # Entry point
 │   └── index.css              # Global styles
 ├── index.html                 # HTML template
 ├── package.json               # Dependencies
 ├── tsconfig.json              # TypeScript configuration
 ├── vite.config.ts             # Vite configuration
+├── Dockerfile                 # Multi-stage production build
+├── nginx.conf                 # Nginx configuration
+├── .dockerignore              # Docker build exclusions
 └── README.md                  # This file
 ```
 
@@ -136,13 +161,13 @@ server: {
 
 ## Features Overview
 
-### Login (Demo Mode)
+### Login
 
-- Simple username entry
-- No password required (for prototype)
-- Users can enter any username
-- Username "admin" gets admin role
-- TODO: Full OIDC authentication in Phase 2.3
+- JWT-based authentication with username/password
+- Demo mode support for development (no password required)
+- SAML/OIDC SSO integration (configurable via environment)
+- Token storage and automatic refresh
+- Role-based access (user, operator, admin)
 
 ### Dashboard
 
@@ -193,6 +218,25 @@ Features:
   - **Sync All**: Sync all repositories
   - **Delete**: Remove repository
 
+### Admin Panel (Admin users only)
+
+#### User Management
+- List all users with filtering by role, provider, and status
+- Create new users (local, SAML, or OIDC)
+- View and edit user details
+- Manage user quotas (max sessions, CPU, memory, storage)
+- View user's group memberships
+- Delete users
+
+#### Group Management
+- List all groups with filtering by type
+- Create new groups (organization, team, project)
+- View and edit group details
+- Manage group members (add, remove)
+- Set member roles within groups
+- Manage group quotas (shared limits for all members)
+- Delete groups (system groups cannot be deleted)
+
 ## API Integration
 
 All API calls go through `src/lib/api.ts` which provides:
@@ -220,6 +264,35 @@ All API calls go through `src/lib/api.ts` which provides:
 - `syncRepository(id)` - Sync repository
 - `deleteRepository(id)` - Delete repository
 
+### Authentication
+- `login(username, password)` - JWT login
+- `refreshToken(token)` - Refresh JWT token
+- `logout()` - Logout (clear tokens)
+
+### User Management (Admin)
+- `listUsers(role?, provider?, active?)` - List users with filters
+- `getUser(id)` - Get user details
+- `getCurrentUser()` - Get current authenticated user
+- `createUser(data)` - Create new user
+- `updateUser(id, data)` - Update user
+- `deleteUser(id)` - Delete user
+- `getUserQuota(id)` - Get user quota
+- `setUserQuota(id, data)` - Set user quota
+- `getUserGroups(id)` - Get user's groups
+
+### Group Management (Admin)
+- `listGroups(type?, parentId?)` - List groups with filters
+- `getGroup(id)` - Get group details
+- `createGroup(data)` - Create new group
+- `updateGroup(id, data)` - Update group
+- `deleteGroup(id)` - Delete group
+- `getGroupMembers(id)` - Get group members
+- `addGroupMember(id, data)` - Add member to group
+- `removeGroupMember(id, userId)` - Remove member from group
+- `updateMemberRole(id, userId, role)` - Update member's role
+- `getGroupQuota(id)` - Get group quota
+- `setGroupQuota(id, data)` - Set group quota
+
 ### React Query Hooks
 
 All hooks auto-refresh and provide loading/error states:
@@ -235,7 +308,7 @@ createSession.mutate(sessionData);
 
 ## Roadmap
 
-### Phase 2 UI (Current - Complete)
+### Phase 2 UI (Complete)
 - ✅ Login page (demo mode)
 - ✅ Dashboard with stats
 - ✅ Session management
@@ -244,14 +317,21 @@ createSession.mutate(sessionData);
 - ✅ Responsive layout
 - ✅ Dark theme
 
-### Phase 3 (Future)
-- [ ] Full OIDC authentication (Authentik/Keycloak)
-- [ ] User profile and settings
-- [ ] Admin panel (all users, all sessions)
-- [ ] Advanced filtering and search
-- [ ] Session resource customization UI
+### Phase 3 (Complete)
+- ✅ JWT authentication
+- ✅ SAML/OIDC integration support
+- ✅ User management (create, edit, delete)
+- ✅ User quota management
+- ✅ Group management (create, edit, delete)
+- ✅ Group member management
+- ✅ Group quota management
+- ✅ Admin panel with protected routes
+- ✅ Role-based access control
 
 ### Phase 4 (Future)
+- [ ] User profile and settings page
+- [ ] Advanced filtering and search
+- [ ] Session resource customization UI
 - [ ] WebSocket real-time updates
 - [ ] Pod logs viewer
 - [ ] Terminal (exec into containers)

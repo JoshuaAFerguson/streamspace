@@ -41,3 +41,13 @@ coverage/
 *.log
 tmp/
 temp/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml

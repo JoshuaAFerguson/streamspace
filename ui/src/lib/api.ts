@@ -104,30 +104,118 @@ export interface ConnectSessionResponse {
   message: string;
 }
 
-export interface UserQuota {
+// User Management Types
+export interface User {
+  id: string;
   username: string;
-  limits: {
-    maxSessions: number;
-    maxCPU: string;
-    maxMemory: string;
-    maxStorage: string;
-  };
-  used: {
-    sessions: number;
-    cpu: string;
-    memory: string;
-    storage: string;
-  };
+  email: string;
+  fullName: string;
+  role: 'user' | 'operator' | 'admin';
+  provider: 'local' | 'saml' | 'oidc';
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastLogin?: string;
+  quota?: UserQuota;
+  groups?: string[];
+}
+
+export interface UserQuota {
+  userId: string;
+  maxSessions: number;
+  maxCpu: string;
+  maxMemory: string;
+  maxStorage: string;
+  usedSessions: number;
+  usedCpu: string;
+  usedMemory: string;
+  usedStorage: string;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  email: string;
+  fullName: string;
+  role?: string;
+  provider?: string;
+  password?: string;
+}
+
+export interface UpdateUserRequest {
+  fullName?: string;
+  email?: string;
+  role?: string;
+  active?: boolean;
+  password?: string;
+}
+
+export interface SetQuotaRequest {
+  maxSessions?: number;
+  maxCpu?: string;
+  maxMemory?: string;
+  maxStorage?: string;
+}
+
+// Group Management Types
+export interface Group {
+  id: string;
+  name: string;
+  displayName: string;
+  description?: string;
+  type: string;
+  parentId?: string;
+  memberCount?: number;
+  quota?: GroupQuota;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface SetQuotaRequest {
-  username: string;
-  maxSessions?: number;
-  maxCPU?: string;
-  maxMemory?: string;
-  maxStorage?: string;
+export interface GroupQuota {
+  groupId: string;
+  maxSessions: number;
+  maxCpu: string;
+  maxMemory: string;
+  maxStorage: string;
+  usedSessions: number;
+  usedCpu: string;
+  usedMemory: string;
+  usedStorage: string;
+}
+
+export interface GroupMember {
+  user: User;
+  role: string;
+  joinedAt: string;
+}
+
+export interface CreateGroupRequest {
+  name: string;
+  displayName: string;
+  description?: string;
+  type?: string;
+  parentId?: string;
+}
+
+export interface UpdateGroupRequest {
+  displayName?: string;
+  description?: string;
+  type?: string;
+}
+
+export interface AddGroupMemberRequest {
+  userId: string;
+  role?: string;
+}
+
+// Authentication Types
+export interface LoginResponse {
+  token: string;
+  expiresAt: string;
+  user: User;
+}
+
+export interface RefreshTokenRequest {
+  token: string;
 }
 
 class APIClient {
@@ -302,22 +390,13 @@ class APIClient {
   // Authentication
   // ============================================================================
 
-  async login(username: string, password: string): Promise<{ token: string; user: any }> {
-    const response = await this.client.post('/auth/login', { username, password });
+  async login(username: string, password: string): Promise<LoginResponse> {
+    const response = await this.client.post<LoginResponse>('/auth/login', { username, password });
     return response.data;
   }
 
-  async samlLogin(): Promise<{ redirectUrl: string }> {
-    const response = await this.client.get('/saml/login');
-    return response.data;
-  }
-
-  async samlLogout(): Promise<void> {
-    await this.client.post('/saml/logout');
-  }
-
-  async getCurrentUser(): Promise<any> {
-    const response = await this.client.get('/auth/me');
+  async refreshToken(token: string): Promise<LoginResponse> {
+    const response = await this.client.post<LoginResponse>('/auth/refresh', { token });
     return response.data;
   }
 
@@ -325,6 +404,127 @@ class APIClient {
     await this.client.post('/auth/logout');
     localStorage.removeItem('streamspace_token');
     localStorage.removeItem('streamspace_user');
+  }
+
+  async samlLogin(): Promise<{ redirectUrl: string }> {
+    const response = await this.client.get('/auth/saml/login');
+    return response.data;
+  }
+
+  async changePassword(oldPassword: string, newPassword: string): Promise<void> {
+    await this.client.post('/auth/change-password', { oldPassword, newPassword });
+  }
+
+  // ============================================================================
+  // User Management
+  // ============================================================================
+
+  async listUsers(role?: string, provider?: string, active?: boolean): Promise<User[]> {
+    const params: Record<string, string> = {};
+    if (role) params.role = role;
+    if (provider) params.provider = provider;
+    if (active !== undefined) params.active = String(active);
+
+    const response = await this.client.get<{ users: User[]; total: number }>('/users', { params });
+    return response.data.users;
+  }
+
+  async getUser(id: string): Promise<User> {
+    const response = await this.client.get<User>(`/users/${id}`);
+    return response.data;
+  }
+
+  async getCurrentUser(): Promise<User> {
+    const response = await this.client.get<User>('/users/me');
+    return response.data;
+  }
+
+  async createUser(data: CreateUserRequest): Promise<User> {
+    const response = await this.client.post<User>('/users', data);
+    return response.data;
+  }
+
+  async updateUser(id: string, data: UpdateUserRequest): Promise<User> {
+    const response = await this.client.patch<User>(`/users/${id}`, data);
+    return response.data;
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await this.client.delete(`/users/${id}`);
+  }
+
+  async getUserQuota(id: string): Promise<UserQuota> {
+    const response = await this.client.get<UserQuota>(`/users/${id}/quota`);
+    return response.data;
+  }
+
+  async setUserQuota(id: string, data: SetQuotaRequest): Promise<UserQuota> {
+    const response = await this.client.put<UserQuota>(`/users/${id}/quota`, data);
+    return response.data;
+  }
+
+  async getUserGroups(id: string): Promise<{ groups: Group[]; total: number }> {
+    const response = await this.client.get<{ groups: Group[]; total: number }>(`/users/${id}/groups`);
+    return response.data;
+  }
+
+  // ============================================================================
+  // Group Management
+  // ============================================================================
+
+  async listGroups(type?: string, parentId?: string): Promise<Group[]> {
+    const params: Record<string, string> = {};
+    if (type) params.type = type;
+    if (parentId) params.parentId = parentId;
+
+    const response = await this.client.get<{ groups: Group[]; total: number }>('/groups', { params });
+    return response.data.groups;
+  }
+
+  async getGroup(id: string): Promise<Group> {
+    const response = await this.client.get<Group>(`/groups/${id}`);
+    return response.data;
+  }
+
+  async createGroup(data: CreateGroupRequest): Promise<Group> {
+    const response = await this.client.post<Group>('/groups', data);
+    return response.data;
+  }
+
+  async updateGroup(id: string, data: UpdateGroupRequest): Promise<Group> {
+    const response = await this.client.patch<Group>(`/groups/${id}`, data);
+    return response.data;
+  }
+
+  async deleteGroup(id: string): Promise<void> {
+    await this.client.delete(`/groups/${id}`);
+  }
+
+  async getGroupMembers(id: string): Promise<{ members: GroupMember[]; total: number }> {
+    const response = await this.client.get<{ members: GroupMember[]; total: number }>(`/groups/${id}/members`);
+    return response.data;
+  }
+
+  async addGroupMember(id: string, data: AddGroupMemberRequest): Promise<void> {
+    await this.client.post(`/groups/${id}/members`, data);
+  }
+
+  async removeGroupMember(id: string, userId: string): Promise<void> {
+    await this.client.delete(`/groups/${id}/members/${userId}`);
+  }
+
+  async updateMemberRole(id: string, userId: string, role: string): Promise<void> {
+    await this.client.patch(`/groups/${id}/members/${userId}`, { role });
+  }
+
+  async getGroupQuota(id: string): Promise<GroupQuota> {
+    const response = await this.client.get<GroupQuota>(`/groups/${id}/quota`);
+    return response.data;
+  }
+
+  async setGroupQuota(id: string, data: SetQuotaRequest): Promise<GroupQuota> {
+    const response = await this.client.put<GroupQuota>(`/groups/${id}/quota`, data);
+    return response.data;
   }
 
   // ============================================================================

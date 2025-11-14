@@ -25,7 +25,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const setUser = useUserStore((state) => state.setUser);
+  const setAuth = useUserStore((state) => state.setAuth);
 
   const handleJWTLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,21 +46,35 @@ export default function Login() {
     try {
       if (AUTH_MODE === 'jwt') {
         // JWT authentication
-        const result = await api.login(username, password);
+        const loginResponse = await api.login(username, password);
 
-        // Store token and user info
-        localStorage.setItem('streamspace_token', result.token);
-        localStorage.setItem('streamspace_user', JSON.stringify(result.user));
+        // Update user store with full auth response
+        setAuth(loginResponse);
 
-        // Update user store
-        const role = result.user.role || (username === 'admin' ? 'admin' : 'user');
-        setUser(username, role);
+        // Store token in localStorage for API client
+        localStorage.setItem('streamspace_token', loginResponse.token);
 
         navigate('/');
       } else {
         // Demo mode for development
-        const role = username === 'admin' ? 'admin' : 'user';
-        setUser(username, role);
+        // Create a mock LoginResponse for demo purposes
+        const demoResponse = {
+          token: 'demo-token',
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+          user: {
+            id: 'demo-id',
+            username: username,
+            email: `${username}@demo.local`,
+            fullName: username,
+            role: (username === 'admin' ? 'admin' : 'user') as 'user' | 'operator' | 'admin',
+            provider: 'local' as const,
+            active: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        setAuth(demoResponse);
+        localStorage.setItem('streamspace_token', demoResponse.token);
         navigate('/');
       }
     } catch (err: any) {

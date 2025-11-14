@@ -15,6 +15,12 @@ import SessionViewer from './pages/SessionViewer';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminNodes from './pages/admin/Nodes';
 import AdminQuotas from './pages/admin/Quotas';
+import Users from './pages/admin/Users';
+import UserDetail from './pages/admin/UserDetail';
+import CreateUser from './pages/admin/CreateUser';
+import Groups from './pages/admin/Groups';
+import GroupDetail from './pages/admin/GroupDetail';
+import CreateGroup from './pages/admin/CreateGroup';
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -70,13 +76,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 // Admin Route wrapper
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useUserStore((state) => state.isAuthenticated);
-  const role = useUserStore((state) => state.role);
+  const user = useUserStore((state) => state.user);
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  if (role !== 'admin') {
+  if (user?.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
 
@@ -160,6 +166,54 @@ function App() {
               element={
                 <AdminRoute>
                   <AdminQuotas />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/users"
+              element={
+                <AdminRoute>
+                  <Users />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/users/create"
+              element={
+                <AdminRoute>
+                  <CreateUser />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/users/:userId"
+              element={
+                <AdminRoute>
+                  <UserDetail />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/groups"
+              element={
+                <AdminRoute>
+                  <Groups />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/groups/create"
+              element={
+                <AdminRoute>
+                  <CreateGroup />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/groups/:groupId"
+              element={
+                <AdminRoute>
+                  <GroupDetail />
                 </AdminRoute>
               }
             />
