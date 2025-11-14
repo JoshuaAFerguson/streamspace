@@ -323,6 +323,61 @@ func (d *Database) Migrate() error {
 			('session.defaultIdleTimeout', '30m', 'session', 'Default idle timeout'),
 			('session.enableAutoHibernation', 'true', 'session', 'Enable auto-hibernation')
 		ON CONFLICT (key) DO NOTHING`,
+
+		// Session shares (collaboration)
+		`CREATE TABLE IF NOT EXISTS session_shares (
+			id VARCHAR(255) PRIMARY KEY,
+			session_id VARCHAR(255) REFERENCES sessions(id) ON DELETE CASCADE,
+			owner_user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			shared_with_user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			permission_level VARCHAR(50) DEFAULT 'view',
+			share_token VARCHAR(255) UNIQUE,
+			expires_at TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			accepted_at TIMESTAMP,
+			revoked_at TIMESTAMP,
+			UNIQUE(session_id, shared_with_user_id)
+		)`,
+
+		// Create indexes for session shares
+		`CREATE INDEX IF NOT EXISTS idx_session_shares_session_id ON session_shares(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_shares_owner ON session_shares(owner_user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_shares_shared_with ON session_shares(shared_with_user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_shares_token ON session_shares(share_token)`,
+
+		// Session share invitations (for email/link based sharing)
+		`CREATE TABLE IF NOT EXISTS session_share_invitations (
+			id VARCHAR(255) PRIMARY KEY,
+			session_id VARCHAR(255) REFERENCES sessions(id) ON DELETE CASCADE,
+			created_by VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			invitation_token VARCHAR(255) UNIQUE NOT NULL,
+			permission_level VARCHAR(50) DEFAULT 'view',
+			max_uses INT DEFAULT 1,
+			use_count INT DEFAULT 0,
+			expires_at TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Create index for invitations
+		`CREATE INDEX IF NOT EXISTS idx_session_share_invitations_session_id ON session_share_invitations(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_share_invitations_token ON session_share_invitations(invitation_token)`,
+
+		// Session collaborators (active participants)
+		`CREATE TABLE IF NOT EXISTS session_collaborators (
+			id VARCHAR(255) PRIMARY KEY,
+			session_id VARCHAR(255) REFERENCES sessions(id) ON DELETE CASCADE,
+			user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			permission_level VARCHAR(50) DEFAULT 'view',
+			joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			is_active BOOLEAN DEFAULT true,
+			UNIQUE(session_id, user_id)
+		)`,
+
+		// Create indexes for collaborators
+		`CREATE INDEX IF NOT EXISTS idx_session_collaborators_session_id ON session_collaborators(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_collaborators_user_id ON session_collaborators(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_session_collaborators_active ON session_collaborators(is_active)`,
 	}
 
 	// Execute migrations
