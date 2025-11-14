@@ -17,11 +17,14 @@ const InvitationAccept = lazy(() => import('./pages/InvitationAccept'));
 const EnhancedCatalog = lazy(() => import('./pages/EnhancedCatalog'));
 const EnhancedRepositories = lazy(() => import('./pages/EnhancedRepositories'));
 const SessionViewer = lazy(() => import('./pages/SessionViewer'));
+const PluginCatalog = lazy(() => import('./pages/PluginCatalog'));
+const InstalledPlugins = lazy(() => import('./pages/InstalledPlugins'));
 
 // Admin Pages (loaded only for admin users)
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
 const AdminNodes = lazy(() => import('./pages/admin/Nodes'));
 const AdminQuotas = lazy(() => import('./pages/admin/Quotas'));
+const AdminPlugins = lazy(() => import('./pages/admin/Plugins'));
 const Users = lazy(() => import('./pages/admin/Users'));
 const UserDetail = lazy(() => import('./pages/admin/UserDetail'));
 const CreateUser = lazy(() => import('./pages/admin/CreateUser'));
@@ -180,6 +183,22 @@ function App() {
               }
             />
             <Route
+              path="/plugins/catalog"
+              element={
+                <ProtectedRoute>
+                  <PluginCatalog />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/plugins/installed"
+              element={
+                <ProtectedRoute>
+                  <InstalledPlugins />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/admin"
               element={
                 <AdminRoute>
@@ -208,6 +227,14 @@ function App() {
               element={
                 <AdminRoute>
                   <AdminQuotas />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/plugins"
+              element={
+                <AdminRoute>
+                  <AdminPlugins />
                 </AdminRoute>
               }
             />
