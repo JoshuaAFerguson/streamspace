@@ -113,9 +113,9 @@ func (t *Tracker) CheckIdleSessions(ctx context.Context, namespace string) ([]*k
 			continue
 		}
 
-		status := t.GetActivityStatus(&session)
+		status := t.GetActivityStatus(session)
 		if status.IsIdle {
-			idleSessions = append(idleSessions, &session)
+			idleSessions = append(idleSessions, session)
 		}
 	}
 

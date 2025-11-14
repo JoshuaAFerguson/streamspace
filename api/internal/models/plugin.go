@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+// Repository represents a plugin repository
+type Repository struct {
+	ID          int       `json:"id"`
+	Name        string    `json:"name"`
+	URL         string    `json:"url"`
+	Type        string    `json:"type"` // git, http
+	Description string    `json:"description,omitempty"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 // CatalogPlugin represents a plugin available in the catalog
 type CatalogPlugin struct {
 	ID             int             `json:"id"`

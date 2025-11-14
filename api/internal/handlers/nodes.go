@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"streamspace/internal/nodes"
+	"github.com/streamspace/streamspace/api/internal/nodes"
 )
 
 // NodeHandler handles node-related API requests
@@ -334,7 +334,7 @@ func (h *NodeHandler) DrainNode(c *gin.Context) {
 	})
 }
 
-// Request/Response types
+// Request types
 
 type LabelRequest struct {
 	Key   string `json:"key" binding:"required"`
@@ -343,13 +343,4 @@ type LabelRequest struct {
 
 type DrainRequest struct {
 	GracePeriodSeconds int64 `json:"grace_period_seconds"`
-}
-
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Message string `json:"message,omitempty"`
-}
-
-type SuccessResponse struct {
-	Message string `json:"message"`
 }

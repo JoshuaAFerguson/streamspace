@@ -30,6 +30,7 @@ type User struct {
 // UserQuota represents resource quotas for a user
 type UserQuota struct {
 	UserID       string    `json:"userId" db:"user_id"`
+	Username     string    `json:"username" db:"username"`
 	MaxSessions  int       `json:"maxSessions" db:"max_sessions"`
 	MaxCPU       string    `json:"maxCpu" db:"max_cpu"`
 	MaxMemory    string    `json:"maxMemory" db:"max_memory"`
