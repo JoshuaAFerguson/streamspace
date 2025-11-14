@@ -57,15 +57,83 @@ func (d *Database) DB() *sql.DB {
 // Migrate runs database migrations
 func (d *Database) Migrate() error {
 	migrations := []string{
-		// Users table
+		// Users table (comprehensive user management)
 		`CREATE TABLE IF NOT EXISTS users (
 			id VARCHAR(255) PRIMARY KEY,
-			email VARCHAR(255) UNIQUE,
-			name VARCHAR(255),
+			username VARCHAR(255) UNIQUE NOT NULL,
+			email VARCHAR(255) UNIQUE NOT NULL,
+			full_name VARCHAR(255),
 			role VARCHAR(50) DEFAULT 'user',
+			provider VARCHAR(50) DEFAULT 'local',
+			active BOOLEAN DEFAULT true,
+			password_hash VARCHAR(255),
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			last_login TIMESTAMP
 		)`,
+
+		// User quotas table
+		`CREATE TABLE IF NOT EXISTS user_quotas (
+			user_id VARCHAR(255) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			max_sessions INT DEFAULT 5,
+			max_cpu VARCHAR(50) DEFAULT '4000m',
+			max_memory VARCHAR(50) DEFAULT '16Gi',
+			max_storage VARCHAR(50) DEFAULT '100Gi',
+			used_sessions INT DEFAULT 0,
+			used_cpu VARCHAR(50) DEFAULT '0',
+			used_memory VARCHAR(50) DEFAULT '0',
+			used_storage VARCHAR(50) DEFAULT '0',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Groups table
+		`CREATE TABLE IF NOT EXISTS groups (
+			id VARCHAR(255) PRIMARY KEY,
+			name VARCHAR(255) UNIQUE NOT NULL,
+			display_name VARCHAR(255),
+			description TEXT,
+			type VARCHAR(50) DEFAULT 'team',
+			parent_id VARCHAR(255) REFERENCES groups(id) ON DELETE CASCADE,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Group quotas table
+		`CREATE TABLE IF NOT EXISTS group_quotas (
+			group_id VARCHAR(255) PRIMARY KEY REFERENCES groups(id) ON DELETE CASCADE,
+			max_sessions INT DEFAULT 20,
+			max_cpu VARCHAR(50) DEFAULT '16000m',
+			max_memory VARCHAR(50) DEFAULT '64Gi',
+			max_storage VARCHAR(50) DEFAULT '500Gi',
+			used_sessions INT DEFAULT 0,
+			used_cpu VARCHAR(50) DEFAULT '0',
+			used_memory VARCHAR(50) DEFAULT '0',
+			used_storage VARCHAR(50) DEFAULT '0',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Group memberships table (many-to-many users <-> groups)
+		`CREATE TABLE IF NOT EXISTS group_memberships (
+			id VARCHAR(255) PRIMARY KEY,
+			user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			group_id VARCHAR(255) REFERENCES groups(id) ON DELETE CASCADE,
+			role VARCHAR(50) DEFAULT 'member',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, group_id)
+		)`,
+
+		// Create indexes for user/group management
+		`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`,
+		`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+		`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`,
+		`CREATE INDEX IF NOT EXISTS idx_users_provider ON users(provider)`,
+		`CREATE INDEX IF NOT EXISTS idx_groups_name ON groups(name)`,
+		`CREATE INDEX IF NOT EXISTS idx_groups_type ON groups(type)`,
+		`CREATE INDEX IF NOT EXISTS idx_groups_parent_id ON groups(parent_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_group_memberships_user_id ON group_memberships(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_group_memberships_group_id ON group_memberships(group_id)`,
 
 		// Sessions table (cache of K8s Sessions)
 		`CREATE TABLE IF NOT EXISTS sessions (
@@ -167,9 +235,14 @@ func (d *Database) Migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id)`,
 
 		// Insert default admin user if not exists
-		`INSERT INTO users (id, email, name, role)
-		VALUES ('admin', 'admin@streamspace.local', 'Administrator', 'admin')
+		`INSERT INTO users (id, username, email, full_name, role, provider, active)
+		VALUES ('admin', 'admin', 'admin@streamspace.local', 'Administrator', 'admin', 'local', true)
 		ON CONFLICT (id) DO NOTHING`,
+
+		// Insert default admin user quota
+		`INSERT INTO user_quotas (user_id, max_sessions, max_cpu, max_memory, max_storage)
+		VALUES ('admin', 100, '64000m', '256Gi', '1Ti')
+		ON CONFLICT (user_id) DO NOTHING`,
 
 		// Insert default configuration values
 		`INSERT INTO configuration (key, value, category, description) VALUES

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/streamspace/streamspace/api/internal/db"
 	"github.com/streamspace/streamspace/api/internal/k8s"
+	"github.com/streamspace/streamspace/api/internal/quota"
 	"github.com/streamspace/streamspace/api/internal/sync"
 	"github.com/streamspace/streamspace/api/internal/tracker"
 	"github.com/streamspace/streamspace/api/internal/websocket"
@@ -18,24 +19,26 @@ import (
 
 // Handler handles all API requests
 type Handler struct {
-	db           *db.Database
-	k8sClient    *k8s.Client
-	connTracker  *tracker.ConnectionTracker
-	syncService  *sync.SyncService
-	wsManager    *websocket.Manager
-	namespace    string
+	db             *db.Database
+	k8sClient      *k8s.Client
+	connTracker    *tracker.ConnectionTracker
+	syncService    *sync.SyncService
+	wsManager      *websocket.Manager
+	quotaEnforcer  *quota.Enforcer
+	namespace      string
 }
 
 // NewHandler creates a new API handler
-func NewHandler(database *db.Database, k8sClient *k8s.Client, connTracker *tracker.ConnectionTracker, syncService *sync.SyncService, wsManager *websocket.Manager) *Handler {
+func NewHandler(database *db.Database, k8sClient *k8s.Client, connTracker *tracker.ConnectionTracker, syncService *sync.SyncService, wsManager *websocket.Manager, quotaEnforcer *quota.Enforcer) *Handler {
 	namespace := "streamspace" // TODO: Make configurable
 	return &Handler{
-		db:          database,
-		k8sClient:   k8sClient,
-		connTracker: connTracker,
-		syncService: syncService,
-		wsManager:   wsManager,
-		namespace:   namespace,
+		db:            database,
+		k8sClient:     k8sClient,
+		connTracker:   connTracker,
+		syncService:   syncService,
+		wsManager:     wsManager,
+		quotaEnforcer: quotaEnforcer,
+		namespace:     namespace,
 	}
 }
 
@@ -110,9 +113,59 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	}
 
 	// Verify template exists
-	_, err := h.k8sClient.GetTemplate(ctx, h.namespace, req.Template)
+	template, err := h.k8sClient.GetTemplate(ctx, h.namespace, req.Template)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Template not found: %s", req.Template)})
+		return
+	}
+
+	// Set default resources from template if not provided
+	memory := "2Gi"
+	cpu := "1000m"
+	if req.Resources != nil {
+		if req.Resources.Memory != "" {
+			memory = req.Resources.Memory
+		}
+		if req.Resources.CPU != "" {
+			cpu = req.Resources.CPU
+		}
+	} else if template.DefaultResources.Memory != "" || template.DefaultResources.CPU != "" {
+		// Use template defaults
+		if template.DefaultResources.Memory != "" {
+			memory = template.DefaultResources.Memory
+		}
+		if template.DefaultResources.CPU != "" {
+			cpu = template.DefaultResources.CPU
+		}
+	}
+
+	// Check user quota
+	quotaReq := &quota.SessionRequest{
+		UserID:  req.User,
+		Memory:  memory,
+		CPU:     cpu,
+		Storage: "50Gi", // Default storage quota check
+	}
+
+	quotaResult, err := h.quotaEnforcer.CheckSessionQuota(ctx, quotaReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to check quota",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if !quotaResult.Allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "Quota exceeded",
+			"message": quotaResult.Reason,
+			"quota": gin.H{
+				"current":   quotaResult.CurrentUsage,
+				"requested": quotaResult.RequestedUsage,
+				"available": quotaResult.AvailableQuota,
+			},
+		})
 		return
 	}
 
@@ -127,10 +180,8 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		State:     "running",
 	}
 
-	if req.Resources != nil {
-		session.Resources.Memory = req.Resources.Memory
-		session.Resources.CPU = req.Resources.CPU
-	}
+	session.Resources.Memory = memory
+	session.Resources.CPU = cpu
 
 	if req.PersistentHome != nil {
 		session.PersistentHome = *req.PersistentHome
@@ -151,6 +202,12 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Update quota usage
+	if err := h.quotaEnforcer.UpdateSessionQuota(ctx, req.User, memory, cpu, "50Gi", true); err != nil {
+		log.Printf("Failed to update quota usage: %v", err)
+		// Don't fail the request, but log the error
 	}
 
 	// Cache in database
@@ -201,10 +258,26 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	ctx := context.Background()
 	sessionID := c.Param("id")
 
+	// Get session info before deletion (for quota tracking)
+	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+		return
+	}
+
 	// Delete from Kubernetes
 	if err := h.k8sClient.DeleteSession(ctx, h.namespace, sessionID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Update quota usage (decrement)
+	if session.Resources.Memory != "" && session.Resources.CPU != "" {
+		if err := h.quotaEnforcer.UpdateSessionQuota(ctx, session.User,
+			session.Resources.Memory, session.Resources.CPU, "50Gi", false); err != nil {
+			log.Printf("Failed to update quota usage on session deletion: %v", err)
+			// Don't fail the request, quota will be cleaned up later
+		}
 	}
 
 	// Delete from database cache

@@ -12,8 +12,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/streamspace/streamspace/api/internal/api"
+	"github.com/streamspace/streamspace/api/internal/auth"
 	"github.com/streamspace/streamspace/api/internal/db"
+	"github.com/streamspace/streamspace/api/internal/handlers"
 	"github.com/streamspace/streamspace/api/internal/k8s"
+	"github.com/streamspace/streamspace/api/internal/quota"
 	"github.com/streamspace/streamspace/api/internal/sync"
 	"github.com/streamspace/streamspace/api/internal/tracker"
 	"github.com/streamspace/streamspace/api/internal/websocket"
@@ -97,11 +100,29 @@ func main() {
 	router.Use(gin.Recovery())
 	router.Use(corsMiddleware())
 
+	// Initialize database repositories
+	userDB := db.NewUserDB(database.DB())
+	groupDB := db.NewGroupDB(database.DB())
+
+	// Initialize quota enforcer
+	quotaEnforcer := quota.NewEnforcer(userDB, groupDB)
+
+	// Initialize JWT manager for authentication
+	jwtConfig := &auth.JWTConfig{
+		SecretKey:     getEnv("JWT_SECRET", "streamspace-secret-change-in-production"),
+		Issuer:        "streamspace-api",
+		TokenDuration: 24 * time.Hour,
+	}
+	jwtManager := auth.NewJWTManager(jwtConfig)
+
 	// Initialize API handlers
-	apiHandler := api.NewHandler(database, k8sClient, connTracker, syncService, wsManager)
+	apiHandler := api.NewHandler(database, k8sClient, connTracker, syncService, wsManager, quotaEnforcer)
+	userHandler := handlers.NewUserHandler(userDB)
+	groupHandler := handlers.NewGroupHandler(groupDB, userDB)
+	authHandler := auth.NewAuthHandler(userDB, jwtManager)
 
 	// Setup routes
-	setupRoutes(router, apiHandler)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, jwtManager, userDB)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -135,14 +156,16 @@ func main() {
 	log.Println("Server stopped")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler) {
-	// Health check
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, jwtManager *auth.JWTManager, userDB *db.UserDB) {
+	// Health check (public)
 	router.GET("/health", h.Health)
 	router.GET("/version", h.Version)
 
 	// API v1
 	v1 := router.Group("/api/v1")
 	{
+		// Authentication routes (public)
+		authHandler.RegisterRoutes(v1)
 		// Sessions
 		sessions := v1.Group("/sessions")
 		{
@@ -198,16 +221,11 @@ func setupRoutes(router *gin.Engine, h *api.Handler) {
 			config.PATCH("", h.UpdateConfig)
 		}
 
-		// Users (if not using OIDC only)
-		users := v1.Group("/users")
-		{
-			users.GET("", h.ListUsers)
-			users.POST("", h.CreateUser)
-			users.GET("/me", h.GetCurrentUser)
-			users.GET("/:id", h.GetUser)
-			users.PATCH("/:id", h.UpdateUser)
-			users.GET("/:id/sessions", h.GetUserSessions)
-		}
+		// User management - using dedicated handler
+		userHandler.RegisterRoutes(v1)
+
+		// Group management - using dedicated handler
+		groupHandler.RegisterRoutes(v1)
 
 		// Metrics
 		v1.GET("/metrics", h.GetMetrics)
