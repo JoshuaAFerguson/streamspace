@@ -207,6 +207,72 @@ func (d *Database) Migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_catalog_templates_category ON catalog_templates(category)`,
 		`CREATE INDEX IF NOT EXISTS idx_catalog_templates_app_type ON catalog_templates(app_type)`,
 
+		// Template versions (track template version history)
+		`CREATE TABLE IF NOT EXISTS template_versions (
+			id SERIAL PRIMARY KEY,
+			template_id INT REFERENCES catalog_templates(id) ON DELETE CASCADE,
+			version VARCHAR(50) NOT NULL,
+			changelog TEXT,
+			manifest JSONB,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(template_id, version)
+		)`,
+
+		// Template ratings (user ratings for templates)
+		`CREATE TABLE IF NOT EXISTS template_ratings (
+			id SERIAL PRIMARY KEY,
+			template_id INT REFERENCES catalog_templates(id) ON DELETE CASCADE,
+			user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			rating INT CHECK (rating >= 1 AND rating <= 5),
+			review TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(template_id, user_id)
+		)`,
+
+		// Create indexes for ratings
+		`CREATE INDEX IF NOT EXISTS idx_template_ratings_template_id ON template_ratings(template_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_template_ratings_user_id ON template_ratings(user_id)`,
+
+		// Template statistics (view and usage tracking)
+		`CREATE TABLE IF NOT EXISTS template_stats (
+			template_id INT PRIMARY KEY REFERENCES catalog_templates(id) ON DELETE CASCADE,
+			view_count INT DEFAULT 0,
+			install_count INT DEFAULT 0,
+			session_count INT DEFAULT 0,
+			avg_rating DECIMAL(3,2) DEFAULT 0.0,
+			rating_count INT DEFAULT 0,
+			last_viewed TIMESTAMP,
+			last_installed TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Featured templates (admin curated highlights)
+		`CREATE TABLE IF NOT EXISTS featured_templates (
+			id SERIAL PRIMARY KEY,
+			template_id INT REFERENCES catalog_templates(id) ON DELETE CASCADE,
+			title VARCHAR(255),
+			description TEXT,
+			display_order INT DEFAULT 0,
+			active BOOLEAN DEFAULT true,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_by VARCHAR(255) REFERENCES users(id)
+		)`,
+
+		// Add featured column to catalog_templates
+		`ALTER TABLE catalog_templates ADD COLUMN IF NOT EXISTS is_featured BOOLEAN DEFAULT false`,
+		`ALTER TABLE catalog_templates ADD COLUMN IF NOT EXISTS version VARCHAR(50) DEFAULT '1.0.0'`,
+		`ALTER TABLE catalog_templates ADD COLUMN IF NOT EXISTS view_count INT DEFAULT 0`,
+		`ALTER TABLE catalog_templates ADD COLUMN IF NOT EXISTS avg_rating DECIMAL(3,2) DEFAULT 0.0`,
+		`ALTER TABLE catalog_templates ADD COLUMN IF NOT EXISTS rating_count INT DEFAULT 0`,
+
+		// Create indexes for featured templates
+		`CREATE INDEX IF NOT EXISTS idx_catalog_templates_featured ON catalog_templates(is_featured)`,
+		`CREATE INDEX IF NOT EXISTS idx_catalog_templates_rating ON catalog_templates(avg_rating DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_catalog_templates_views ON catalog_templates(view_count DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_catalog_templates_installs ON catalog_templates(install_count DESC)`,
+
 		// Configuration table
 		`CREATE TABLE IF NOT EXISTS configuration (
 			key VARCHAR(255) PRIMARY KEY,

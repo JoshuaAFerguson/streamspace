@@ -139,9 +139,10 @@ func main() {
 	groupHandler := handlers.NewGroupHandler(groupDB, userDB)
 	authHandler := auth.NewAuthHandler(userDB, jwtManager)
 	activityHandler := handlers.NewActivityHandler(k8sClient, activityTracker)
+	catalogHandler := handlers.NewCatalogHandler(database)
 
 	// Setup routes
-	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, jwtManager, userDB)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, jwtManager, userDB)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -175,7 +176,7 @@ func main() {
 	log.Println("Server stopped")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, jwtManager *auth.JWTManager, userDB *db.UserDB) {
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, jwtManager *auth.JWTManager, userDB *db.UserDB) {
 	// Health check (public)
 	router.GET("/health", h.Health)
 	router.GET("/version", h.Version)
@@ -250,6 +251,9 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 
 		// Activity tracking - using dedicated handler
 		activityHandler.RegisterRoutes(v1)
+
+		// Enhanced catalog - using dedicated handler
+		catalogHandler.RegisterRoutes(v1)
 
 		// Metrics
 		v1.GET("/metrics", h.GetMetrics)
