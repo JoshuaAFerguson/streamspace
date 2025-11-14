@@ -1,0 +1,318 @@
+# Image Signature Verification Policy for StreamSpace
+# Enforces that all container images must be signed with Cosign
+# Requires Kyverno to be installed in the cluster
+
+---
+# Install Kyverno first:
+# kubectl create -f https://github.com/kyverno/kyverno/releases/download/v1.11.0/install.yaml
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-streamspace-images
+  annotations:
+    policies.kyverno.io/title: Verify StreamSpace Image Signatures
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Verifies that all StreamSpace container images are signed with Cosign
+      using keyless signing (Sigstore). This ensures supply chain integrity
+      and prevents deployment of tampered or unauthorized images.
+spec:
+  validationFailureAction: Enforce  # Change to Audit for testing
+  background: false
+  webhookTimeoutSeconds: 30
+  failurePolicy: Fail
+  rules:
+    - name: verify-streamspace-api-image
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - streamspace
+                - streamspace-*
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/*/streamspace-api*"
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+
+    - name: verify-streamspace-controller-image
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - streamspace
+                - streamspace-*
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/*/streamspace-controller*"
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+
+    - name: verify-streamspace-ui-image
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - streamspace
+                - streamspace-*
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/*/streamspace-ui*"
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+
+---
+# Policy to verify SBOM attestations exist
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-streamspace-sbom-attestation
+  annotations:
+    policies.kyverno.io/title: Verify SBOM Attestations
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Verifies that all StreamSpace images have SBOM attestations
+      to enable vulnerability tracking and license compliance.
+spec:
+  validationFailureAction: Audit  # Use Audit mode for SBOM
+  background: false
+  webhookTimeoutSeconds: 30
+  failurePolicy: Ignore
+  rules:
+    - name: check-sbom-attestation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - streamspace
+                - streamspace-*
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/*/streamspace-*"
+          attestations:
+            - predicateType: https://spdx.dev/Document
+              attestors:
+                - entries:
+                    - keyless:
+                        subject: "https://github.com/*"
+                        issuer: "https://token.actions.githubusercontent.com"
+                        rekor:
+                          url: https://rekor.sigstore.dev
+
+---
+# Policy to block unsigned images in production
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-unsigned-images
+  annotations:
+    policies.kyverno.io/title: Block Unsigned Images
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Blocks deployment of any unsigned container images in the
+      streamspace namespace, except for explicitly allowed images
+      (like base images from trusted registries).
+spec:
+  validationFailureAction: Enforce
+  background: false
+  webhookTimeoutSeconds: 30
+  failurePolicy: Fail
+  rules:
+    - name: require-image-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - streamspace
+      exclude:
+        any:
+          # Allow certain base images without signature verification
+          - resources:
+              selector:
+                matchLabels:
+                  streamspace.io/skip-image-verification: "true"
+      validate:
+        message: >-
+          All container images in streamspace namespace must be signed.
+          Images from ghcr.io/*/streamspace-* must have valid Cosign signatures.
+          If you need to deploy an unsigned image for development, add the label
+          'streamspace.io/skip-image-verification: "true"' to the pod.
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest | ghcr.io/*/streamspace-*"
+
+---
+# PolicyReport dashboard for admins
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: image-verification-dashboard
+  namespace: streamspace
+  labels:
+    app: streamspace
+    component: security
+data:
+  README.md: |
+    # Image Verification Policy Dashboard
+
+    ## Viewing Policy Reports
+
+    View all policy violations:
+    ```bash
+    kubectl get policyreports -n streamspace
+    kubectl get clusterpolicyreports
+    ```
+
+    View specific report details:
+    ```bash
+    kubectl get policyreport <name> -n streamspace -o yaml
+    ```
+
+    ## Common Issues and Fixes
+
+    ### Issue: "image verification failed"
+    **Cause**: Image is not signed or signature is invalid
+    **Fix**: Ensure the image was built through GitHub Actions workflow
+
+    ### Issue: "SBOM attestation not found"
+    **Cause**: SBOM attestation was not generated during build
+    **Fix**: Re-run the image-signing workflow
+
+    ### Issue: "keyless verification failed"
+    **Cause**: Image was not signed via GitHub Actions OIDC
+    **Fix**: Only images built in CI/CD can be deployed to production
+
+    ## Development Bypass (Use Sparingly)
+
+    To deploy unsigned images in development:
+    ```yaml
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: test-pod
+      labels:
+        streamspace.io/skip-image-verification: "true"
+    spec:
+      containers:
+      - name: test
+        image: unsigned-image:tag
+    ```
+
+    ## Monitoring
+
+    Set up alerts for policy violations:
+    ```bash
+    kubectl apply -f manifests/monitoring/policy-violation-alerts.yaml
+    ```
+
+    View metrics in Grafana:
+    - Dashboard: "Kyverno Policy Reports"
+    - Panel: "Image Verification Failures"
+
+---
+# PrometheusRule for alerting on unsigned images
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: image-verification-alerts
+  namespace: streamspace
+  labels:
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: streamspace.image-verification
+      interval: 30s
+      rules:
+        - alert: UnsignedImageDeploymentAttempt
+          expr: |
+            increase(kyverno_policy_rule_results_total{
+              policy_name="verify-streamspace-images",
+              rule_result="fail"
+            }[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+            component: security
+          annotations:
+            summary: "Unsigned image deployment attempted"
+            description: |
+              An attempt was made to deploy an unsigned container image in the
+              streamspace namespace. This violates the image signing policy.
+              Review PolicyReports for details.
+
+        - alert: MissingSBOMAttestation
+          expr: |
+            increase(kyverno_policy_rule_results_total{
+              policy_name="verify-streamspace-sbom-attestation",
+              rule_result="fail"
+            }[15m]) > 5
+          for: 5m
+          labels:
+            severity: warning
+            component: security
+          annotations:
+            summary: "Multiple images missing SBOM attestations"
+            description: |
+              Multiple StreamSpace images are missing SBOM attestations.
+              This impacts vulnerability tracking and compliance.
+              Review the image-signing workflow.
+
+        - alert: ImageVerificationPolicyDisabled
+          expr: |
+            kyverno_policy_changes_total{
+              policy_name=~"verify-streamspace.*",
+              policy_validation_mode="Audit"
+            } > 0
+          for: 10m
+          labels:
+            severity: high
+            component: security
+          annotations:
+            summary: "Image verification policy set to Audit mode"
+            description: |
+              One or more image verification policies have been set to Audit
+              mode instead of Enforce. This weakens supply chain security.
+              Policy: {{ $labels.policy_name }}

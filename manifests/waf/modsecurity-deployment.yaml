@@ -1,0 +1,220 @@
+# ModSecurity Web Application Firewall for StreamSpace
+# Provides OWASP Core Rule Set protection at Layer 7
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: modsecurity-config
+  namespace: streamspace
+data:
+  modsecurity.conf: |
+    # ModSecurity configuration for StreamSpace
+    SecRuleEngine On
+    SecRequestBodyAccess On
+    SecRequestBodyLimit 13107200
+    SecRequestBodyNoFilesLimit 131072
+    SecRequestBodyLimitAction Reject
+    SecResponseBodyAccess On
+    SecResponseBodyMimeType text/plain text/html text/xml application/json
+    SecResponseBodyLimit 524288
+    SecResponseBodyLimitAction ProcessPartial
+    SecTmpDir /tmp/
+    SecDataDir /tmp/
+    SecAuditEngine RelevantOnly
+    SecAuditLogRelevantStatus "^(?:5|4(?!04))"
+    SecAuditLogParts ABIJDEFHZ
+    SecAuditLogType Serial
+    SecAuditLog /var/log/modsec_audit.log
+    SecArgumentSeparator &
+    SecCookieFormat 0
+    SecUnicodeMapFile unicode.mapping 20127
+    SecStatusEngine On
+    
+    # StreamSpace-specific rules
+    SecRule REQUEST_HEADERS:User-Agent "(?:curl|wget|python-requests)" \
+      "id:1000,phase:1,deny,status:403,msg:'Automated tool detected'"
+    
+    # Rate limiting (backup to application-level rate limiting)
+    SecAction "id:900200,phase:1,nolog,pass,initcol:ip=%{REMOTE_ADDR},initcol:user=%{REMOTE_ADDR}"
+    SecRule IP:ACCESS_COUNT "@gt 100" \
+      "id:900201,phase:1,deny,status:429,msg:'Rate limit exceeded - max 100 requests per minute'"
+    SecAction "id:900202,phase:5,pass,nolog,setvar:ip.access_count=+1,expirevar:ip.access_count=60"
+    
+  crs-setup.conf: |
+    # OWASP CRS v3 Configuration
+    SecAction \
+      "id:900000,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.paranoia_level=2"
+    
+    # Anomaly Scoring Mode
+    SecAction \
+      "id:900110,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.inbound_anomaly_score_threshold=5,\
+       setvar:tx.outbound_anomaly_score_threshold=4"
+    
+    # Application specific settings
+    SecAction \
+      "id:900130,\
+       phase:1,\
+       nolog,\
+       pass,\
+       t:none,\
+       setvar:tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE,\
+       setvar:tx.allowed_request_content_type=application/json|application/x-www-form-urlencoded|multipart/form-data,\
+       setvar:tx.allowed_http_versions=HTTP/1.1 HTTP/2 HTTP/2.0,\
+       setvar:tx.restricted_extensions=.bak/ .config/ .conf/,\
+       setvar:tx.restricted_headers=/proxy/ /lock-token/ /content-range/ /if/,\
+       setvar:tx.static_extensions=/.jpg/ /.jpeg/ /.png/ /.gif/ /.css/ /.js/"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: modsecurity-waf
+  namespace: streamspace
+  labels:
+    app: modsecurity-waf
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: modsecurity-waf
+  template:
+    metadata:
+      labels:
+        app: modsecurity-waf
+    spec:
+      containers:
+      - name: modsecurity
+        image: owasp/modsecurity-crs:nginx-alpine
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 443
+          name: https
+        env:
+        - name: PARANOIA
+          value: "2"
+        - name: ANOMALY_INBOUND
+          value: "5"
+        - name: ANOMALY_OUTBOUND
+          value: "4"
+        - name: BACKEND
+          value: "http://streamspace-api.streamspace.svc.cluster.local:8000"
+        - name: BACKEND_WS
+          value: "ws://streamspace-api.streamspace.svc.cluster.local:8000"
+        - name: PORT
+          value: "80"
+        - name: SSL_PORT
+          value: "443"
+        - name: METRICS_ALLOW_FROM
+          value: "0.0.0.0/0"
+        - name: METRICS_DENY_FROM
+          value: "DROP"
+        - name: LOGLEVEL
+          value: "warn"
+        - name: ERRORLOG
+          value: "/var/log/error.log"
+        - name: ACCESSLOG
+          value: "/var/log/access.log"
+        - name: MODSEC_AUDIT_LOG
+          value: "/var/log/modsec_audit.log"
+        volumeMounts:
+        - name: modsecurity-config
+          mountPath: /etc/modsecurity.d/custom
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: modsecurity-config
+        configMap:
+          name: modsecurity-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: modsecurity-waf
+  namespace: streamspace
+  labels:
+    app: modsecurity-waf
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  - port: 443
+    targetPort: 443
+    protocol: TCP
+    name: https
+  selector:
+    app: modsecurity-waf
+
+---
+# ServiceMonitor for Prometheus metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: modsecurity-waf
+  namespace: streamspace
+  labels:
+    app: modsecurity-waf
+spec:
+  selector:
+    matchLabels:
+      app: modsecurity-waf
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+
+---
+# NetworkPolicy to allow WAF to communicate with API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-waf-to-api
+  namespace: streamspace
+spec:
+  podSelector:
+    matchLabels:
+      app: streamspace-api
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: modsecurity-waf
+    ports:
+    - protocol: TCP
+      port: 8000
+
