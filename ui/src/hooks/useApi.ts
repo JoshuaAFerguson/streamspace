@@ -161,6 +161,17 @@ export function useSyncAllRepositories() {
   });
 }
 
+export function useUpdateRepository() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => api.updateRepository(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['repositories'] });
+    },
+  });
+}
+
 export function useDeleteRepository() {
   const queryClient = useQueryClient();
 
@@ -169,6 +180,14 @@ export function useDeleteRepository() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['repositories'] });
     },
+  });
+}
+
+export function useRepositoryStats(id: number) {
+  return useQuery({
+    queryKey: ['repository-stats', id],
+    queryFn: () => api.getRepositoryStats(id),
+    enabled: !!id,
   });
 }
 

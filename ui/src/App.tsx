@@ -7,7 +7,7 @@ import { useUserStore } from './store/userStore';
 import Dashboard from './pages/Dashboard';
 import Sessions from './pages/Sessions';
 import EnhancedCatalog from './pages/EnhancedCatalog';
-import Repositories from './pages/Repositories';
+import EnhancedRepositories from './pages/EnhancedRepositories';
 import Login from './pages/Login';
 import SessionViewer from './pages/SessionViewer';
 
@@ -133,7 +133,7 @@ function App() {
               path="/repositories"
               element={
                 <ProtectedRoute>
-                  <Repositories />
+                  <EnhancedRepositories />
                 </ProtectedRoute>
               }
             />

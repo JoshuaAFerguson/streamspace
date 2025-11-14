@@ -507,8 +507,31 @@ class APIClient {
     await this.client.post('/catalog/sync');
   }
 
+  async updateRepository(id: number, data: {
+    name?: string;
+    url?: string;
+    branch?: string;
+    authType?: string;
+    authSecret?: string;
+  }): Promise<void> {
+    await this.client.put(`/catalog/repositories/${id}`, data);
+  }
+
   async deleteRepository(id: number): Promise<void> {
     await this.client.delete(`/catalog/repositories/${id}`);
+  }
+
+  async getRepositoryStats(id: number): Promise<{
+    templateCount: number;
+    syncHistory: Array<{
+      timestamp: string;
+      status: string;
+      duration?: number;
+      error?: string;
+    }>;
+  }> {
+    const response = await this.client.get(`/catalog/repositories/${id}/stats`);
+    return response.data;
   }
 
   // ============================================================================
