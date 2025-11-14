@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Chip } from '@mui/material';
 import { LocalOffer } from '@mui/icons-material';
 
@@ -9,7 +10,7 @@ interface TagChipProps {
   variant?: 'filled' | 'outlined';
 }
 
-export default function TagChip({ tag, onDelete, onClick, size = 'small', variant = 'filled' }: TagChipProps) {
+function TagChip({ tag, onDelete, onClick, size = 'small', variant = 'filled' }: TagChipProps) {
   return (
     <Chip
       icon={<LocalOffer />}
@@ -27,3 +28,6 @@ export default function TagChip({ tag, onDelete, onClick, size = 'small', varian
     />
   );
 }
+
+// Memoize to prevent re-renders when tag hasn't changed
+export default memo(TagChip);

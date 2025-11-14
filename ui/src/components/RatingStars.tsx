@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Box, Typography } from '@mui/material';
 import { Star, StarHalf, StarOutline } from '@mui/icons-material';
 
@@ -10,7 +11,7 @@ interface RatingStarsProps {
   onRate?: (rating: number) => void;
 }
 
-export default function RatingStars({
+function RatingStars({
   rating,
   count,
   size = 'small',
@@ -86,3 +87,6 @@ export default function RatingStars({
     </Box>
   );
 }
+
+// Memoize to prevent re-renders when rating hasn't changed
+export default memo(RatingStars);

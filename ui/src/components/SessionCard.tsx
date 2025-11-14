@@ -1,0 +1,237 @@
+import { memo } from 'react';
+import {
+  Card,
+  CardContent,
+  CardActions,
+  Box,
+  Typography,
+  Chip,
+  Button,
+  IconButton,
+} from '@mui/material';
+import {
+  PlayArrow as PlayIcon,
+  Pause as PauseIcon,
+  Delete as DeleteIcon,
+  OpenInNew as OpenIcon,
+  LocalOffer as TagIcon,
+  Share as ShareIcon,
+  Link as LinkIcon,
+} from '@mui/icons-material';
+import TagChip from './TagChip';
+import ActivityIndicator from './ActivityIndicator';
+import IdleTimer from './IdleTimer';
+import { Session } from '../lib/api';
+
+interface SessionCardProps {
+  session: Session;
+  onConnect: (session: Session) => void;
+  onStateChange: (id: string, state: 'running' | 'hibernated') => void;
+  onDelete: (id: string) => void;
+  onManageTags: (session: Session) => void;
+  onShare: (session: Session) => void;
+  onInvitation: (session: Session) => void;
+  isUpdating?: boolean;
+}
+
+function SessionCard({
+  session,
+  onConnect,
+  onStateChange,
+  onDelete,
+  onManageTags,
+  onShare,
+  onInvitation,
+  isUpdating = false,
+}: SessionCardProps) {
+  const getStateColor = (state: string) => {
+    switch (state) {
+      case 'running':
+        return 'success';
+      case 'hibernated':
+        return 'warning';
+      case 'terminated':
+        return 'error';
+      default:
+        return 'default';
+    }
+  };
+
+  const getPhaseColor = (phase: string) => {
+    switch (phase) {
+      case 'Running':
+        return 'success';
+      case 'Pending':
+        return 'info';
+      case 'Hibernated':
+        return 'warning';
+      case 'Failed':
+        return 'error';
+      default:
+        return 'default';
+    }
+  };
+
+  return (
+    <Card>
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              {session.template}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {session.name}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 0.5, flexDirection: 'column', alignItems: 'flex-end' }}>
+            <Chip label={session.state} size="small" color={getStateColor(session.state)} />
+            <Chip label={session.status.phase} size="small" color={getPhaseColor(session.status.phase)} />
+            <ActivityIndicator
+              isActive={session.isActive}
+              isIdle={session.isIdle}
+              state={session.state}
+              size="small"
+            />
+          </Box>
+        </Box>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {session.state === 'running' && session.lastActivity && session.idleThreshold && (
+            <Box>
+              <IdleTimer
+                lastActivity={session.lastActivity}
+                idleDuration={session.idleDuration}
+                idleThreshold={session.idleThreshold}
+                showProgress={session.isIdle || false}
+                compact={true}
+              />
+            </Box>
+          )}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2" color="text.secondary">
+              Resources
+            </Typography>
+            <Typography variant="body2">
+              {session.resources?.memory || 'N/A'} / {session.resources?.cpu || 'N/A'}
+            </Typography>
+          </Box>
+          {session.activeConnections !== undefined && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2" color="text.secondary">
+                Active Connections
+              </Typography>
+              <Typography variant="body2">{session.activeConnections}</Typography>
+            </Box>
+          )}
+          {session.status.url && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2" color="text.secondary">
+                URL
+              </Typography>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', maxWidth: '60%' }} noWrap>
+                {session.status.url}
+              </Typography>
+            </Box>
+          )}
+          {session.tags && session.tags.length > 0 && (
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                Tags
+              </Typography>
+              <Box display="flex" flexWrap="wrap" gap={0.5}>
+                {session.tags.map(tag => (
+                  <TagChip key={tag} tag={tag} />
+                ))}
+              </Box>
+            </Box>
+          )}
+        </Box>
+      </CardContent>
+      <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
+        <Box>
+          {session.state === 'running' ? (
+            <>
+              <Button
+                size="small"
+                startIcon={<OpenIcon />}
+                onClick={() => onConnect(session)}
+                disabled={session.status.phase !== 'Running'}
+              >
+                Connect
+              </Button>
+              <IconButton
+                size="small"
+                color="warning"
+                onClick={() => onStateChange(session.name, 'hibernated')}
+                disabled={isUpdating}
+              >
+                <PauseIcon />
+              </IconButton>
+            </>
+          ) : (
+            <IconButton
+              size="small"
+              color="success"
+              onClick={() => onStateChange(session.name, 'running')}
+              disabled={isUpdating}
+            >
+              <PlayIcon />
+            </IconButton>
+          )}
+        </Box>
+        <Box>
+          <IconButton
+            size="small"
+            color="primary"
+            onClick={() => onShare(session)}
+            title="Share with User"
+          >
+            <ShareIcon />
+          </IconButton>
+          <IconButton
+            size="small"
+            color="primary"
+            onClick={() => onInvitation(session)}
+            title="Create Invitation Link"
+          >
+            <LinkIcon />
+          </IconButton>
+          <IconButton
+            size="small"
+            color="primary"
+            onClick={() => onManageTags(session)}
+            title="Manage Tags"
+          >
+            <TagIcon />
+          </IconButton>
+          <IconButton
+            size="small"
+            color="error"
+            onClick={() => onDelete(session.name)}
+            title="Delete Session"
+          >
+            <DeleteIcon />
+          </IconButton>
+        </Box>
+      </CardActions>
+    </Card>
+  );
+}
+
+// Memoize the component to prevent unnecessary re-renders
+// Only re-render if session data or callbacks change
+export default memo(SessionCard, (prevProps, nextProps) => {
+  // Custom comparison function for better memoization
+  return (
+    prevProps.session.name === nextProps.session.name &&
+    prevProps.session.state === nextProps.session.state &&
+    prevProps.session.status.phase === nextProps.session.status.phase &&
+    prevProps.session.isActive === nextProps.session.isActive &&
+    prevProps.session.isIdle === nextProps.session.isIdle &&
+    prevProps.session.activeConnections === nextProps.session.activeConnections &&
+    prevProps.session.lastActivity === nextProps.session.lastActivity &&
+    prevProps.isUpdating === nextProps.isUpdating &&
+    JSON.stringify(prevProps.session.tags) === JSON.stringify(nextProps.session.tags)
+  );
+});

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Chip, Tooltip } from '@mui/material';
 import {
   Circle as ActiveIcon,
@@ -13,7 +14,7 @@ interface ActivityIndicatorProps {
   showLabel?: boolean;
 }
 
-export default function ActivityIndicator({
+function ActivityIndicator({
   isActive = false,
   isIdle = false,
   state = 'running',
@@ -84,3 +85,6 @@ function Circle({ style }: { style?: React.CSSProperties }) {
     </svg>
   );
 }
+
+// Memoize to prevent re-renders when activity status hasn't changed
+export default memo(ActivityIndicator);

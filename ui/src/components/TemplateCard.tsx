@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
   Card,
   CardContent,
@@ -25,7 +26,7 @@ interface TemplateCardProps {
   mode?: 'catalog' | 'installed';
 }
 
-export default function TemplateCard({
+function TemplateCard({
   template,
   onInstall,
   onViewDetails,
@@ -183,3 +184,16 @@ export default function TemplateCard({
     </Card>
   );
 }
+
+// Memoize to prevent re-renders when template data hasn't changed
+export default memo(TemplateCard, (prevProps, nextProps) => {
+  // Custom comparison for template changes
+  return (
+    prevProps.template.id === nextProps.template.id &&
+    prevProps.template.installCount === nextProps.template.installCount &&
+    prevProps.template.viewCount === nextProps.template.viewCount &&
+    prevProps.template.avgRating === nextProps.template.avgRating &&
+    prevProps.template.ratingCount === nextProps.template.ratingCount &&
+    prevProps.mode === nextProps.mode
+  );
+});
