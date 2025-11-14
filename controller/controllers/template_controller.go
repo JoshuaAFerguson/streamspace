@@ -43,7 +43,7 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Validate template configuration
 	if err := r.validateTemplate(&template); err != nil {
 		log.Error(err, "Template validation failed")
-		template.Status.Phase = "Invalid"
+		template.Status.Valid = false
 		template.Status.Message = err.Error()
 		metrics.RecordTemplateValidation(req.Namespace, "invalid")
 		if updateErr := r.Status().Update(ctx, &template); updateErr != nil {
@@ -53,8 +53,8 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	// Update status to Ready
-	template.Status.Phase = "Ready"
+	// Update status to valid
+	template.Status.Valid = true
 	template.Status.Message = "Template is valid and ready to use"
 	metrics.RecordTemplateValidation(req.Namespace, "valid")
 	if err := r.Status().Update(ctx, &template); err != nil {
@@ -62,7 +62,7 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Template reconciliation complete", "name", template.Name, "phase", template.Status.Phase)
+	log.Info("Template reconciliation complete", "name", template.Name, "valid", template.Status.Valid)
 	return ctrl.Result{}, nil
 }
 

@@ -126,7 +126,9 @@ func (r *SessionReconciler) handleRunning(ctx context.Context, session *streamv1
 				log.Error(err, "Failed to scale up Deployment")
 				return ctrl.Result{}, err
 			}
-			log.Info("Scaled up Deployment", "name", deploymentName)
+			log.Info("Scaled up Deployment (waking from hibernation)", "name", deploymentName)
+			// Record wake event
+			metrics.RecordWake(session.Namespace)
 		}
 	}
 
@@ -197,6 +199,16 @@ func (r *SessionReconciler) handleRunning(ctx context.Context, session *streamv1
 		return ctrl.Result{}, err
 	}
 
+	// Record session state
+	metrics.RecordSessionState("running", session.Namespace, 1)
+
+	log.V(1).Info("Session running successfully",
+		"session", session.Name,
+		"user", session.Spec.User,
+		"template", session.Spec.Template,
+		"url", session.Status.URL,
+	)
+
 	return ctrl.Result{}, nil
 }
 
@@ -216,6 +228,8 @@ func (r *SessionReconciler) handleHibernated(ctx context.Context, session *strea
 			return ctrl.Result{}, err
 		}
 		log.Info("Scaled down Deployment (hibernated)", "name", deploymentName)
+		// Record hibernation event (manual hibernation, not auto-idle)
+		metrics.RecordHibernation(session.Namespace, "manual")
 	}
 
 	// Update Session status
@@ -224,6 +238,15 @@ func (r *SessionReconciler) handleHibernated(ctx context.Context, session *strea
 		log.Error(err, "Failed to update Session status")
 		return ctrl.Result{}, err
 	}
+
+	// Record session state
+	metrics.RecordSessionState("hibernated", session.Namespace, 1)
+
+	log.V(1).Info("Session hibernated successfully",
+		"session", session.Name,
+		"user", session.Spec.User,
+		"template", session.Spec.Template,
+	)
 
 	return ctrl.Result{}, nil
 }
@@ -251,6 +274,15 @@ func (r *SessionReconciler) handleTerminated(ctx context.Context, session *strea
 		log.Error(err, "Failed to update Session status")
 		return ctrl.Result{}, err
 	}
+
+	// Record session state
+	metrics.RecordSessionState("terminated", session.Namespace, 1)
+
+	log.Info("Session terminated successfully",
+		"session", session.Name,
+		"user", session.Spec.User,
+		"template", session.Spec.Template,
+	)
 
 	return ctrl.Result{}, nil
 }
@@ -410,7 +442,7 @@ func (r *SessionReconciler) createUserPVC(session *streamv1alpha1.Session) *core
 			AccessModes: []corev1.PersistentVolumeAccessMode{
 				corev1.ReadWriteMany, // NFS support
 			},
-			Resources: corev1.VolumeResourceRequirements{
+			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: resource.MustParse(storageSize),
 				},

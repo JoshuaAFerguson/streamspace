@@ -60,6 +60,60 @@ var (
 		},
 		[]string{"namespace", "result"},
 	)
+
+	// HibernationEvents tracks hibernation events
+	HibernationEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "streamspace_hibernation_events_total",
+			Help: "Total number of session hibernation events",
+		},
+		[]string{"namespace", "reason"},
+	)
+
+	// WakeEvents tracks session wake events
+	WakeEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "streamspace_wake_events_total",
+			Help: "Total number of session wake events",
+		},
+		[]string{"namespace"},
+	)
+
+	// SessionIdleDuration tracks how long sessions have been idle
+	SessionIdleDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "streamspace_session_idle_duration_seconds",
+			Help:    "Duration of session idle time before hibernation in seconds",
+			Buckets: []float64{60, 300, 600, 1800, 3600, 7200}, // 1m, 5m, 10m, 30m, 1h, 2h
+		},
+		[]string{"namespace"},
+	)
+
+	// ResourceUsage tracks session resource consumption
+	ResourceUsageCPU = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "streamspace_session_cpu_usage_millicores",
+			Help: "CPU usage of sessions in millicores",
+		},
+		[]string{"session", "namespace"},
+	)
+
+	ResourceUsageMemory = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "streamspace_session_memory_usage_bytes",
+			Help: "Memory usage of sessions in bytes",
+		},
+		[]string{"session", "namespace"},
+	)
+
+	// SessionDuration tracks how long sessions have been running
+	SessionDuration = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "streamspace_session_duration_seconds",
+			Help: "Duration of active sessions in seconds",
+		},
+		[]string{"session", "namespace"},
+	)
 )
 
 func init() {
@@ -71,6 +125,12 @@ func init() {
 		SessionReconciliations,
 		SessionReconciliationDuration,
 		TemplateValidations,
+		HibernationEvents,
+		WakeEvents,
+		SessionIdleDuration,
+		ResourceUsageCPU,
+		ResourceUsageMemory,
+		SessionDuration,
 	)
 }
 
@@ -102,4 +162,30 @@ func ObserveReconciliationDuration(namespace string, duration float64) {
 // RecordTemplateValidation records a template validation
 func RecordTemplateValidation(namespace, result string) {
 	TemplateValidations.WithLabelValues(namespace, result).Inc()
+}
+
+// RecordHibernation records a session hibernation event
+func RecordHibernation(namespace, reason string) {
+	HibernationEvents.WithLabelValues(namespace, reason).Inc()
+}
+
+// RecordWake records a session wake event
+func RecordWake(namespace string) {
+	WakeEvents.WithLabelValues(namespace).Inc()
+}
+
+// ObserveIdleDuration records the idle duration before hibernation
+func ObserveIdleDuration(namespace string, duration float64) {
+	SessionIdleDuration.WithLabelValues(namespace).Observe(duration)
+}
+
+// RecordResourceUsage records CPU and memory usage for a session
+func RecordResourceUsage(session, namespace string, cpuMillicores, memoryBytes float64) {
+	ResourceUsageCPU.WithLabelValues(session, namespace).Set(cpuMillicores)
+	ResourceUsageMemory.WithLabelValues(session, namespace).Set(memoryBytes)
+}
+
+// RecordSessionDuration records how long a session has been active
+func RecordSessionDuration(session, namespace string, durationSeconds float64) {
+	SessionDuration.WithLabelValues(session, namespace).Set(durationSeconds)
 }
