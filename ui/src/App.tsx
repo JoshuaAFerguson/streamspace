@@ -1,28 +1,33 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { ThemeProvider, createTheme, CssBaseline, CircularProgress, Box } from '@mui/material';
 import { useUserStore } from './store/userStore';
+import ErrorBoundary from './components/ErrorBoundary';
 
-// Pages
-import Dashboard from './pages/Dashboard';
-import Sessions from './pages/Sessions';
-import SharedSessions from './pages/SharedSessions';
-import InvitationAccept from './pages/InvitationAccept';
-import EnhancedCatalog from './pages/EnhancedCatalog';
-import EnhancedRepositories from './pages/EnhancedRepositories';
+// Eagerly load Login page (needed immediately)
 import Login from './pages/Login';
-import SessionViewer from './pages/SessionViewer';
 
-// Admin Pages
-import AdminDashboard from './pages/admin/Dashboard';
-import AdminNodes from './pages/admin/Nodes';
-import AdminQuotas from './pages/admin/Quotas';
-import Users from './pages/admin/Users';
-import UserDetail from './pages/admin/UserDetail';
-import CreateUser from './pages/admin/CreateUser';
-import Groups from './pages/admin/Groups';
-import GroupDetail from './pages/admin/GroupDetail';
-import CreateGroup from './pages/admin/CreateGroup';
+// Lazy load all other pages for code splitting
+// User Pages
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Sessions = lazy(() => import('./pages/Sessions'));
+const SharedSessions = lazy(() => import('./pages/SharedSessions'));
+const InvitationAccept = lazy(() => import('./pages/InvitationAccept'));
+const EnhancedCatalog = lazy(() => import('./pages/EnhancedCatalog'));
+const EnhancedRepositories = lazy(() => import('./pages/EnhancedRepositories'));
+const SessionViewer = lazy(() => import('./pages/SessionViewer'));
+
+// Admin Pages (loaded only for admin users)
+const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
+const AdminNodes = lazy(() => import('./pages/admin/Nodes'));
+const AdminQuotas = lazy(() => import('./pages/admin/Quotas'));
+const Users = lazy(() => import('./pages/admin/Users'));
+const UserDetail = lazy(() => import('./pages/admin/UserDetail'));
+const CreateUser = lazy(() => import('./pages/admin/CreateUser'));
+const Groups = lazy(() => import('./pages/admin/Groups'));
+const GroupDetail = lazy(() => import('./pages/admin/GroupDetail'));
+const CreateGroup = lazy(() => import('./pages/admin/CreateGroup'));
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -91,6 +96,23 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Loading fallback component for lazy-loaded pages
+function PageLoader() {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+        backgroundColor: 'background.default',
+      }}
+    >
+      <CircularProgress size={60} />
+    </Box>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -98,7 +120,8 @@ function App() {
         <CssBaseline />
         <ErrorBoundary>
           <BrowserRouter>
-            <Routes>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
             <Route path="/login" element={<Login />} />
             <Route
               path="/"
@@ -236,8 +259,9 @@ function App() {
                 </AdminRoute>
               }
             />
-          </Routes>
-        </BrowserRouter>
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
         </ErrorBoundary>
       </ThemeProvider>
     </QueryClientProvider>
