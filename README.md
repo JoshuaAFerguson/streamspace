@@ -160,6 +160,49 @@ kubectl apply -f manifests/templates/
 helm install streamspace ./chart -n streamspace
 ```
 
+### 🔐 Production Secrets (IMPORTANT!)
+
+**⚠️ CRITICAL**: Before deploying to production, you **MUST** change the default passwords and secrets!
+
+#### PostgreSQL Password
+
+The default manifests include an **INSECURE** placeholder password. Replace it before deployment:
+
+```bash
+# Generate a secure password
+POSTGRES_PASSWORD=$(openssl rand -base64 32)
+
+# Create the secret BEFORE applying manifests
+kubectl create secret generic streamspace-secrets \
+  --from-literal=postgres-password="$POSTGRES_PASSWORD" \
+  -n streamspace
+
+# Then deploy (skip the streamspace-postgres.yaml secret)
+kubectl apply -f manifests/crds/
+kubectl apply -f manifests/config/ --exclude=streamspace-postgres.yaml
+```
+
+#### Using Helm (Recommended)
+
+```bash
+# Generate secure password
+POSTGRES_PASSWORD=$(openssl rand -base64 32)
+
+# Install with custom password
+helm install streamspace ./chart -n streamspace \
+  --set postgresql.postgresPassword="$POSTGRES_PASSWORD"
+```
+
+#### Production Best Practices
+
+For production deployments, use proper secret management:
+
+- **Sealed Secrets**: `kubectl apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.18.0/controller.yaml`
+- **External Secrets Operator**: Integrate with AWS Secrets Manager, Azure Key Vault, or HashiCorp Vault
+- **SOPS**: Encrypt secrets in Git with `sops`
+
+See [Security Best Practices](docs/SECURITY.md#secret-management) for more details.
+
 ### Configuration
 
 Edit `values.yaml` before installation:
