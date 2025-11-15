@@ -250,6 +250,7 @@ func main() {
 	auditLogHandler := handlers.NewAuditLogHandler(database)
 	dashboardHandler := handlers.NewDashboardHandler(database, k8sClient)
 	sessionActivityHandler := handlers.NewSessionActivityHandler(database)
+	apiKeyHandler := handlers.NewAPIKeyHandler(database)
 
 	// SECURITY: Initialize webhook authentication
 	webhookSecret := os.Getenv("WEBHOOK_SECRET")
@@ -265,7 +266,7 @@ func main() {
 	authRateLimiter := middleware.NewRateLimiter(5, 10) // 5 req/sec with burst of 10
 
 	// Setup routes
-	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, auditLogHandler, dashboardHandler, sessionActivityHandler, jwtManager, userDB, redisCache, webhookSecret, csrfProtection, authRateLimiter)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, auditLogHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, jwtManager, userDB, redisCache, webhookSecret, csrfProtection, authRateLimiter)
 
 	// Create HTTP server with security timeouts
 	srv := &http.Server{
@@ -346,7 +347,7 @@ func main() {
 	log.Println("Graceful shutdown completed")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, auditLogHandler *handlers.AuditLogHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string, csrfProtection *middleware.CSRFProtection, authRateLimiter *middleware.RateLimiter) {
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, auditLogHandler *handlers.AuditLogHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string, csrfProtection *middleware.CSRFProtection, authRateLimiter *middleware.RateLimiter) {
 	// SECURITY: Create authentication middleware
 	authMiddleware := auth.Middleware(jwtManager, userDB)
 	adminMiddleware := auth.RequireRole("admin")
@@ -528,6 +529,25 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 
 				// User activity across all sessions (users can view their own)
 				activity.GET("/users/:userId", sessionActivityHandler.GetUserSessionActivity)
+			}
+
+			// API Key management (users can manage their own keys)
+			apiKeys := protected.Group("/api-keys")
+			{
+				// Create new API key (returns full key only once)
+				apiKeys.POST("", apiKeyHandler.CreateAPIKey)
+
+				// List user's API keys (does not return full keys)
+				apiKeys.GET("", cache.CacheMiddleware(redisCache, 1*time.Minute), apiKeyHandler.ListAPIKeys)
+
+				// Revoke an API key (soft delete - sets is_active to false)
+				apiKeys.POST("/:id/revoke", apiKeyHandler.RevokeAPIKey)
+
+				// Permanently delete an API key
+				apiKeys.DELETE("/:id", apiKeyHandler.DeleteAPIKey)
+
+				// Get usage statistics for an API key
+				apiKeys.GET("/:id/usage", cache.CacheMiddleware(redisCache, 30*time.Second), apiKeyHandler.GetAPIKeyUsage)
 			}
 
 			// Metrics (operators/admins only)

@@ -630,6 +630,51 @@ func (d *Database) Migrate() error {
 			last_installed_at TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+
+		// ========== API Key Management ==========
+
+		// API keys for programmatic access and integrations
+		`CREATE TABLE IF NOT EXISTS api_keys (
+			id SERIAL PRIMARY KEY,
+			key_hash VARCHAR(255) UNIQUE NOT NULL,
+			key_prefix VARCHAR(20) NOT NULL,
+			name VARCHAR(255) NOT NULL,
+			description TEXT,
+			user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			scopes TEXT[],
+			rate_limit INT DEFAULT 1000,
+			expires_at TIMESTAMP,
+			last_used_at TIMESTAMP,
+			use_count INT DEFAULT 0,
+			is_active BOOLEAN DEFAULT true,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			created_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL
+		)`,
+
+		// Create indexes for API keys
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_key_prefix ON api_keys(key_prefix)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_is_active ON api_keys(is_active)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_keys_expires_at ON api_keys(expires_at)`,
+
+		// API key usage log (for auditing and rate limiting)
+		`CREATE TABLE IF NOT EXISTS api_key_usage_log (
+			id SERIAL PRIMARY KEY,
+			api_key_id INT REFERENCES api_keys(id) ON DELETE CASCADE,
+			endpoint VARCHAR(255),
+			method VARCHAR(10),
+			status_code INT,
+			ip_address VARCHAR(45),
+			user_agent TEXT,
+			timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Create indexes for usage log
+		`CREATE INDEX IF NOT EXISTS idx_api_key_usage_log_api_key_id ON api_key_usage_log(api_key_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_key_usage_log_timestamp ON api_key_usage_log(timestamp DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_key_usage_log_key_timestamp ON api_key_usage_log(api_key_id, timestamp DESC)`,
 	}
 
 	// Execute migrations
