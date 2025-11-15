@@ -214,8 +214,8 @@ export default function Compliance() {
       });
       toast.success('Compliance report generated');
       setReportDialog(false);
-      // You could download the report as JSON or display it in a modal
-      console.log('Report:', report);
+      // Note: Report data is available in the 'report' variable if you want to
+      // download it as JSON or display it in a modal
     } catch (error) {
       toast.error('Failed to generate report');
     } finally {
