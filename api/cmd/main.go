@@ -513,6 +513,32 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 				monitors.POST("/sessions/:sessionId/presets/:preset", h.CreatePresetConfiguration)
 			}
 
+			// Real-time Collaboration
+			collaboration := protected.Group("/collaboration")
+			{
+				// Collaboration session management
+				collaboration.POST("/sessions/:sessionId", h.CreateCollaborationSession)
+				collaboration.POST("/:collabId/join", h.JoinCollaborationSession)
+				collaboration.POST("/:collabId/leave", h.LeaveCollaborationSession)
+
+				// Participant management
+				collaboration.GET("/:collabId/participants", h.GetCollaborationParticipants)
+				collaboration.PATCH("/:collabId/participants/:userId", h.UpdateParticipantRole)
+
+				// Chat operations
+				collaboration.POST("/:collabId/chat", h.SendChatMessage)
+				collaboration.GET("/:collabId/chat", h.GetChatHistory)
+
+				// Annotation operations
+				collaboration.POST("/:collabId/annotations", h.CreateAnnotation)
+				collaboration.GET("/:collabId/annotations", h.GetAnnotations)
+				collaboration.DELETE("/:collabId/annotations/:annotationId", h.DeleteAnnotation)
+				collaboration.DELETE("/:collabId/annotations", h.ClearAllAnnotations)
+
+				// Statistics
+				collaboration.GET("/:collabId/stats", h.GetCollaborationStats)
+			}
+
 			// Templates (read: all users, write: operators/admins)
 			templates := protected.Group("/templates")
 			{

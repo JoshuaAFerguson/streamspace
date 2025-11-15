@@ -1355,6 +1355,76 @@ func (d *Database) Migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_monitor_configurations_session_id ON monitor_configurations(session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_monitor_configurations_user_id ON monitor_configurations(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_monitor_configurations_is_active ON monitor_configurations(is_active) WHERE is_active = true`,
+
+		// ========== Real-time Collaboration ==========
+
+		// Collaboration sessions table
+		`CREATE TABLE IF NOT EXISTS collaboration_sessions (
+			id VARCHAR(255) PRIMARY KEY,
+			session_id VARCHAR(255) REFERENCES sessions(id) ON DELETE CASCADE,
+			owner_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+			settings JSONB,
+			active_users INT DEFAULT 0,
+			chat_enabled BOOLEAN DEFAULT true,
+			annotations_enabled BOOLEAN DEFAULT true,
+			cursor_tracking BOOLEAN DEFAULT true,
+			status VARCHAR(50) DEFAULT 'active',
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			ended_at TIMESTAMP
+		)`,
+
+		// Collaboration participants table
+		`CREATE TABLE IF NOT EXISTS collaboration_participants (
+			id SERIAL PRIMARY KEY,
+			collaboration_id VARCHAR(255) REFERENCES collaboration_sessions(id) ON DELETE CASCADE,
+			user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			role VARCHAR(50) NOT NULL,
+			permissions JSONB,
+			cursor_position JSONB,
+			color VARCHAR(50),
+			is_active BOOLEAN DEFAULT true,
+			joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(collaboration_id, user_id)
+		)`,
+
+		// Collaboration chat table
+		`CREATE TABLE IF NOT EXISTS collaboration_chat (
+			id SERIAL PRIMARY KEY,
+			collaboration_id VARCHAR(255) REFERENCES collaboration_sessions(id) ON DELETE CASCADE,
+			user_id VARCHAR(255),
+			message TEXT NOT NULL,
+			message_type VARCHAR(50) DEFAULT 'text',
+			metadata JSONB,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Collaboration annotations table
+		`CREATE TABLE IF NOT EXISTS collaboration_annotations (
+			id VARCHAR(255) PRIMARY KEY,
+			collaboration_id VARCHAR(255) REFERENCES collaboration_sessions(id) ON DELETE CASCADE,
+			session_id VARCHAR(255) REFERENCES sessions(id) ON DELETE CASCADE,
+			user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+			type VARCHAR(50) NOT NULL,
+			color VARCHAR(50),
+			thickness INT,
+			points JSONB,
+			text TEXT,
+			is_persistent BOOLEAN DEFAULT false,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			expires_at TIMESTAMP
+		)`,
+
+		// Create indexes for collaboration
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_sessions_session_id ON collaboration_sessions(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_sessions_status ON collaboration_sessions(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_participants_collab_id ON collaboration_participants(collaboration_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_participants_user_id ON collaboration_participants(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_participants_is_active ON collaboration_participants(is_active) WHERE is_active = true`,
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_chat_collab_id ON collaboration_chat(collaboration_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_chat_created_at ON collaboration_chat(created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_annotations_collab_id ON collaboration_annotations(collaboration_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_collaboration_annotations_expires_at ON collaboration_annotations(expires_at)`,
 	}
 
 	// Execute migrations
