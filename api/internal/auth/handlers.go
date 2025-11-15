@@ -48,9 +48,9 @@ type LoginRequest struct {
 
 // LoginResponse represents a login response
 type LoginResponse struct {
-	Token     string         `json:"token"`
-	ExpiresAt time.Time      `json:"expiresAt"`
-	User      *models.User   `json:"user"`
+	Token     string       `json:"token"`
+	ExpiresAt time.Time    `json:"expiresAt"`
+	User      *models.User `json:"user"`
 }
 
 // Login handles local authentication
@@ -201,11 +201,11 @@ func (h *AuthHandler) SAMLLogin(c *gin.Context) {
 	c.SetCookie(
 		"saml_return_url",
 		returnURL,
-		3600,                    // 1 hour max age
-		"/",                     // path
-		"",                      // domain (empty = current domain)
-		c.Request.TLS != nil,    // secure (HTTPS only)
-		true,                    // httpOnly
+		3600,                 // 1 hour max age
+		"/",                  // path
+		"",                   // domain (empty = current domain)
+		c.Request.TLS != nil, // secure (HTTPS only)
+		true,                 // httpOnly
 	)
 
 	// Initiate SAML authentication flow (redirects to IdP)
@@ -489,34 +489,34 @@ func (h *AuthHandler) syncSAMLGroups(ctx context.Context, userID string, samlGro
 	// This is commented out by default to prevent accidental removals
 	// Uncomment if you want strict SAML group synchronization
 	/*
-	for _, groupID := range existingGroups {
-		// Get group name to check if it came from SAML
-		var groupName string
-		var isSAMLManaged bool
-		err := dbConn.QueryRowContext(ctx, `
-			SELECT name, COALESCE((metadata->>'saml_managed')::boolean, false)
-			FROM groups WHERE id = $1
-		`, groupID).Scan(&groupName, &isSAMLManaged)
+		for _, groupID := range existingGroups {
+			// Get group name to check if it came from SAML
+			var groupName string
+			var isSAMLManaged bool
+			err := dbConn.QueryRowContext(ctx, `
+				SELECT name, COALESCE((metadata->>'saml_managed')::boolean, false)
+				FROM groups WHERE id = $1
+			`, groupID).Scan(&groupName, &isSAMLManaged)
 
-		if err != nil || !isSAMLManaged {
-			// Skip groups that aren't SAML-managed
-			continue
-		}
+			if err != nil || !isSAMLManaged {
+				// Skip groups that aren't SAML-managed
+				continue
+			}
 
-		// If group is SAML-managed but not in current SAML assertion, remove membership
-		if !samlGroupMap[groupName] {
-			_, err = dbConn.ExecContext(ctx, `
-				DELETE FROM group_memberships
-				WHERE group_id = $1 AND user_id = $2
-			`, groupID, userID)
+			// If group is SAML-managed but not in current SAML assertion, remove membership
+			if !samlGroupMap[groupName] {
+				_, err = dbConn.ExecContext(ctx, `
+					DELETE FROM group_memberships
+					WHERE group_id = $1 AND user_id = $2
+				`, groupID, userID)
 
-			if err != nil {
-				log.Printf("Failed to remove user %s from group %s: %v", userID, groupID, err)
-			} else {
-				log.Printf("Removed user %s from group %s (no longer in SAML)", userID, groupID)
+				if err != nil {
+					log.Printf("Failed to remove user %s from group %s: %v", userID, groupID, err)
+				} else {
+					log.Printf("Removed user %s from group %s (no longer in SAML)", userID, groupID)
+				}
 			}
 		}
-	}
 	*/
 
 	return nil

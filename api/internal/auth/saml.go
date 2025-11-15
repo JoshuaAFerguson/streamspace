@@ -42,8 +42,8 @@ type AttributeMapping struct {
 
 // SAMLAuthenticator handles SAML authentication
 type SAMLAuthenticator struct {
-	config         *SAMLConfig
-	middleware     *samlsp.Middleware
+	config          *SAMLConfig
+	middleware      *samlsp.Middleware
 	serviceProvider *saml.ServiceProvider
 }
 
