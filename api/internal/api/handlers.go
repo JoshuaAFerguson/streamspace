@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -507,11 +509,18 @@ func (h *Handler) ListSessionsByTags(c *gin.Context) {
 // Template Endpoints
 // ============================================================================
 
-// ListTemplates returns all templates
+// ListTemplates returns all templates with advanced filtering, search, and sorting
 func (h *Handler) ListTemplates(c *gin.Context) {
 	ctx := context.Background()
-	category := c.Query("category")
 
+	// Get query parameters
+	category := c.Query("category")
+	search := c.Query("search")        // Search in name, description, tags
+	sortBy := c.Query("sort")          // name, popularity, created (default: name)
+	tags := c.QueryArray("tags")       // Filter by tags
+	featured := c.Query("featured")    // Filter featured templates
+
+	// Get all templates first
 	var templates []*k8s.Template
 	var err error
 
@@ -526,9 +535,109 @@ func (h *Handler) ListTemplates(c *gin.Context) {
 		return
 	}
 
+	// Apply search filter
+	if search != "" {
+		filtered := make([]*k8s.Template, 0)
+		searchLower := strings.ToLower(search)
+
+		for _, tmpl := range templates {
+			// Search in display name
+			if strings.Contains(strings.ToLower(tmpl.DisplayName), searchLower) {
+				filtered = append(filtered, tmpl)
+				continue
+			}
+			// Search in description
+			if strings.Contains(strings.ToLower(tmpl.Description), searchLower) {
+				filtered = append(filtered, tmpl)
+				continue
+			}
+			// Search in tags
+			for _, tag := range tmpl.Tags {
+				if strings.Contains(strings.ToLower(tag), searchLower) {
+					filtered = append(filtered, tmpl)
+					break
+				}
+			}
+		}
+		templates = filtered
+	}
+
+	// Apply tag filter
+	if len(tags) > 0 {
+		filtered := make([]*k8s.Template, 0)
+		for _, tmpl := range templates {
+			hasAllTags := true
+			for _, requiredTag := range tags {
+				found := false
+				for _, tmplTag := range tmpl.Tags {
+					if strings.EqualFold(tmplTag, requiredTag) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					hasAllTags = false
+					break
+				}
+			}
+			if hasAllTags {
+				filtered = append(filtered, tmpl)
+			}
+		}
+		templates = filtered
+	}
+
+	// Apply featured filter
+	if featured == "true" {
+		filtered := make([]*k8s.Template, 0)
+		for _, tmpl := range templates {
+			if tmpl.Featured {
+				filtered = append(filtered, tmpl)
+			}
+		}
+		templates = filtered
+	}
+
+	// Sort templates
+	switch sortBy {
+	case "popularity":
+		// Sort by usage count (if tracked)
+		sort.Slice(templates, func(i, j int) bool {
+			return templates[i].UsageCount > templates[j].UsageCount
+		})
+	case "created":
+		// Sort by creation time (newest first)
+		sort.Slice(templates, func(i, j int) bool {
+			return templates[i].CreatedAt.After(templates[j].CreatedAt)
+		})
+	default: // "name" or empty
+		// Sort alphabetically by display name
+		sort.Slice(templates, func(i, j int) bool {
+			return strings.ToLower(templates[i].DisplayName) < strings.ToLower(templates[j].DisplayName)
+		})
+	}
+
+	// Group templates by category for UI
+	categories := make(map[string][]*k8s.Template)
+	for _, tmpl := range templates {
+		cat := tmpl.Category
+		if cat == "" {
+			cat = "Other"
+		}
+		categories[cat] = append(categories[cat], tmpl)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"templates": templates,
-		"total":     len(templates),
+		"templates":  templates,
+		"total":      len(templates),
+		"categories": categories,
+		"filters": gin.H{
+			"category": category,
+			"search":   search,
+			"tags":     tags,
+			"sortBy":   sortBy,
+			"featured": featured,
+		},
 	})
 }
 
@@ -578,6 +687,212 @@ func (h *Handler) DeleteTemplate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Template deleted"})
+}
+
+// AddTemplateFavorite adds a template to user's favorites
+func (h *Handler) AddTemplateFavorite(c *gin.Context) {
+	ctx := context.Background()
+	templateID := c.Param("id")
+
+	// Get user ID from context (set by auth middleware)
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userIDStr, ok := userID.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID type"})
+		return
+	}
+
+	// Verify template exists
+	_, err := h.k8sClient.GetTemplate(ctx, h.namespace, templateID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Template not found"})
+		return
+	}
+
+	// Add to favorites (INSERT IGNORE if already exists)
+	_, err = h.db.DB().ExecContext(ctx, `
+		INSERT INTO user_template_favorites (user_id, template_name)
+		VALUES ($1, $2)
+		ON CONFLICT (user_id, template_name) DO NOTHING
+	`, userIDStr, templateID)
+
+	if err != nil {
+		log.Printf("Error adding template to favorites: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add favorite"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Template added to favorites",
+		"template": templateID,
+	})
+}
+
+// RemoveTemplateFavorite removes a template from user's favorites
+func (h *Handler) RemoveTemplateFavorite(c *gin.Context) {
+	ctx := context.Background()
+	templateID := c.Param("id")
+
+	// Get user ID from context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userIDStr, ok := userID.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID type"})
+		return
+	}
+
+	// Remove from favorites
+	result, err := h.db.DB().ExecContext(ctx, `
+		DELETE FROM user_template_favorites
+		WHERE user_id = $1 AND template_name = $2
+	`, userIDStr, templateID)
+
+	if err != nil {
+		log.Printf("Error removing template from favorites: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove favorite"})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Template not in favorites"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Template removed from favorites",
+		"template": templateID,
+	})
+}
+
+// ListUserFavoriteTemplates returns user's favorite templates
+func (h *Handler) ListUserFavoriteTemplates(c *gin.Context) {
+	ctx := context.Background()
+
+	// Get user ID from context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userIDStr, ok := userID.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID type"})
+		return
+	}
+
+	// Get favorite template names from database
+	rows, err := h.db.DB().QueryContext(ctx, `
+		SELECT template_name, favorited_at
+		FROM user_template_favorites
+		WHERE user_id = $1
+		ORDER BY favorited_at DESC
+	`, userIDStr)
+
+	if err != nil {
+		log.Printf("Error querying favorites: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get favorites"})
+		return
+	}
+	defer rows.Close()
+
+	// Collect template names and timestamps
+	type favoriteEntry struct {
+		Name        string    `json:"name"`
+		FavoritedAt time.Time `json:"favoritedAt"`
+	}
+	favorites := []favoriteEntry{}
+	templateNames := []string{}
+
+	for rows.Next() {
+		var entry favoriteEntry
+		if err := rows.Scan(&entry.Name, &entry.FavoritedAt); err != nil {
+			log.Printf("Error scanning favorite row: %v", err)
+			continue
+		}
+		favorites = append(favorites, entry)
+		templateNames = append(templateNames, entry.Name)
+	}
+
+	// Fetch full template details from Kubernetes
+	templates := make([]*k8s.Template, 0, len(templateNames))
+	for _, name := range templateNames {
+		template, err := h.k8sClient.GetTemplate(ctx, h.namespace, name)
+		if err != nil {
+			log.Printf("Warning: Favorite template %s not found in cluster: %v", name, err)
+			continue
+		}
+		templates = append(templates, template)
+	}
+
+	// Enrich templates with favorited_at timestamp
+	enriched := make([]map[string]interface{}, 0, len(templates))
+	for i, tmpl := range templates {
+		enrichedTemplate := map[string]interface{}{
+			"name":        tmpl.Name,
+			"displayName": tmpl.DisplayName,
+			"description": tmpl.Description,
+			"category":    tmpl.Category,
+			"icon":        tmpl.Icon,
+			"tags":        tmpl.Tags,
+			"favorited":   true,
+			"favoritedAt": favorites[i].FavoritedAt,
+		}
+		enriched = append(enriched, enrichedTemplate)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"templates": enriched,
+		"total":     len(enriched),
+	})
+}
+
+// CheckTemplateFavorite checks if a template is in user's favorites
+func (h *Handler) CheckTemplateFavorite(c *gin.Context) {
+	ctx := context.Background()
+	templateID := c.Param("id")
+
+	// Get user ID from context
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	userIDStr, ok := userID.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID type"})
+		return
+	}
+
+	// Check if favorite exists
+	var count int
+	err := h.db.DB().QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM user_template_favorites
+		WHERE user_id = $1 AND template_name = $2
+	`, userIDStr, templateID).Scan(&count)
+
+	if err != nil {
+		log.Printf("Error checking favorite: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check favorite"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"favorited": count > 0,
+		"template":  templateID,
+	})
 }
 
 // ============================================================================

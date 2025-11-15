@@ -330,6 +330,19 @@ func (d *Database) Migrate() error {
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 
+		// User template favorites (bookmarks for quick access)
+		`CREATE TABLE IF NOT EXISTS user_template_favorites (
+			id SERIAL PRIMARY KEY,
+			user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+			template_name VARCHAR(255) NOT NULL,
+			favorited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, template_name)
+		)`,
+
+		// Create indexes for favorites
+		`CREATE INDEX IF NOT EXISTS idx_user_template_favorites_user_id ON user_template_favorites(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_template_favorites_template ON user_template_favorites(template_name)`,
+
 		// Featured templates (admin curated highlights)
 		`CREATE TABLE IF NOT EXISTS featured_templates (
 			id SERIAL PRIMARY KEY,

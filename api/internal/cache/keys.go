@@ -138,3 +138,13 @@ func TemplatePattern() string {
 func QuotaPattern() string {
 	return fmt.Sprintf("%s:*", PrefixQuota)
 }
+
+// User favorites invalidation pattern (invalidates all user favorite caches)
+func UserFavoritesPattern() string {
+	return fmt.Sprintf("%s:favorites:*", PrefixTemplate)
+}
+
+// User-specific favorites key
+func UserFavoritesKey(userID string) string {
+	return fmt.Sprintf("%s:favorites:user:%s", PrefixTemplate, userID)
+}
