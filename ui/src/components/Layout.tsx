@@ -31,7 +31,7 @@ import {
   People as PeopleIcon,
   Schedule as ScheduleIcon,
   Security as SecurityIcon,
-  Integration as IntegrationIcon,
+  Hub as IntegrationIcon,
   TrendingUp as ScalingIcon,
   Policy as ComplianceIcon,
 } from '@mui/icons-material';

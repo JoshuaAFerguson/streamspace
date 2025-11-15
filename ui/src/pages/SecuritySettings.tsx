@@ -44,7 +44,7 @@ import {
   Shield as ShieldIcon,
 } from '@mui/icons-material';
 import Layout from '../components/Layout';
-import QRCode from 'qrcode.react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface MFAMethod {
   id: number;
@@ -397,7 +397,7 @@ export default function SecuritySettings() {
                   Scan this QR code with your authenticator app:
                 </Typography>
                 <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-                  <QRCode value={totpQR} size={200} />
+                  <QRCodeSVG value={totpQR} size={200} />
                 </Box>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                   Or enter this code manually:
