@@ -11,6 +11,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Handler provides access to database and WebSocket functionality
+// This struct should be initialized with DB and WSHandler fields
+type Handler struct {
+	DB        *sql.DB
+	WSHandler WebSocketBroadcaster
+}
+
+// WebSocketBroadcaster interface for broadcasting session events
+// Implemented by the WebSocket handler to allow push notifications
+type WebSocketBroadcaster interface {
+	BroadcastSessionEvent(event string, sessionID string, userID string, data map[string]interface{})
+}
+
 // MonitorConfiguration represents a multi-monitor setup
 type MonitorConfiguration struct {
 	ID          int64                  `json:"id"`
@@ -540,14 +553,60 @@ func (h *Handler) applyVNCConfiguration(sessionID string, configID int64) error 
 		return fmt.Errorf("failed to store VNC reconfiguration trigger: %w", err)
 	}
 
-	// TODO: Future enhancement - send WebSocket event to session for immediate reconfiguration
-	// Example: h.wsHandler.BroadcastSessionEvent("vnc.reconfigure", sessionID, userID, configData)
-	//
-	// For now, the session container needs to:
-	// 1. Poll session_vnc_reconfigs table for pending reconfigurations
+	// Send WebSocket notification for immediate VNC reconfiguration
+	// This allows the session container to receive the reconfiguration without polling
+	if err := h.broadcastVNCReconfiguration(sessionID, configID, totalWidth, totalHeight, monitorList, layout); err != nil {
+		// Log the error but don't fail the operation - session can still poll the database
+		fmt.Printf("Warning: Failed to broadcast VNC reconfiguration via WebSocket: %v\n", err)
+	}
+
+	// Note: Session container should still poll session_vnc_reconfigs table as a fallback
+	// WebSocket process:
+	// 1. Receive WebSocket event "vnc.reconfigure" on WS connection
 	// 2. Apply new resolution: xrandr --output VNC-0 --mode <totalWidth>x<totalHeight>
 	// 3. Restart VNC server with new geometry if needed
 	// 4. Update status to 'applied' in session_vnc_reconfigs
+	//
+	// Fallback polling process (if WebSocket not available):
+	// 1. Poll session_vnc_reconfigs table for pending reconfigurations every 5 seconds
+	// 2. Apply configuration as above
+	// 3. Update status to 'applied'
+
+	return nil
+}
+
+// broadcastVNCReconfiguration sends a WebSocket push notification for VNC reconfiguration
+func (h *Handler) broadcastVNCReconfiguration(sessionID string, configID int64, totalWidth, totalHeight int, monitors []MonitorDisplay, layout string) error {
+	// Get user_id for the session
+	var userID string
+	err := h.DB.QueryRow("SELECT user_id FROM sessions WHERE id = $1", sessionID).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user_id for session: %w", err)
+	}
+
+	// If WebSocket handler is available, broadcast the event
+	// This will be wired up when Handler struct has access to WebSocket manager
+	if h.WSHandler != nil {
+		configData := map[string]interface{}{
+			"config_id":    configID,
+			"total_width":  totalWidth,
+			"total_height": totalHeight,
+			"layout":       layout,
+			"monitors":     monitors,
+			"action":       "reconfigure_vnc",
+			"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		}
+
+		// Broadcast to session-specific WebSocket subscribers
+		h.WSHandler.BroadcastSessionEvent("vnc.reconfigure", sessionID, userID, configData)
+
+		// Also broadcast to general session updates channel
+		h.WSHandler.BroadcastSessionEvent("session.vnc_updated", sessionID, userID, map[string]interface{}{
+			"session_id": sessionID,
+			"config_id":  configID,
+			"message":    "VNC configuration updated - session may need restart for full effect",
+		})
+	}
 
 	return nil
 }
@@ -582,4 +641,29 @@ func toJSONB(v interface{}) string {
 		return "{}"
 	}
 	return string(data)
+}
+
+// canAccessSession checks if a user has access to a session
+func (h *Handler) canAccessSession(userID, sessionID string) bool {
+	var ownerID string
+	err := h.DB.QueryRow("SELECT user_id FROM sessions WHERE id = $1", sessionID).Scan(&ownerID)
+	if err != nil {
+		return false
+	}
+
+	// User is the owner
+	if ownerID == userID {
+		return true
+	}
+
+	// Check if session is shared with the user
+	var hasAccess bool
+	h.DB.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM session_shares
+			WHERE session_id = $1 AND shared_with_user_id = $2
+		)
+	`, sessionID, userID).Scan(&hasAccess)
+
+	return hasAccess
 }
