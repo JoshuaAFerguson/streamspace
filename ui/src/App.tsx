@@ -19,6 +19,8 @@ const EnhancedRepositories = lazy(() => import('./pages/EnhancedRepositories'));
 const SessionViewer = lazy(() => import('./pages/SessionViewer'));
 const PluginCatalog = lazy(() => import('./pages/PluginCatalog'));
 const InstalledPlugins = lazy(() => import('./pages/InstalledPlugins'));
+const Scheduling = lazy(() => import('./pages/Scheduling'));
+const SecuritySettings = lazy(() => import('./pages/SecuritySettings'));
 
 // Admin Pages (loaded only for admin users)
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
@@ -31,6 +33,9 @@ const CreateUser = lazy(() => import('./pages/admin/CreateUser'));
 const Groups = lazy(() => import('./pages/admin/Groups'));
 const GroupDetail = lazy(() => import('./pages/admin/GroupDetail'));
 const CreateGroup = lazy(() => import('./pages/admin/CreateGroup'));
+const Integrations = lazy(() => import('./pages/admin/Integrations'));
+const Scaling = lazy(() => import('./pages/admin/Scaling'));
+const Compliance = lazy(() => import('./pages/admin/Compliance'));
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -199,6 +204,22 @@ function App() {
               }
             />
             <Route
+              path="/scheduling"
+              element={
+                <ProtectedRoute>
+                  <Scheduling />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/security"
+              element={
+                <ProtectedRoute>
+                  <SecuritySettings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/admin"
               element={
                 <AdminRoute>
@@ -283,6 +304,30 @@ function App() {
               element={
                 <AdminRoute>
                   <GroupDetail />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/integrations"
+              element={
+                <AdminRoute>
+                  <Integrations />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/scaling"
+              element={
+                <AdminRoute>
+                  <Scaling />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/compliance"
+              element={
+                <AdminRoute>
+                  <Compliance />
                 </AdminRoute>
               }
             />

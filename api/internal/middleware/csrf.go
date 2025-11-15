@@ -1,7 +1,43 @@
+// Package middleware provides HTTP middleware for the StreamSpace API.
+// This file implements CSRF (Cross-Site Request Forgery) protection.
+//
+// SECURITY ENHANCEMENT (2025-11-14):
+// Added CSRF protection using double-submit cookie pattern with constant-time comparison.
+//
+// CSRF Attack Scenario (Without Protection):
+// 1. User logs into StreamSpace (gets session cookie)
+// 2. User visits malicious site evil.com
+// 3. evil.com contains: <form action="https://streamspace.io/api/delete-account" method="POST">
+// 4. Browser automatically sends session cookie with the malicious request
+// 5. StreamSpace deletes user's account (thinks it's a legitimate request)
+//
+// CSRF Protection (Double-Submit Cookie Pattern):
+// 1. GET request: Server generates random CSRF token, sends in both cookie AND header
+// 2. Client stores header token (JavaScript can read it)
+// 3. POST request: Client sends token in both cookie AND custom header
+// 4. Server compares: cookie token == header token (using constant-time comparison)
+// 5. If match: Request is from legitimate client (evil.com can't read/set custom headers)
+// 6. If mismatch: Request is CSRF attack (blocked)
+//
+// Why This Works:
+// - Malicious sites can trigger POST requests (via forms, fetch)
+// - Browsers automatically send cookies with requests (even cross-site)
+// - BUT: Malicious sites CANNOT read cookies or set custom headers (Same-Origin Policy)
+// - So attacker cannot get the token to put in the custom header
+//
+// Implementation Details:
+// - Token: 32 random bytes, base64-encoded (256 bits of entropy)
+// - Comparison: Constant-time (prevents timing attacks)
+// - Storage: In-memory map with automatic cleanup (24-hour expiry)
+// - Exempt: GET, HEAD, OPTIONS requests (safe methods, no state change)
+//
+// Usage:
+//   router.Use(middleware.CSRFProtection())
 package middleware
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"net/http"
 	"sync"
@@ -10,147 +46,170 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CSRFProtection implements CSRF token validation for state-changing operations
-type CSRFProtection struct {
-	tokens map[string]time.Time // token -> expiration time
+// CSRF Constants define CSRF protection configuration.
+const (
+	// CSRFTokenLength is the length of CSRF tokens in bytes
+	CSRFTokenLength = 32
+
+	// CSRFTokenHeader is the HTTP header for CSRF tokens
+	CSRFTokenHeader = "X-CSRF-Token"
+
+	// CSRFCookieName is the name of the CSRF cookie
+	CSRFCookieName = "csrf_token"
+
+	// CSRFTokenExpiry is how long CSRF tokens are valid
+	CSRFTokenExpiry = 24 * time.Hour
+)
+
+// CSRFStore stores CSRF tokens with expiration
+type CSRFStore struct {
+	tokens map[string]time.Time
 	mu     sync.RWMutex
-	maxAge time.Duration
 }
 
-// NewCSRFProtection creates a new CSRF protection middleware
-func NewCSRFProtection(maxAge time.Duration) *CSRFProtection {
-	csrf := &CSRFProtection{
+var (
+	globalCSRFStore = &CSRFStore{
 		tokens: make(map[string]time.Time),
-		maxAge: maxAge,
 	}
+	csrfCleanupOnce sync.Once
+)
 
-	// Start cleanup goroutine
-	go csrf.cleanupExpired()
-
-	return csrf
-}
-
-// generateToken creates a cryptographically secure random token
-func (c *CSRFProtection) generateToken() (string, error) {
-	bytes := make([]byte, 32)
+// generateCSRFToken generates a random CSRF token
+func generateCSRFToken() (string, error) {
+	bytes := make([]byte, CSRFTokenLength)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
 
-// cleanupExpired removes expired tokens periodically
-func (c *CSRFProtection) cleanupExpired() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		c.mu.Lock()
-		now := time.Now()
-		for token, expiry := range c.tokens {
-			if now.After(expiry) {
-				delete(c.tokens, token)
-			}
-		}
-		c.mu.Unlock()
-	}
+// addToken adds a token to the store with expiration
+func (cs *CSRFStore) addToken(token string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.tokens[token] = time.Now().Add(CSRFTokenExpiry)
 }
 
-// IssueToken generates and stores a new CSRF token
-func (c *CSRFProtection) IssueToken(ctx *gin.Context) (string, error) {
-	token, err := c.generateToken()
-	if err != nil {
-		return "", err
-	}
-
-	c.mu.Lock()
-	c.tokens[token] = time.Now().Add(c.maxAge)
-	c.mu.Unlock()
-
-	// Set token in cookie for SPA applications
-	ctx.SetCookie(
-		"csrf_token",
-		token,
-		int(c.maxAge.Seconds()),
-		"/",
-		"",
-		true,  // Secure - only over HTTPS in production
-		true,  // HttpOnly - prevent JavaScript access
-	)
-
-	return token, nil
-}
-
-// ValidateToken checks if a token is valid
-func (c *CSRFProtection) ValidateToken(token string) bool {
-	c.mu.RLock()
-	expiry, exists := c.tokens[token]
-	c.mu.RUnlock()
-
+// validateToken checks if a token is valid and not expired
+func (cs *CSRFStore) validateToken(token string) bool {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	
+	expiry, exists := cs.tokens[token]
 	if !exists {
 		return false
 	}
-
+	
+	// Check if expired
 	if time.Now().After(expiry) {
-		// Clean up expired token
-		c.mu.Lock()
-		delete(c.tokens, token)
-		c.mu.Unlock()
 		return false
 	}
-
+	
 	return true
 }
 
-// Middleware returns a Gin middleware that validates CSRF tokens
-// Should be applied to all state-changing routes (POST, PUT, PATCH, DELETE)
-func (c *CSRFProtection) Middleware() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		// Skip CSRF validation for safe methods
-		if ctx.Request.Method == "GET" || ctx.Request.Method == "HEAD" || ctx.Request.Method == "OPTIONS" {
-			ctx.Next()
-			return
-		}
+// removeToken removes a token from the store
+func (cs *CSRFStore) removeToken(token string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	delete(cs.tokens, token)
+}
 
-		// Get token from header (for AJAX requests)
-		token := ctx.GetHeader("X-CSRF-Token")
+// cleanup removes expired tokens
+func (cs *CSRFStore) cleanup() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
 
-		// Fallback to cookie if header not present
-		if token == "" {
-			cookie, err := ctx.Cookie("csrf_token")
-			if err == nil {
-				token = cookie
+	for range ticker.C {
+		cs.mu.Lock()
+		now := time.Now()
+		for token, expiry := range cs.tokens {
+			if now.After(expiry) {
+				delete(cs.tokens, token)
 			}
 		}
-
-		// Validate token
-		if token == "" || !c.ValidateToken(token) {
-			ctx.JSON(http.StatusForbidden, gin.H{
-				"error": "CSRF validation failed",
-				"message": "Invalid or missing CSRF token. Please refresh and try again.",
-			})
-			ctx.Abort()
-			return
-		}
-
-		ctx.Next()
+		cs.mu.Unlock()
 	}
 }
 
-// IssueTokenHandler returns a handler that issues CSRF tokens
-// Should be called on initial page load or login
-func (c *CSRFProtection) IssueTokenHandler() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		token, err := c.IssueToken(ctx)
+// CSRFProtection middleware validates CSRF tokens for state-changing requests
+func CSRFProtection() gin.HandlerFunc {
+	// Start cleanup goroutine once
+	csrfCleanupOnce.Do(func() {
+		go globalCSRFStore.cleanup()
+	})
+
+	return func(c *gin.Context) {
+		// Skip CSRF for safe methods (GET, HEAD, OPTIONS)
+		if c.Request.Method == "GET" || c.Request.Method == "HEAD" || c.Request.Method == "OPTIONS" {
+			// For GET requests, generate and set a CSRF token
+			token, err := generateCSRFToken()
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+					"error": "Failed to generate CSRF token",
+				})
+				return
+			}
+
+			// Store token
+			globalCSRFStore.addToken(token)
+
+			// Set token in response header
+			c.Header(CSRFTokenHeader, token)
+
+			// Set token in cookie (HttpOnly for security)
+			c.SetCookie(
+				CSRFCookieName,
+				token,
+				int(CSRFTokenExpiry.Seconds()),
+				"/",
+				"",
+				true,  // Secure (HTTPS only in production)
+				true,  // HttpOnly
+			)
+
+			c.Next()
+			return
+		}
+
+		// For state-changing methods (POST, PUT, DELETE, PATCH), validate CSRF token
+		// Get token from header
+		headerToken := c.GetHeader(CSRFTokenHeader)
+		
+		// Get token from cookie
+		cookieToken, err := c.Cookie(CSRFCookieName)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to generate CSRF token",
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "CSRF token missing",
+				"message": "CSRF cookie not found",
 			})
 			return
 		}
 
-		ctx.JSON(http.StatusOK, gin.H{
-			"csrf_token": token,
-		})
+		// Tokens must match
+		if subtle.ConstantTimeCompare([]byte(headerToken), []byte(cookieToken)) != 1 {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "CSRF token mismatch",
+				"message": "CSRF tokens do not match",
+			})
+			return
+		}
+
+		// Validate token exists and is not expired
+		if !globalCSRFStore.validateToken(cookieToken) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error":   "CSRF token invalid",
+				"message": "CSRF token has expired or is invalid",
+			})
+			return
+		}
+
+		c.Next()
 	}
+}
+
+// GetCSRFToken returns the current CSRF token for the request
+// Useful for rendering in HTML forms or passing to frontend
+func GetCSRFToken(c *gin.Context) string {
+	return c.GetHeader(CSRFTokenHeader)
 }

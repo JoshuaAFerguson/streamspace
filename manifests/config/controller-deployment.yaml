@@ -20,7 +20,7 @@ spec:
       serviceAccountName: workspace-controller
       containers:
       - name: controller
-        image: your-registry/workspace-controller:latest  # TODO: Build and push
+        image: ghcr.io/joshuaaferguson/streamspace-controller:v0.2.0
         imagePullPolicy: IfNotPresent
         command:
           - /workspace-controller

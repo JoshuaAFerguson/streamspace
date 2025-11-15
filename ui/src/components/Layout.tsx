@@ -29,6 +29,11 @@ import {
   AdminPanelSettings as AdminIcon,
   Storage as StorageIcon,
   People as PeopleIcon,
+  Schedule as ScheduleIcon,
+  Security as SecurityIcon,
+  Hub as IntegrationIcon,
+  TrendingUp as ScalingIcon,
+  Policy as ComplianceIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUserStore } from '../store/userStore';
@@ -73,6 +78,8 @@ export default function Layout({ children }: LayoutProps) {
     { text: 'Plugin Catalog', icon: <ExtensionIcon />, path: '/plugins/catalog' },
     { text: 'My Plugins', icon: <ExtensionIcon />, path: '/plugins/installed' },
     { text: 'Repositories', icon: <FolderIcon />, path: '/repositories' },
+    { text: 'Scheduling', icon: <ScheduleIcon />, path: '/scheduling' },
+    { text: 'Security', icon: <SecurityIcon />, path: '/security' },
   ];
 
   const adminMenuItems = [
@@ -80,6 +87,9 @@ export default function Layout({ children }: LayoutProps) {
     { text: 'Cluster Nodes', icon: <StorageIcon />, path: '/admin/nodes' },
     { text: 'User Quotas', icon: <PeopleIcon />, path: '/admin/quotas' },
     { text: 'Plugin Management', icon: <ExtensionIcon />, path: '/admin/plugins' },
+    { text: 'Integrations', icon: <IntegrationIcon />, path: '/admin/integrations' },
+    { text: 'Scaling', icon: <ScalingIcon />, path: '/admin/scaling' },
+    { text: 'Compliance', icon: <ComplianceIcon />, path: '/admin/compliance' },
   ];
 
   const drawer = (

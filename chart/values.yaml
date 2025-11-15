@@ -465,10 +465,15 @@ ingress:
 ## Secrets
 secrets:
   # Create secrets automatically (NOT for production!)
+  # ⚠️ WARNING: This will create secrets with default passwords - ONLY for development/testing
+  # For production, set create: false and use existingSecret with proper secret management
   create: true
 
   # PostgreSQL password
-  postgresPassword: "changeme"
+  # ⚠️ SECURITY WARNING: Change this password before deploying to production!
+  # Generate a secure password with: openssl rand -base64 32
+  # Or use existingSecret below with a properly managed secret
+  postgresPassword: "changeme"  # DEFAULT - CHANGE FOR PRODUCTION!
 
   # Or use existing secret
   existingSecret: ""

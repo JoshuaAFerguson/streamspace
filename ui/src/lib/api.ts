@@ -376,6 +376,434 @@ export interface RefreshTokenRequest {
   token: string;
 }
 
+// ============================================================================
+// Integration Hub Types
+// ============================================================================
+
+export interface Webhook {
+  id: number;
+  name: string;
+  url: string;
+  secret?: string;
+  events: string[];
+  headers?: Record<string, string>;
+  enabled: boolean;
+  retry_policy?: {
+    max_attempts: number;
+    backoff_seconds: number;
+  };
+  filters?: {
+    users?: string[];
+    templates?: string[];
+    session_states?: string[];
+  };
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WebhookDelivery {
+  id: number;
+  webhook_id: number;
+  event: string;
+  payload: any;
+  status: 'pending' | 'success' | 'failed';
+  attempts: number;
+  response_code?: number;
+  response_body?: string;
+  error_message?: string;
+  next_retry_at?: string;
+  created_at: string;
+}
+
+export interface Integration {
+  id: number;
+  name: string;
+  type: 'slack' | 'teams' | 'discord' | 'pagerduty' | 'email' | 'custom';
+  enabled: boolean;
+  config: Record<string, any>;
+  created_at: string;
+}
+
+export interface CreateWebhookRequest {
+  name: string;
+  url: string;
+  secret?: string;
+  events: string[];
+  enabled?: boolean;
+  headers?: Record<string, string>;
+}
+
+export interface CreateIntegrationRequest {
+  name: string;
+  type: string;
+  config: Record<string, any>;
+}
+
+// ============================================================================
+// Security Types
+// ============================================================================
+
+export interface MFAMethod {
+  id: number;
+  user_id: string;
+  type: 'totp' | 'sms' | 'email';
+  enabled: boolean;
+  verified: boolean;
+  is_primary: boolean;
+  phone_number?: string;
+  email?: string;
+  created_at: string;
+  last_used_at?: string;
+}
+
+export interface MFASetupResponse {
+  id: number;
+  type: string;
+  secret?: string;
+  qr_code?: string;
+  message: string;
+}
+
+export interface MFAVerifyRequest {
+  code: string;
+  method_type?: string;
+  trust_device?: boolean;
+}
+
+export interface BackupCodesResponse {
+  backup_codes: string[];
+  message: string;
+}
+
+export interface IPWhitelistEntry {
+  id: number;
+  user_id?: string;
+  ip_address: string;
+  description?: string;
+  enabled: boolean;
+  created_by: string;
+  created_at: string;
+  expires_at?: string;
+}
+
+export interface CreateIPWhitelistRequest {
+  ip_address: string;
+  description?: string;
+  user_id?: string;
+  expires_at?: string;
+}
+
+export interface SecurityAlert {
+  type: string;
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical';
+  message: string;
+  details?: any;
+  created_at: string;
+}
+
+export interface SessionVerificationResponse {
+  verification_id: number;
+  risk_score: number;
+  risk_level: 'low' | 'medium' | 'high' | 'critical';
+  verified: boolean;
+  required_action?: string;
+  message?: string;
+}
+
+// ============================================================================
+// Scheduling Types
+// ============================================================================
+
+export interface ScheduledSession {
+  id: number;
+  user_id: string;
+  template_id: string;
+  name: string;
+  description?: string;
+  timezone: string;
+  schedule: {
+    type: 'once' | 'daily' | 'weekly' | 'monthly' | 'cron';
+    start_time?: string;
+    time_of_day?: string;
+    days_of_week?: number[];
+    day_of_month?: number;
+    cron_expr?: string;
+    end_date?: string;
+    exceptions?: string[];
+  };
+  resources?: {
+    memory: string;
+    cpu: string;
+  };
+  auto_terminate: boolean;
+  terminate_after?: number;
+  pre_warm: boolean;
+  pre_warm_minutes?: number;
+  enabled: boolean;
+  next_run_at?: string;
+  last_run_at?: string;
+  last_session_id?: string;
+  last_run_status?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateScheduledSessionRequest {
+  template_id: string;
+  name: string;
+  description?: string;
+  timezone: string;
+  schedule: ScheduledSession['schedule'];
+  resources?: { memory: string; cpu: string };
+  auto_terminate?: boolean;
+  terminate_after?: number;
+  pre_warm?: boolean;
+  pre_warm_minutes?: number;
+}
+
+export interface CalendarIntegration {
+  id: number;
+  user_id: string;
+  provider: 'google' | 'outlook' | 'ical';
+  account_email: string;
+  enabled: boolean;
+  sync_enabled: boolean;
+  auto_create_events: boolean;
+  auto_update_events: boolean;
+  last_synced_at?: string;
+  created_at: string;
+}
+
+// ============================================================================
+// Load Balancing & Auto-scaling Types
+// ============================================================================
+
+export interface LoadBalancingPolicy {
+  id: number;
+  name: string;
+  description?: string;
+  strategy: 'round_robin' | 'least_loaded' | 'resource_based' | 'geographic' | 'weighted';
+  enabled: boolean;
+  session_affinity: boolean;
+  health_check_config?: {
+    enabled: boolean;
+    interval_seconds: number;
+    timeout_seconds: number;
+    fail_threshold: number;
+    pass_threshold: number;
+  };
+  node_selector?: Record<string, string>;
+  node_weights?: Record<string, number>;
+  resource_thresholds?: {
+    cpu_percent: number;
+    memory_percent: number;
+    max_sessions: number;
+  };
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NodeStatus {
+  node_name: string;
+  status: 'ready' | 'not_ready' | 'unknown';
+  cpu_allocated: number;
+  cpu_capacity: number;
+  cpu_percent: number;
+  memory_allocated: number;
+  memory_capacity: number;
+  memory_percent: number;
+  active_sessions: number;
+  health_status: 'healthy' | 'unhealthy' | 'unknown';
+  last_health_check?: string;
+  region?: string;
+  zone?: string;
+  labels?: Record<string, string>;
+  weight: number;
+}
+
+export interface AutoScalingPolicy {
+  id: number;
+  name: string;
+  description?: string;
+  target_type: 'deployment' | 'template';
+  target_id: string;
+  enabled: boolean;
+  scaling_mode: 'horizontal' | 'vertical' | 'both';
+  min_replicas: number;
+  max_replicas: number;
+  metric_type: 'cpu' | 'memory' | 'custom';
+  target_metric_value: number;
+  scale_up_policy?: {
+    threshold: number;
+    increment: number;
+    stabilization_seconds: number;
+  };
+  scale_down_policy?: {
+    threshold: number;
+    increment: number;
+    stabilization_seconds: number;
+  };
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScalingEvent {
+  id: number;
+  policy_id: number;
+  target_type: string;
+  target_id: string;
+  action: 'scale_up' | 'scale_down';
+  previous_replicas: number;
+  new_replicas: number;
+  trigger: 'manual' | 'metric' | 'schedule';
+  metric_value?: number;
+  reason?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  created_at: string;
+}
+
+export interface CreateLoadBalancingPolicyRequest {
+  name: string;
+  description?: string;
+  strategy: string;
+  session_affinity?: boolean;
+}
+
+export interface CreateAutoScalingPolicyRequest {
+  name: string;
+  description?: string;
+  target_type: string;
+  target_id: string;
+  scaling_mode: string;
+  min_replicas: number;
+  max_replicas: number;
+  metric_type: string;
+  target_metric_value: number;
+}
+
+export interface TriggerScalingRequest {
+  action: 'scale_up' | 'scale_down';
+  replicas?: number;
+  reason?: string;
+}
+
+// ============================================================================
+// Compliance Types
+// ============================================================================
+
+export interface ComplianceFramework {
+  id: number;
+  name: string;
+  display_name: string;
+  description?: string;
+  version?: string;
+  enabled: boolean;
+  controls?: any[];
+  requirements?: Record<string, any>;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompliancePolicy {
+  id: number;
+  name: string;
+  framework_id: number;
+  framework_name?: string;
+  applies_to: {
+    user_ids?: string[];
+    team_ids?: string[];
+    roles?: string[];
+    all_users: boolean;
+  };
+  enabled: boolean;
+  enforcement_level: 'advisory' | 'warning' | 'blocking';
+  data_retention?: {
+    session_data_days: number;
+    recording_days: number;
+    audit_log_days: number;
+  };
+  access_controls?: {
+    require_mfa: boolean;
+    allowed_ip_ranges?: string[];
+    session_timeout_minutes: number;
+  };
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ComplianceViolation {
+  id: number;
+  policy_id: number;
+  policy_name?: string;
+  user_id: string;
+  violation_type: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  description: string;
+  details?: any;
+  status: 'open' | 'acknowledged' | 'remediated' | 'closed';
+  resolution?: string;
+  resolved_by?: string;
+  resolved_at?: string;
+  created_at: string;
+}
+
+export interface ComplianceReport {
+  id: number;
+  framework_id?: number;
+  framework_name?: string;
+  report_type: 'summary' | 'detailed' | 'attestation';
+  report_period: {
+    start_date: string;
+    end_date: string;
+  };
+  overall_status: 'compliant' | 'partial' | 'non_compliant';
+  controls_summary: {
+    total: number;
+    compliant: number;
+    non_compliant: number;
+    unknown: number;
+    compliance_rate: number;
+  };
+  violations?: ComplianceViolation[];
+  recommendations?: string[];
+  generated_by: string;
+  generated_at: string;
+}
+
+export interface ComplianceDashboard {
+  total_policies: number;
+  active_policies: number;
+  total_open_violations: number;
+  violations_by_severity: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  recent_violations: ComplianceViolation[];
+}
+
+export interface CreateCompliancePolicyRequest {
+  name: string;
+  framework_id: number;
+  applies_to: CompliancePolicy['applies_to'];
+  enforcement_level: string;
+  data_retention?: CompliancePolicy['data_retention'];
+  access_controls?: CompliancePolicy['access_controls'];
+}
+
+export interface GenerateComplianceReportRequest {
+  framework_id?: number;
+  report_type: 'summary' | 'detailed' | 'attestation';
+  start_date: string;
+  end_date: string;
+}
+
 class APIClient {
   private client: AxiosInstance;
 
@@ -1110,6 +1538,328 @@ class APIClient {
 
   async getMetrics() {
     const response = await this.client.get('/metrics');
+    return response.data;
+  }
+
+  // ============================================================================
+  // Integration Hub
+  // ============================================================================
+
+  async listWebhooks(): Promise<{ webhooks: Webhook[] }> {
+    const response = await this.client.get<{ webhooks: Webhook[] }>('/integrations/webhooks');
+    return response.data;
+  }
+
+  async createWebhook(data: CreateWebhookRequest): Promise<Webhook> {
+    const response = await this.client.post<Webhook>('/integrations/webhooks', data);
+    return response.data;
+  }
+
+  async updateWebhook(id: number, data: Partial<CreateWebhookRequest>): Promise<Webhook> {
+    const response = await this.client.patch<Webhook>(`/integrations/webhooks/${id}`, data);
+    return response.data;
+  }
+
+  async deleteWebhook(id: number): Promise<void> {
+    await this.client.delete(`/integrations/webhooks/${id}`);
+  }
+
+  async testWebhook(id: number): Promise<{ message: string; delivery_id: number }> {
+    const response = await this.client.post(`/integrations/webhooks/${id}/test`);
+    return response.data;
+  }
+
+  async getWebhookDeliveries(webhookId: number): Promise<{ deliveries: WebhookDelivery[] }> {
+    const response = await this.client.get<{ deliveries: WebhookDelivery[] }>(
+      `/integrations/webhooks/${webhookId}/deliveries`
+    );
+    return response.data;
+  }
+
+  async retryWebhookDelivery(webhookId: number, deliveryId: number): Promise<void> {
+    await this.client.post(`/integrations/webhooks/${webhookId}/retry/${deliveryId}`);
+  }
+
+  async listIntegrations(): Promise<{ integrations: Integration[] }> {
+    const response = await this.client.get<{ integrations: Integration[] }>('/integrations/external');
+    return response.data;
+  }
+
+  async createIntegration(data: CreateIntegrationRequest): Promise<Integration> {
+    const response = await this.client.post<Integration>('/integrations/external', data);
+    return response.data;
+  }
+
+  async deleteIntegration(id: number): Promise<void> {
+    await this.client.delete(`/integrations/external/${id}`);
+  }
+
+  async testIntegration(id: number): Promise<{ message: string }> {
+    const response = await this.client.post(`/integrations/external/${id}/test`);
+    return response.data;
+  }
+
+  async getAvailableEvents(): Promise<{ events: string[] }> {
+    const response = await this.client.get<{ events: string[] }>('/integrations/events');
+    return response.data;
+  }
+
+  // ============================================================================
+  // Security
+  // ============================================================================
+
+  async setupMFA(type: 'totp' | 'sms' | 'email', data?: { phone_number?: string; email?: string }): Promise<MFASetupResponse> {
+    const response = await this.client.post<MFASetupResponse>('/security/mfa/setup', { type, ...data });
+    return response.data;
+  }
+
+  async verifyMFASetup(mfaId: number, code: string): Promise<BackupCodesResponse> {
+    const response = await this.client.post<BackupCodesResponse>(`/security/mfa/${mfaId}/verify-setup`, { code });
+    return response.data;
+  }
+
+  async verifyMFA(data: MFAVerifyRequest): Promise<{ message: string; verified: boolean }> {
+    const response = await this.client.post('/security/mfa/verify', data);
+    return response.data;
+  }
+
+  async listMFAMethods(): Promise<{ methods: MFAMethod[] }> {
+    const response = await this.client.get<{ methods: MFAMethod[] }>('/security/mfa/methods');
+    return response.data;
+  }
+
+  async disableMFA(mfaId: number): Promise<{ message: string }> {
+    const response = await this.client.delete(`/security/mfa/${mfaId}`);
+    return response.data;
+  }
+
+  async generateBackupCodes(): Promise<BackupCodesResponse> {
+    const response = await this.client.post<BackupCodesResponse>('/security/mfa/backup-codes');
+    return response.data;
+  }
+
+  async createIPWhitelist(data: CreateIPWhitelistRequest): Promise<{ id: number; message: string }> {
+    const response = await this.client.post('/security/ip-whitelist', data);
+    return response.data;
+  }
+
+  async listIPWhitelist(userId?: string): Promise<{ entries: IPWhitelistEntry[] }> {
+    const params = userId ? { user_id: userId } : {};
+    const response = await this.client.get<{ entries: IPWhitelistEntry[] }>('/security/ip-whitelist', { params });
+    return response.data;
+  }
+
+  async deleteIPWhitelist(entryId: number): Promise<{ message: string }> {
+    const response = await this.client.delete(`/security/ip-whitelist/${entryId}`);
+    return response.data;
+  }
+
+  async checkIPAccess(ipAddress?: string, userId?: string): Promise<{ allowed: boolean; ip_address: string }> {
+    const params: any = {};
+    if (ipAddress) params.ip_address = ipAddress;
+    if (userId) params.user_id = userId;
+    const response = await this.client.get('/security/ip-whitelist/check', { params });
+    return response.data;
+  }
+
+  async verifySession(sessionId: string): Promise<SessionVerificationResponse> {
+    const response = await this.client.post<SessionVerificationResponse>(`/security/sessions/${sessionId}/verify`);
+    return response.data;
+  }
+
+  async checkDevicePosture(data: any): Promise<{ compliant: boolean; issues: string[] }> {
+    const response = await this.client.post('/security/device-posture', data);
+    return response.data;
+  }
+
+  async getSecurityAlerts(): Promise<{ alerts: SecurityAlert[] }> {
+    const response = await this.client.get<{ alerts: SecurityAlert[] }>('/security/alerts');
+    return response.data;
+  }
+
+  // ============================================================================
+  // Scheduling
+  // ============================================================================
+
+  async listScheduledSessions(): Promise<{ schedules: ScheduledSession[]; count: number }> {
+    const response = await this.client.get<{ schedules: ScheduledSession[]; count: number }>('/scheduling/sessions');
+    return response.data;
+  }
+
+  async getScheduledSession(id: number): Promise<ScheduledSession> {
+    const response = await this.client.get<ScheduledSession>(`/scheduling/sessions/${id}`);
+    return response.data;
+  }
+
+  async createScheduledSession(data: CreateScheduledSessionRequest): Promise<{ id: number; message: string; schedule: ScheduledSession }> {
+    const response = await this.client.post('/scheduling/sessions', data);
+    return response.data;
+  }
+
+  async updateScheduledSession(id: number, data: Partial<CreateScheduledSessionRequest>): Promise<{ message: string }> {
+    const response = await this.client.patch(`/scheduling/sessions/${id}`, data);
+    return response.data;
+  }
+
+  async deleteScheduledSession(id: number): Promise<{ message: string }> {
+    const response = await this.client.delete(`/scheduling/sessions/${id}`);
+    return response.data;
+  }
+
+  async enableScheduledSession(id: number): Promise<{ message: string }> {
+    const response = await this.client.post(`/scheduling/sessions/${id}/enable`);
+    return response.data;
+  }
+
+  async disableScheduledSession(id: number): Promise<{ message: string }> {
+    const response = await this.client.post(`/scheduling/sessions/${id}/disable`);
+    return response.data;
+  }
+
+  async connectCalendar(provider: 'google' | 'outlook'): Promise<{ provider: string; auth_url: string; message: string }> {
+    const response = await this.client.post('/scheduling/calendar/connect', { provider });
+    return response.data;
+  }
+
+  async listCalendarIntegrations(): Promise<{ integrations: CalendarIntegration[] }> {
+    const response = await this.client.get<{ integrations: CalendarIntegration[] }>('/scheduling/calendar/integrations');
+    return response.data;
+  }
+
+  async disconnectCalendar(integrationId: number): Promise<{ message: string }> {
+    const response = await this.client.delete(`/scheduling/calendar/integrations/${integrationId}`);
+    return response.data;
+  }
+
+  async syncCalendar(integrationId: number): Promise<{ message: string; synced_at: string }> {
+    const response = await this.client.post(`/scheduling/calendar/integrations/${integrationId}/sync`);
+    return response.data;
+  }
+
+  async exportICalendar(): Promise<Blob> {
+    const response = await this.client.get('/scheduling/calendar/export.ics', {
+      responseType: 'blob',
+    });
+    return response.data;
+  }
+
+  // ============================================================================
+  // Load Balancing & Auto-scaling
+  // ============================================================================
+
+  async listLoadBalancingPolicies(): Promise<{ policies: LoadBalancingPolicy[] }> {
+    const response = await this.client.get<{ policies: LoadBalancingPolicy[] }>('/scaling/load-balancing/policies');
+    return response.data;
+  }
+
+  async createLoadBalancingPolicy(data: CreateLoadBalancingPolicyRequest): Promise<{ id: number; policy: LoadBalancingPolicy }> {
+    const response = await this.client.post('/scaling/load-balancing/policies', data);
+    return response.data;
+  }
+
+  async getNodeStatus(): Promise<{ nodes: NodeStatus[]; cluster_summary: any }> {
+    const response = await this.client.get<{ nodes: NodeStatus[]; cluster_summary: any }>('/scaling/load-balancing/nodes');
+    return response.data;
+  }
+
+  async selectNode(data: {
+    policy_id?: number;
+    required_cpu: number;
+    required_memory: number;
+    user_location?: string;
+  }): Promise<{ node_name: string; strategy_used: string; cpu_available: number; memory_available: number }> {
+    const response = await this.client.post('/scaling/load-balancing/select-node', data);
+    return response.data;
+  }
+
+  async listAutoScalingPolicies(): Promise<{ policies: AutoScalingPolicy[] }> {
+    const response = await this.client.get<{ policies: AutoScalingPolicy[] }>('/scaling/autoscaling/policies');
+    return response.data;
+  }
+
+  async createAutoScalingPolicy(data: CreateAutoScalingPolicyRequest): Promise<{ id: number; policy: AutoScalingPolicy }> {
+    const response = await this.client.post('/scaling/autoscaling/policies', data);
+    return response.data;
+  }
+
+  async triggerScaling(policyId: number, data: TriggerScalingRequest): Promise<{ event_id: number; action: string; previous_replicas: number; new_replicas: number }> {
+    const response = await this.client.post(`/scaling/autoscaling/policies/${policyId}/trigger`, data);
+    return response.data;
+  }
+
+  async getScalingHistory(policyId?: number, limit: number = 50): Promise<{ events: ScalingEvent[]; count: number }> {
+    const params: any = { limit };
+    if (policyId) params.policy_id = policyId;
+    const response = await this.client.get<{ events: ScalingEvent[]; count: number }>('/scaling/autoscaling/history', { params });
+    return response.data;
+  }
+
+  // ============================================================================
+  // Compliance
+  // ============================================================================
+
+  async listComplianceFrameworks(): Promise<{ frameworks: ComplianceFramework[] }> {
+    const response = await this.client.get<{ frameworks: ComplianceFramework[] }>('/compliance/frameworks');
+    return response.data;
+  }
+
+  async createComplianceFramework(data: {
+    name: string;
+    display_name: string;
+    description?: string;
+    version?: string;
+  }): Promise<{ id: number; framework: ComplianceFramework }> {
+    const response = await this.client.post('/compliance/frameworks', data);
+    return response.data;
+  }
+
+  async listCompliancePolicies(): Promise<{ policies: CompliancePolicy[] }> {
+    const response = await this.client.get<{ policies: CompliancePolicy[] }>('/compliance/policies');
+    return response.data;
+  }
+
+  async createCompliancePolicy(data: CreateCompliancePolicyRequest): Promise<{ id: number; policy: CompliancePolicy }> {
+    const response = await this.client.post('/compliance/policies', data);
+    return response.data;
+  }
+
+  async listComplianceViolations(params?: {
+    user_id?: string;
+    policy_id?: string;
+    status?: string;
+    severity?: string;
+  }): Promise<{ violations: ComplianceViolation[] }> {
+    const response = await this.client.get<{ violations: ComplianceViolation[] }>('/compliance/violations', { params });
+    return response.data;
+  }
+
+  async recordComplianceViolation(data: {
+    policy_id: number;
+    user_id: string;
+    violation_type: string;
+    severity: string;
+    description: string;
+    details?: any;
+  }): Promise<{ id: number; violation: ComplianceViolation }> {
+    const response = await this.client.post('/compliance/violations', data);
+    return response.data;
+  }
+
+  async resolveComplianceViolation(violationId: number, data: {
+    resolution: string;
+    status: 'acknowledged' | 'remediated' | 'closed';
+  }): Promise<{ message: string }> {
+    const response = await this.client.post(`/compliance/violations/${violationId}/resolve`, data);
+    return response.data;
+  }
+
+  async generateComplianceReport(data: GenerateComplianceReportRequest): Promise<ComplianceReport> {
+    const response = await this.client.post<ComplianceReport>('/compliance/reports/generate', data);
+    return response.data;
+  }
+
+  async getComplianceDashboard(): Promise<ComplianceDashboard> {
+    const response = await this.client.get<ComplianceDashboard>('/compliance/dashboard');
     return response.data;
   }
 }

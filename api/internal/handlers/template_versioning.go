@@ -1,0 +1,558 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// TemplateVersion represents a version of a template
+type TemplateVersion struct {
+	ID               int64                  `json:"id"`
+	TemplateID       string                 `json:"template_id"`
+	Version          string                 `json:"version"`
+	MajorVersion     int                    `json:"major_version"`
+	MinorVersion     int                    `json:"minor_version"`
+	PatchVersion     int                    `json:"patch_version"`
+	DisplayName      string                 `json:"display_name"`
+	Description      string                 `json:"description"`
+	Configuration    map[string]interface{} `json:"configuration"`
+	BaseImage        string                 `json:"base_image"`
+	ParentTemplateID string                 `json:"parent_template_id,omitempty"`
+	ParentVersion    string                 `json:"parent_version,omitempty"`
+	ChangeLog        string                 `json:"changelog"`
+	Status           string                 `json:"status"` // "draft", "testing", "stable", "deprecated"
+	IsDefault        bool                   `json:"is_default"`
+	TestResults      map[string]interface{} `json:"test_results,omitempty"`
+	CreatedBy        string                 `json:"created_by"`
+	CreatedAt        time.Time              `json:"created_at"`
+	PublishedAt      *time.Time             `json:"published_at,omitempty"`
+	DeprecatedAt     *time.Time             `json:"deprecated_at,omitempty"`
+}
+
+// TemplateTest represents a test for a template version
+type TemplateTest struct {
+	ID             int64                  `json:"id"`
+	TemplateID     string                 `json:"template_id"`
+	VersionID      int64                  `json:"version_id"`
+	Version        string                 `json:"version"`
+	TestType       string                 `json:"test_type"` // "startup", "smoke", "functional", "performance"
+	Status         string                 `json:"status"`    // "pending", "running", "passed", "failed"
+	Results        map[string]interface{} `json:"results"`
+	Duration       int                    `json:"duration"` // in seconds
+	ErrorMessage   string                 `json:"error_message,omitempty"`
+	StartedAt      time.Time              `json:"started_at"`
+	CompletedAt    *time.Time             `json:"completed_at,omitempty"`
+	CreatedBy      string                 `json:"created_by"`
+	CreatedAt      time.Time              `json:"created_at"`
+}
+
+// TemplateInheritance represents template inheritance/parent-child relationship
+type TemplateInheritance struct {
+	ChildTemplateID  string                 `json:"child_template_id"`
+	ParentTemplateID string                 `json:"parent_template_id"`
+	OverriddenFields []string               `json:"overridden_fields"`
+	InheritedFields  []string               `json:"inherited_fields"`
+	Metadata         map[string]interface{} `json:"metadata"`
+}
+
+// CreateTemplateVersion creates a new version of a template
+func (h *Handler) CreateTemplateVersion(c *gin.Context) {
+	templateID := c.Param("templateId")
+	userID := c.GetString("user_id")
+
+	var req struct {
+		Version          string                 `json:"version" binding:"required"`
+		DisplayName      string                 `json:"display_name" binding:"required"`
+		Description      string                 `json:"description"`
+		Configuration    map[string]interface{} `json:"configuration"`
+		BaseImage        string                 `json:"base_image"`
+		ParentTemplateID string                 `json:"parent_template_id"`
+		ParentVersion    string                 `json:"parent_version"`
+		ChangeLog        string                 `json:"changelog"`
+		Status           string                 `json:"status"`
+		IsDefault        bool                   `json:"is_default"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Parse semantic version
+	major, minor, patch := parseSemanticVersion(req.Version)
+
+	// If this is set as default, unset other defaults
+	if req.IsDefault {
+		h.DB.Exec("UPDATE template_versions SET is_default = false WHERE template_id = $1", templateID)
+	}
+
+	var versionID int64
+	err := h.DB.QueryRow(`
+		INSERT INTO template_versions (
+			template_id, version, major_version, minor_version, patch_version,
+			display_name, description, configuration, base_image,
+			parent_template_id, parent_version, changelog, status, is_default, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		RETURNING id
+	`, templateID, req.Version, major, minor, patch, req.DisplayName, req.Description,
+		toJSONB(req.Configuration), req.BaseImage, req.ParentTemplateID, req.ParentVersion,
+		req.ChangeLog, req.Status, req.IsDefault, userID).Scan(&versionID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create template version"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"version_id": versionID,
+		"version":    req.Version,
+		"status":     req.Status,
+	})
+}
+
+// ListTemplateVersions lists all versions of a template
+func (h *Handler) ListTemplateVersions(c *gin.Context) {
+	templateID := c.Param("templateId")
+	status := c.Query("status")
+
+	query := `
+		SELECT id, template_id, version, major_version, minor_version, patch_version,
+		       display_name, description, configuration, base_image,
+		       parent_template_id, parent_version, changelog, status, is_default,
+		       test_results, created_by, created_at, published_at, deprecated_at
+		FROM template_versions
+		WHERE template_id = $1
+	`
+	args := []interface{}{templateID}
+
+	if status != "" {
+		query += " AND status = $2"
+		args = append(args, status)
+	}
+
+	query += " ORDER BY major_version DESC, minor_version DESC, patch_version DESC"
+
+	rows, err := h.DB.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve versions"})
+		return
+	}
+	defer rows.Close()
+
+	versions := []TemplateVersion{}
+	for rows.Next() {
+		var v TemplateVersion
+		var config, testResults sql.NullString
+		err := rows.Scan(&v.ID, &v.TemplateID, &v.Version, &v.MajorVersion, &v.MinorVersion, &v.PatchVersion,
+			&v.DisplayName, &v.Description, &config, &v.BaseImage,
+			&v.ParentTemplateID, &v.ParentVersion, &v.ChangeLog, &v.Status, &v.IsDefault,
+			&testResults, &v.CreatedBy, &v.CreatedAt, &v.PublishedAt, &v.DeprecatedAt)
+
+		if err == nil {
+			if config.Valid && config.String != "" {
+				json.Unmarshal([]byte(config.String), &v.Configuration)
+			}
+			if testResults.Valid && testResults.String != "" {
+				json.Unmarshal([]byte(testResults.String), &v.TestResults)
+			}
+			versions = append(versions, v)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"versions": versions})
+}
+
+// GetTemplateVersion retrieves a specific template version
+func (h *Handler) GetTemplateVersion(c *gin.Context) {
+	versionID, err := strconv.ParseInt(c.Param("versionId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid version ID"})
+		return
+	}
+
+	var v TemplateVersion
+	var config, testResults sql.NullString
+
+	err = h.DB.QueryRow(`
+		SELECT id, template_id, version, major_version, minor_version, patch_version,
+		       display_name, description, configuration, base_image,
+		       parent_template_id, parent_version, changelog, status, is_default,
+		       test_results, created_by, created_at, published_at, deprecated_at
+		FROM template_versions WHERE id = $1
+	`, versionID).Scan(&v.ID, &v.TemplateID, &v.Version, &v.MajorVersion, &v.MinorVersion, &v.PatchVersion,
+		&v.DisplayName, &v.Description, &config, &v.BaseImage,
+		&v.ParentTemplateID, &v.ParentVersion, &v.ChangeLog, &v.Status, &v.IsDefault,
+		&testResults, &v.CreatedBy, &v.CreatedAt, &v.PublishedAt, &v.DeprecatedAt)
+
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "version not found"})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve version"})
+		return
+	}
+
+	if config.Valid && config.String != "" {
+		json.Unmarshal([]byte(config.String), &v.Configuration)
+	}
+	if testResults.Valid && testResults.String != "" {
+		json.Unmarshal([]byte(testResults.String), &v.TestResults)
+	}
+
+	c.JSON(http.StatusOK, v)
+}
+
+// PublishTemplateVersion publishes a template version (draft -> stable)
+func (h *Handler) PublishTemplateVersion(c *gin.Context) {
+	versionID, err := strconv.ParseInt(c.Param("versionId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid version ID"})
+		return
+	}
+
+	// Check if all tests passed
+	var failedTests int
+	h.DB.QueryRow(`
+		SELECT COUNT(*) FROM template_tests
+		WHERE version_id = $1 AND status = 'failed'
+	`, versionID).Scan(&failedTests)
+
+	if failedTests > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot publish version with failed tests"})
+		return
+	}
+
+	now := time.Now()
+	_, err = h.DB.Exec(`
+		UPDATE template_versions
+		SET status = 'stable', published_at = $1, updated_at = $2
+		WHERE id = $3
+	`, now, now, versionID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to publish version"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "version published successfully", "published_at": now})
+}
+
+// DeprecateTemplateVersion marks a version as deprecated
+func (h *Handler) DeprecateTemplateVersion(c *gin.Context) {
+	versionID, err := strconv.ParseInt(c.Param("versionId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid version ID"})
+		return
+	}
+
+	now := time.Now()
+	_, err = h.DB.Exec(`
+		UPDATE template_versions
+		SET status = 'deprecated', deprecated_at = $1, updated_at = $2
+		WHERE id = $3
+	`, now, now, versionID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to deprecate version"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "version deprecated successfully"})
+}
+
+// SetDefaultTemplateVersion sets a version as the default for a template
+func (h *Handler) SetDefaultTemplateVersion(c *gin.Context) {
+	versionID, err := strconv.ParseInt(c.Param("versionId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid version ID"})
+		return
+	}
+
+	// Get template ID
+	var templateID string
+	err = h.DB.QueryRow("SELECT template_id FROM template_versions WHERE id = $1", versionID).Scan(&templateID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "version not found"})
+		return
+	}
+
+	// Unset all defaults for this template
+	h.DB.Exec("UPDATE template_versions SET is_default = false WHERE template_id = $1", templateID)
+
+	// Set this version as default
+	_, err = h.DB.Exec("UPDATE template_versions SET is_default = true WHERE id = $1", versionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set default version"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "default version set successfully"})
+}
+
+// Template Testing
+
+// CreateTemplateTest creates a test for a template version
+func (h *Handler) CreateTemplateTest(c *gin.Context) {
+	versionID, err := strconv.ParseInt(c.Param("versionId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid version ID"})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	var req struct {
+		TestType string `json:"test_type" binding:"required,oneof=startup smoke functional performance"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get template ID and version
+	var templateID, version string
+	err = h.DB.QueryRow(`
+		SELECT template_id, version FROM template_versions WHERE id = $1
+	`, versionID).Scan(&templateID, &version)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "version not found"})
+		return
+	}
+
+	var testID int64
+	err = h.DB.QueryRow(`
+		INSERT INTO template_tests (
+			template_id, version_id, version, test_type, status, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id
+	`, templateID, versionID, version, req.TestType, "pending", userID).Scan(&testID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create test"})
+		return
+	}
+
+	// TODO: Trigger actual test execution (async job)
+	// This would spin up a session with the template and run tests
+
+	c.JSON(http.StatusCreated, gin.H{
+		"test_id": testID,
+		"status":  "pending",
+		"message": "test created and queued for execution",
+	})
+}
+
+// ListTemplateTests lists all tests for a template version
+func (h *Handler) ListTemplateTests(c *gin.Context) {
+	versionID, err := strconv.ParseInt(c.Param("versionId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid version ID"})
+		return
+	}
+
+	rows, err := h.DB.Query(`
+		SELECT id, template_id, version_id, version, test_type, status, results,
+		       duration, error_message, started_at, completed_at, created_by, created_at
+		FROM template_tests
+		WHERE version_id = $1
+		ORDER BY created_at DESC
+	`, versionID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve tests"})
+		return
+	}
+	defer rows.Close()
+
+	tests := []TemplateTest{}
+	for rows.Next() {
+		var t TemplateTest
+		var results sql.NullString
+		err := rows.Scan(&t.ID, &t.TemplateID, &t.VersionID, &t.Version, &t.TestType,
+			&t.Status, &results, &t.Duration, &t.ErrorMessage, &t.StartedAt,
+			&t.CompletedAt, &t.CreatedBy, &t.CreatedAt)
+
+		if err == nil {
+			if results.Valid && results.String != "" {
+				json.Unmarshal([]byte(results.String), &t.Results)
+			}
+			tests = append(tests, t)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"tests": tests})
+}
+
+// UpdateTemplateTestStatus updates the status of a test (used by test runners)
+func (h *Handler) UpdateTemplateTestStatus(c *gin.Context) {
+	testID, err := strconv.ParseInt(c.Param("testId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid test ID"})
+		return
+	}
+
+	var req struct {
+		Status       string                 `json:"status" binding:"required,oneof=running passed failed"`
+		Results      map[string]interface{} `json:"results"`
+		Duration     int                    `json:"duration"`
+		ErrorMessage string                 `json:"error_message"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	completedAt := time.Now()
+	_, err = h.DB.Exec(`
+		UPDATE template_tests
+		SET status = $1, results = $2, duration = $3, error_message = $4, completed_at = $5
+		WHERE id = $6
+	`, req.Status, toJSONB(req.Results), req.Duration, req.ErrorMessage, completedAt, testID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update test status"})
+		return
+	}
+
+	// Update version's test results summary
+	var versionID int64
+	h.DB.QueryRow("SELECT version_id FROM template_tests WHERE id = $1", testID).Scan(&versionID)
+
+	testSummary := h.getTestSummary(versionID)
+	h.DB.Exec("UPDATE template_versions SET test_results = $1 WHERE id = $2",
+		toJSONB(testSummary), versionID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "test status updated successfully"})
+}
+
+// Template Inheritance
+
+// GetTemplateInheritance retrieves the inheritance chain for a template
+func (h *Handler) GetTemplateInheritance(c *gin.Context) {
+	templateID := c.Param("templateId")
+
+	// Get parent template if exists
+	var parentTemplateID sql.NullString
+	h.DB.QueryRow(`
+		SELECT parent_template_id FROM template_versions
+		WHERE template_id = $1 AND is_default = true
+	`, templateID).Scan(&parentTemplateID)
+
+	var inheritance TemplateInheritance
+	inheritance.ChildTemplateID = templateID
+
+	if parentTemplateID.Valid && parentTemplateID.String != "" {
+		inheritance.ParentTemplateID = parentTemplateID.String
+
+		// Get overridden and inherited fields
+		// This would compare configurations and identify differences
+		inheritance.OverriddenFields = []string{} // TODO: Implement comparison
+		inheritance.InheritedFields = []string{}  // TODO: Implement comparison
+	}
+
+	c.JSON(http.StatusOK, inheritance)
+}
+
+// CloneTemplateVersion creates a new version based on an existing one
+func (h *Handler) CloneTemplateVersion(c *gin.Context) {
+	versionID, err := strconv.ParseInt(c.Param("versionId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid version ID"})
+		return
+	}
+
+	userID := c.GetString("user_id")
+
+	var req struct {
+		NewVersion string `json:"new_version" binding:"required"`
+		ChangeLog  string `json:"changelog"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get original version
+	var templateID, displayName, description, baseImage string
+	var config sql.NullString
+	err = h.DB.QueryRow(`
+		SELECT template_id, display_name, description, configuration, base_image
+		FROM template_versions WHERE id = $1
+	`, versionID).Scan(&templateID, &displayName, &description, &config, &baseImage)
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "version not found"})
+		return
+	}
+
+	// Parse semantic version
+	major, minor, patch := parseSemanticVersion(req.NewVersion)
+
+	// Create new version
+	var newVersionID int64
+	err = h.DB.QueryRow(`
+		INSERT INTO template_versions (
+			template_id, version, major_version, minor_version, patch_version,
+			display_name, description, configuration, base_image, changelog,
+			status, is_default, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		RETURNING id
+	`, templateID, req.NewVersion, major, minor, patch, displayName, description,
+		config, baseImage, req.ChangeLog, "draft", false, userID).Scan(&newVersionID)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to clone version"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"version_id": newVersionID,
+		"version":    req.NewVersion,
+		"message":    "version cloned successfully",
+	})
+}
+
+// Helper functions
+
+func parseSemanticVersion(version string) (int, int, int) {
+	var major, minor, patch int
+	fmt.Sscanf(version, "%d.%d.%d", &major, &minor, &patch)
+	return major, minor, patch
+}
+
+func (h *Handler) getTestSummary(versionID int64) map[string]interface{} {
+	var total, passed, failed, pending int
+
+	h.DB.QueryRow(`
+		SELECT COUNT(*) as total,
+		       COUNT(*) FILTER (WHERE status = 'passed') as passed,
+		       COUNT(*) FILTER (WHERE status = 'failed') as failed,
+		       COUNT(*) FILTER (WHERE status = 'pending') as pending
+		FROM template_tests WHERE version_id = $1
+	`, versionID).Scan(&total, &passed, &failed, &pending)
+
+	return map[string]interface{}{
+		"total":   total,
+		"passed":  passed,
+		"failed":  failed,
+		"pending": pending,
+		"success_rate": func() float64 {
+			if total > 0 {
+				return float64(passed) / float64(total) * 100
+			}
+			return 0
+		}(),
+	}
+}

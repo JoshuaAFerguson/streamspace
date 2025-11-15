@@ -10,6 +10,7 @@
     "@mui/material": "^5.15.3",
     "@tanstack/react-query": "^5.17.9",
     "axios": "^1.6.5",
+    "qrcode.react": "^4.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.2",

@@ -407,7 +407,244 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 				sessions.GET("/:id/connect", h.ConnectSession)
 				sessions.POST("/:id/disconnect", h.DisconnectSession)
 				sessions.POST("/:id/heartbeat", h.SessionHeartbeat)
+
+				// Session recording endpoints (nested under sessions)
+				sessions.POST("/:sessionId/recordings/start", h.StartSessionRecording)
+				sessions.POST("/recordings/:recordingId/stop", h.StopSessionRecording)
 			}
+
+			// Session Recordings (recording management and playback)
+			recordings := protected.Group("/recordings")
+			{
+				recordings.GET("", h.ListSessionRecordings)
+				recordings.GET("/:recordingId", h.GetSessionRecording)
+				recordings.GET("/:recordingId/stream", h.StreamRecording)
+				recordings.GET("/:recordingId/download", h.DownloadRecording)
+				recordings.DELETE("/:recordingId", h.DeleteRecording)
+				recordings.GET("/stats", h.GetRecordingStats)
+
+				// Recording policies (admin/operator only)
+				recordingPolicies := recordings.Group("/policies")
+				recordingPolicies.Use(operatorMiddleware)
+				{
+					recordingPolicies.GET("", h.ListRecordingPolicies)
+					recordingPolicies.POST("", h.CreateRecordingPolicy)
+					recordingPolicies.PATCH("/:policyId", h.UpdateRecordingPolicy)
+					recordingPolicies.DELETE("/:policyId", h.DeleteRecordingPolicy)
+				}
+
+				// Cleanup expired recordings (admin only)
+				recordings.POST("/cleanup", operatorMiddleware, h.CleanupExpiredRecordings)
+			}
+
+			// Data Loss Prevention (DLP) - Admin/Operator only
+			dlp := protected.Group("/dlp")
+			dlp.Use(operatorMiddleware)
+			{
+				// DLP Policies
+				dlp.GET("/policies", h.ListDLPPolicies)
+				dlp.POST("/policies", h.CreateDLPPolicy)
+				dlp.GET("/policies/:policyId", h.GetDLPPolicy)
+				dlp.PATCH("/policies/:policyId", h.UpdateDLPPolicy)
+				dlp.DELETE("/policies/:policyId", h.DeleteDLPPolicy)
+
+				// DLP Violations
+				dlp.POST("/violations", h.LogDLPViolation)
+				dlp.GET("/violations", h.ListDLPViolations)
+				dlp.POST("/violations/:violationId/resolve", h.ResolveDLPViolation)
+
+				// DLP Statistics
+				dlp.GET("/stats", h.GetDLPStats)
+			}
+
+			// Workflow Automation - Operator/Admin only
+			workflows := protected.Group("/workflows")
+			workflows.Use(operatorMiddleware)
+			{
+				workflows.GET("", h.ListWorkflows)
+				workflows.POST("", h.CreateWorkflow)
+				workflows.GET("/:workflowId", h.GetWorkflow)
+				workflows.PATCH("/:workflowId", h.UpdateWorkflow)
+				workflows.DELETE("/:workflowId", h.DeleteWorkflow)
+				workflows.POST("/:workflowId/execute", h.ExecuteWorkflow)
+
+				// Workflow Executions
+				workflows.GET("/executions", h.ListWorkflowExecutions)
+				workflows.GET("/executions/:executionId", h.GetWorkflowExecution)
+				workflows.POST("/executions/:executionId/cancel", h.CancelWorkflowExecution)
+
+				// Workflow Statistics
+				workflows.GET("/stats", h.GetWorkflowStats)
+			}
+
+			// In-Browser Console & File Manager
+			console := protected.Group("/console")
+			{
+				// Console sessions (terminal and file manager)
+				console.POST("/sessions/:sessionId", h.CreateConsoleSession)
+				console.GET("/sessions/:sessionId", h.ListConsoleSessions)
+				console.POST("/:consoleId/disconnect", h.DisconnectConsoleSession)
+
+				// File Manager operations
+				console.GET("/files/:sessionId", h.ListFiles)
+				console.GET("/files/:sessionId/content", h.GetFileContent)
+				console.POST("/files/:sessionId/upload", h.UploadFile)
+				console.GET("/files/:sessionId/download", h.DownloadFile)
+				console.POST("/files/:sessionId/directory", h.CreateDirectory)
+				console.DELETE("/files/:sessionId", h.DeleteFile)
+				console.PATCH("/files/:sessionId/rename", h.RenameFile)
+
+				// File operation history
+				console.GET("/files/:sessionId/history", h.GetFileOperationHistory)
+			}
+
+			// Multi-Monitor Support
+			monitors := protected.Group("/monitors")
+			{
+				monitors.GET("/sessions/:sessionId", h.GetMonitorConfiguration)
+				monitors.POST("/sessions/:sessionId", h.CreateMonitorConfiguration)
+				monitors.GET("/sessions/:sessionId/list", h.ListMonitorConfigurations)
+				monitors.PATCH("/configurations/:configId", h.UpdateMonitorConfiguration)
+				monitors.POST("/configurations/:configId/activate", h.ActivateMonitorConfiguration)
+				monitors.DELETE("/configurations/:configId", h.DeleteMonitorConfiguration)
+				monitors.GET("/sessions/:sessionId/streams", h.GetMonitorStreams)
+
+				// Preset configurations
+				monitors.POST("/sessions/:sessionId/presets/:preset", h.CreatePresetConfiguration)
+			}
+
+			// Real-time Collaboration
+			collaboration := protected.Group("/collaboration")
+			{
+				// Collaboration session management
+				collaboration.POST("/sessions/:sessionId", h.CreateCollaborationSession)
+				collaboration.POST("/:collabId/join", h.JoinCollaborationSession)
+				collaboration.POST("/:collabId/leave", h.LeaveCollaborationSession)
+
+				// Participant management
+				collaboration.GET("/:collabId/participants", h.GetCollaborationParticipants)
+				collaboration.PATCH("/:collabId/participants/:userId", h.UpdateParticipantRole)
+
+				// Chat operations
+				collaboration.POST("/:collabId/chat", h.SendChatMessage)
+				collaboration.GET("/:collabId/chat", h.GetChatHistory)
+
+				// Annotation operations
+				collaboration.POST("/:collabId/annotations", h.CreateAnnotation)
+				collaboration.GET("/:collabId/annotations", h.GetAnnotations)
+				collaboration.DELETE("/:collabId/annotations/:annotationId", h.DeleteAnnotation)
+				collaboration.DELETE("/:collabId/annotations", h.ClearAllAnnotations)
+
+				// Statistics
+				collaboration.GET("/:collabId/stats", h.GetCollaborationStats)
+			}
+
+		// Integration Hub & Webhooks - Operator/Admin only
+		integrations := protected.Group("/integrations")
+		integrations.Use(operatorMiddleware)
+		{
+			// Webhooks
+			integrations.GET("/webhooks", h.ListWebhooks)
+			integrations.POST("/webhooks", h.CreateWebhook)
+			integrations.PATCH("/webhooks/:webhookId", h.UpdateWebhook)
+			integrations.DELETE("/webhooks/:webhookId", h.DeleteWebhook)
+			integrations.POST("/webhooks/:webhookId/test", h.TestWebhook)
+			integrations.GET("/webhooks/:webhookId/deliveries", h.GetWebhookDeliveries)
+			integrations.POST("/webhooks/:webhookId/retry/:deliveryId", h.RetryWebhookDelivery)
+
+			// External Integrations
+			integrations.GET("/external", h.ListIntegrations)
+			integrations.POST("/external", h.CreateIntegration)
+			integrations.PATCH("/external/:integrationId", h.UpdateIntegration)
+			integrations.DELETE("/external/:integrationId", h.DeleteIntegration)
+			integrations.POST("/external/:integrationId/test", h.TestIntegration)
+
+			// Available events
+			integrations.GET("/events", h.GetAvailableEvents)
+		}
+
+		// Security - MFA, IP Whitelisting, Zero Trust
+		security := protected.Group("/security")
+		{
+			// Multi-Factor Authentication (all users)
+			security.POST("/mfa/setup", h.SetupMFA)
+			security.POST("/mfa/:mfaId/verify-setup", h.VerifyMFASetup)
+			security.POST("/mfa/verify", h.VerifyMFA)
+			security.GET("/mfa/methods", h.ListMFAMethods)
+			security.DELETE("/mfa/:mfaId", h.DisableMFA)
+			security.POST("/mfa/backup-codes", h.GenerateBackupCodes)
+
+			// IP Whitelisting (users can manage their own, admins can manage all)
+			security.POST("/ip-whitelist", h.CreateIPWhitelist)
+			security.GET("/ip-whitelist", h.ListIPWhitelist)
+			security.DELETE("/ip-whitelist/:entryId", h.DeleteIPWhitelist)
+			security.GET("/ip-whitelist/check", h.CheckIPAccess)
+
+			// Zero Trust / Session Verification
+			security.POST("/sessions/:sessionId/verify", h.VerifySession)
+			security.POST("/device-posture", h.CheckDevicePosture)
+			security.GET("/alerts", h.GetSecurityAlerts)
+		}
+
+		// Session Scheduling & Calendar Integration
+		scheduling := protected.Group("/scheduling")
+		{
+			// Scheduled sessions
+			scheduling.GET("/sessions", h.ListScheduledSessions)
+			scheduling.POST("/sessions", h.CreateScheduledSession)
+			scheduling.GET("/sessions/:scheduleId", h.GetScheduledSession)
+			scheduling.PATCH("/sessions/:scheduleId", h.UpdateScheduledSession)
+			scheduling.DELETE("/sessions/:scheduleId", h.DeleteScheduledSession)
+			scheduling.POST("/sessions/:scheduleId/enable", h.EnableScheduledSession)
+			scheduling.POST("/sessions/:scheduleId/disable", h.DisableScheduledSession)
+
+			// Calendar integrations
+			scheduling.POST("/calendar/connect", h.ConnectCalendar)
+			scheduling.GET("/calendar/oauth/callback", h.CalendarOAuthCallback)
+			scheduling.GET("/calendar/integrations", h.ListCalendarIntegrations)
+			scheduling.DELETE("/calendar/integrations/:integrationId", h.DisconnectCalendar)
+			scheduling.POST("/calendar/integrations/:integrationId/sync", h.SyncCalendar)
+			scheduling.GET("/calendar/export.ics", h.ExportICalendar)
+		}
+
+		// Load Balancing & Auto-scaling - Admin/Operator only
+		scaling := protected.Group("/scaling")
+		scaling.Use(operatorMiddleware)
+		{
+			// Load balancing policies
+			scaling.GET("/load-balancing/policies", h.ListLoadBalancingPolicies)
+			scaling.POST("/load-balancing/policies", h.CreateLoadBalancingPolicy)
+			scaling.GET("/load-balancing/nodes", h.GetNodeStatus)
+			scaling.POST("/load-balancing/select-node", h.SelectNode)
+
+			// Auto-scaling policies
+			scaling.GET("/autoscaling/policies", h.ListAutoScalingPolicies)
+			scaling.POST("/autoscaling/policies", h.CreateAutoScalingPolicy)
+			scaling.POST("/autoscaling/policies/:policyId/trigger", h.TriggerScaling)
+			scaling.GET("/autoscaling/history", h.GetScalingHistory)
+		}
+
+		// Compliance & Governance - Admin only
+		compliance := protected.Group("/compliance")
+		compliance.Use(adminMiddleware)
+		{
+			// Frameworks
+			compliance.GET("/frameworks", h.ListComplianceFrameworks)
+			compliance.POST("/frameworks", h.CreateComplianceFramework)
+
+			// Policies
+			compliance.GET("/policies", h.ListCompliancePolicies)
+			compliance.POST("/policies", h.CreateCompliancePolicy)
+
+			// Violations
+			compliance.GET("/violations", h.ListViolations)
+			compliance.POST("/violations", h.RecordViolation)
+			compliance.POST("/violations/:violationId/resolve", h.ResolveViolation)
+
+			// Reports & Dashboard
+			compliance.POST("/reports/generate", h.GenerateComplianceReport)
+			compliance.GET("/dashboard", h.GetComplianceDashboard)
+		}
 
 			// Templates (read: all users, write: operators/admins)
 			templates := protected.Group("/templates")
@@ -431,6 +668,23 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 					templatesWrite.POST("", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.CreateTemplate)
 					templatesWrite.PATCH("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.UpdateTemplate)
 					templatesWrite.DELETE("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.DeleteTemplate)
+
+					// Template Versioning (operator only)
+					templatesWrite.POST("/:templateId/versions", h.CreateTemplateVersion)
+					templatesWrite.GET("/:templateId/versions", h.ListTemplateVersions)
+					templatesWrite.GET("/versions/:versionId", h.GetTemplateVersion)
+					templatesWrite.POST("/versions/:versionId/publish", h.PublishTemplateVersion)
+					templatesWrite.POST("/versions/:versionId/deprecate", h.DeprecateTemplateVersion)
+					templatesWrite.POST("/versions/:versionId/set-default", h.SetDefaultTemplateVersion)
+					templatesWrite.POST("/versions/:versionId/clone", h.CloneTemplateVersion)
+
+					// Template Testing (operator only)
+					templatesWrite.POST("/versions/:versionId/tests", h.CreateTemplateTest)
+					templatesWrite.GET("/versions/:versionId/tests", h.ListTemplateTests)
+					templatesWrite.PATCH("/tests/:testId", h.UpdateTemplateTestStatus)
+
+					// Template Inheritance
+					templatesWrite.GET("/:templateId/inheritance", h.GetTemplateInheritance)
 				}
 			}
 
@@ -611,6 +865,7 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 		ws.GET("/sessions", h.SessionsWebSocket)
 		ws.GET("/cluster", operatorMiddleware, h.ClusterWebSocket)
 		ws.GET("/logs/:namespace/:pod", operatorMiddleware, h.LogsWebSocket)
+		ws.GET("/enterprise", handlers.HandleEnterpriseWebSocket) // Real-time enterprise features
 	}
 
 	// Real-time updates via WebSocket - using dedicated handler (all authenticated users)
