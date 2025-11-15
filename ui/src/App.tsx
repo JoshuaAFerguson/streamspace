@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, createTheme, CssBaseline, CircularProgress, Box } from '@mui/material';
 import { useUserStore } from './store/userStore';
 import ErrorBoundary from './components/ErrorBoundary';
+import NotificationQueue from './components/NotificationQueue';
 
 // Eagerly load Login page (needed immediately)
 import Login from './pages/Login';
@@ -335,6 +336,15 @@ function App() {
             </Suspense>
           </BrowserRouter>
         </ErrorBoundary>
+
+        {/* Global Notification Queue - Production-ready notification system */}
+        <NotificationQueue
+          maxVisible={3}
+          defaultDuration={6000}
+          position={{ vertical: 'bottom', horizontal: 'right' }}
+          enableHistory={true}
+          maxHistorySize={50}
+        />
       </ThemeProvider>
     </QueryClientProvider>
   );

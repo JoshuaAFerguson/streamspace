@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -15,14 +15,16 @@ import {
   OpenInNew as OpenIcon,
   Person as OwnerIcon,
   Share as ShareIcon,
-  Wifi as ConnectedIcon,
-  WifiOff as DisconnectedIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { api } from '../lib/api';
 import { useUserStore } from '../store/userStore';
 import { useSessionsWebSocket } from '../hooks/useWebSocket';
+import { useEnhancedWebSocket } from '../hooks/useWebSocketEnhancements';
+import { useNotificationQueue } from '../components/NotificationQueue';
+import EnhancedWebSocketStatus from '../components/EnhancedWebSocketStatus';
+import WebSocketErrorBoundary from '../components/WebSocketErrorBoundary';
 
 interface SharedSession {
   id: string;
@@ -45,14 +47,35 @@ export default function SharedSessions() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Real-time session updates via WebSocket
-  const { isConnected, reconnectAttempts } = useSessionsWebSocket((updatedSessions) => {
+  // Track previous session states for change notifications
+  const prevStatesRef = useRef<Map<string, string>>(new Map());
+
+  // Enhanced notification system
+  const { addNotification } = useNotificationQueue();
+
+  // Real-time session updates via WebSocket with notifications
+  const baseWebSocket = useSessionsWebSocket((updatedSessions) => {
     if (!currentUser?.id || sessions.length === 0) return;
 
-    // Update shared sessions with real-time data
+    // Update shared sessions with real-time data and show notifications for changes
     const updatedSharedSessions = sessions.map((sharedSession) => {
       const updated = updatedSessions.find((s: any) => s.id === sharedSession.id);
       if (updated) {
+        // Check if state changed
+        const prevState = prevStatesRef.current.get(sharedSession.id);
+        if (updated.state !== prevState && prevState !== undefined) {
+          // Show notification for state changes
+          addNotification({
+            message: `${sharedSession.templateName} (${sharedSession.ownerUsername}): ${prevState} → ${updated.state}`,
+            severity: updated.state === 'running' ? 'success' : updated.state === 'hibernated' ? 'warning' : 'error',
+            priority: updated.state === 'terminated' ? 'high' : 'medium',
+            title: 'Shared Session Updated',
+          });
+        }
+
+        // Update state tracking
+        prevStatesRef.current.set(sharedSession.id, updated.state);
+
         return {
           ...sharedSession,
           state: updated.state,
@@ -64,6 +87,9 @@ export default function SharedSessions() {
 
     setSessions(updatedSharedSessions);
   });
+
+  // Enhanced WebSocket with connection quality and manual reconnect
+  const enhanced = useEnhancedWebSocket(baseWebSocket);
 
   useEffect(() => {
     if (currentUser?.id) {
@@ -150,27 +176,19 @@ export default function SharedSessions() {
   }
 
   return (
-    <Layout>
-      <Box>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                Shared with Me
-              </Typography>
-              <Chip
-                icon={isConnected ? <ConnectedIcon /> : <DisconnectedIcon />}
-                label={
-                  isConnected
-                    ? 'Live Updates'
-                    : reconnectAttempts > 0
-                    ? `Reconnecting... (${reconnectAttempts})`
-                    : 'Disconnected'
-                }
-                size="small"
-                color={isConnected ? 'success' : 'default'}
-              />
-            </Box>
+    <WebSocketErrorBoundary>
+      <Layout>
+        <Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                  Shared with Me
+                </Typography>
+
+                {/* Enhanced WebSocket Connection Status */}
+                <EnhancedWebSocketStatus {...enhanced} size="small" showDetails={true} />
+              </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
               Sessions that other users have shared with you
             </Typography>
@@ -312,5 +330,6 @@ export default function SharedSessions() {
         )}
       </Box>
     </Layout>
+    </WebSocketErrorBoundary>
   );
 }
