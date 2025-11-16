@@ -1,3 +1,38 @@
+// Package activity provides session activity tracking and idle detection for StreamSpace.
+//
+// The activity tracker monitors user interaction with sessions and implements
+// idle timeout-based auto-hibernation. Unlike the connection tracker which
+// monitors network connections, this tracker monitors actual user activity
+// (keyboard, mouse, application interaction).
+//
+// Features:
+//   - LastActivity timestamp tracking in Kubernetes Session status
+//   - Idle duration calculation based on lastActivity
+//   - Configurable idle timeouts per session (spec.idleTimeout)
+//   - Auto-hibernation after idle threshold + grace period
+//   - Background idle session monitor
+//
+// Architecture:
+//   - Stateless (reads from Kubernetes directly)
+//   - Updates Session.status.lastActivity via Kubernetes API
+//   - Runs periodic checks for idle sessions
+//   - Hibernates sessions by updating state to "hibernated"
+//
+// Hibernation triggers:
+//   - User interaction stopped for > idleTimeout
+//   - Grace period of 5 minutes after threshold
+//   - Only applies to sessions with idleTimeout configured
+//   - Only hibernates sessions in "running" state
+//
+// Example usage:
+//
+//	tracker := activity.NewTracker(k8sClient)
+//
+//	// Update activity on user interaction
+//	tracker.UpdateSessionActivity(ctx, "streamspace", "user1-firefox")
+//
+//	// Start background idle monitor
+//	go tracker.StartIdleMonitor(ctx, "streamspace", 1*time.Minute)
 package activity
 
 import (
@@ -9,25 +44,82 @@ import (
 	"github.com/streamspace/streamspace/api/internal/k8s"
 )
 
-// Tracker manages session activity tracking
+// Tracker manages session activity tracking for idle detection and auto-hibernation.
+//
+// This tracker is stateless and reads directly from Kubernetes Session resources.
+// It updates the status.lastActivity field and monitors for idle sessions.
+//
+// Difference from connection tracker:
+//   - Connection tracker: Monitors network connections (WebSocket, VNC)
+//   - Activity tracker: Monitors user interaction (keyboard, mouse, app activity)
+//
+// A session can have active connections but be idle (user not interacting),
+// or vice versa (background processes running, no active user).
+//
+// Example:
+//
+//	tracker := NewTracker(k8sClient)
+//	err := tracker.UpdateSessionActivity(ctx, namespace, sessionName)
 type Tracker struct {
+	// k8sClient interacts with Kubernetes to read and update Sessions.
 	k8sClient *k8s.Client
 }
 
-// NewTracker creates a new activity tracker
+// NewTracker creates a new activity tracker instance.
+//
+// The tracker is stateless and can be shared across goroutines.
+//
+// Example:
+//
+//	tracker := NewTracker(k8sClient)
+//	go tracker.StartIdleMonitor(ctx, "streamspace", 1*time.Minute)
 func NewTracker(k8sClient *k8s.Client) *Tracker {
 	return &Tracker{
 		k8sClient: k8sClient,
 	}
 }
 
-// ActivityStatus represents the activity state of a session
+// ActivityStatus represents the current activity state of a session.
+//
+// This status is calculated from:
+//   - status.lastActivity: Last user interaction timestamp
+//   - spec.idleTimeout: Configured idle timeout (e.g., "30m")
+//   - Current time: Compared against lastActivity
+//
+// States:
+//   - IsActive: User has interacted recently (within idle threshold)
+//   - IsIdle: No interaction for longer than idle threshold
+//   - ShouldHibernate: Idle + grace period elapsed (ready for hibernation)
+//
+// Example:
+//
+//	status := tracker.GetActivityStatus(session)
+//	if status.ShouldHibernate {
+//	    log.Printf("Session has been idle for %v", status.IdleDuration)
+//	}
 type ActivityStatus struct {
-	IsActive      bool
-	IsIdle        bool
-	LastActivity  *time.Time
-	IdleDuration  time.Duration
+	// IsActive indicates if the session has recent activity.
+	// True if lastActivity is within idleThreshold.
+	IsActive bool
+
+	// IsIdle indicates if the session has exceeded the idle threshold.
+	// True if lastActivity is older than idleThreshold.
+	IsIdle bool
+
+	// LastActivity is the timestamp of the last user interaction.
+	// Nil if no activity has been recorded yet (newly created session).
+	LastActivity *time.Time
+
+	// IdleDuration is how long the session has been idle.
+	// Calculated as time.Since(lastActivity).
+	IdleDuration time.Duration
+
+	// IdleThreshold is the configured timeout from spec.idleTimeout.
+	// Example: 30m, 1h, 2h30m
 	IdleThreshold time.Duration
+
+	// ShouldHibernate indicates if the session should be auto-hibernated.
+	// True if idle for > threshold + 5 minute grace period.
 	ShouldHibernate bool
 }
 

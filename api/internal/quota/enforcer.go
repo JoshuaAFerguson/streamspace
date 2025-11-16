@@ -1,3 +1,41 @@
+// Package quota provides resource quota enforcement for StreamSpace users and groups.
+//
+// The quota system prevents resource exhaustion and enforces fair usage limits.
+// It supports per-user quotas, per-group quotas, and platform-wide defaults.
+//
+// Quota types:
+//   - Session count: Maximum concurrent sessions
+//   - CPU per session: Maximum CPU cores per individual session
+//   - Memory per session: Maximum RAM per individual session
+//   - Total CPU: Maximum total CPU across all sessions
+//   - Total memory: Maximum total RAM across all sessions
+//   - Storage: Maximum persistent storage per user
+//   - GPU: Maximum GPU count per session
+//
+// Quota hierarchy (most restrictive wins):
+//  1. User-specific quotas (user_quotas table)
+//  2. Group quotas (all groups user belongs to)
+//  3. Platform defaults (defined in code)
+//
+// Example limits:
+//   - Free tier: 5 sessions, 2 CPU/session, 4 GiB/session, 50 GiB storage
+//   - Pro tier: 20 sessions, 4 CPU/session, 8 GiB/session, 500 GiB storage
+//   - Enterprise: Custom limits per organization
+//
+// Enforcement points:
+//   - Session creation (CheckSessionCreation)
+//   - Resource requests (ValidateResourceRequest)
+//   - Storage allocation (checked separately)
+//
+// Example usage:
+//
+//	enforcer := quota.NewEnforcer(userDB, groupDB)
+//
+//	// Check if user can create session
+//	err := enforcer.CheckSessionCreation(ctx, "user1", 1000, 2048, 0, currentUsage)
+//	if quota.IsQuotaExceeded(err) {
+//	    return errors.New("quota exceeded")
+//	}
 package quota
 
 import (
@@ -11,55 +49,135 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// Limits represents resource limits for a user or group
+// Limits represents resource quotas for a user or group.
+//
+// Limits can be set at multiple levels:
+//   - Per-user: Stored in user_quotas table
+//   - Per-group: Stored in group_quotas table
+//   - Platform default: Defined in GetUserLimits()
+//
+// When a user belongs to multiple groups, the most restrictive
+// limit is applied for each resource type.
+//
+// Units:
+//   - CPU: Millicores (1000m = 1 CPU core)
+//   - Memory: MiB (mebibytes, 1024 MiB = 1 GiB)
+//   - Storage: GiB (gibibytes)
+//   - GPU: Integer count
+//
+// Example:
+//
+//	limits := &Limits{
+//	    MaxSessions: 10,
+//	    MaxCPUPerSession: 2000,      // 2 CPU cores
+//	    MaxMemoryPerSession: 4096,   // 4 GiB
+//	    MaxTotalCPU: 8000,           // 8 CPU cores total
+//	    MaxTotalMemory: 16384,       // 16 GiB total
+//	    MaxStorage: 100,             // 100 GiB
+//	    MaxGPUPerSession: 1,
+//	}
 type Limits struct {
-	// Maximum number of concurrent sessions
+	// MaxSessions is the maximum number of concurrent sessions.
+	// Example: 5 (free tier), 20 (pro tier), 100 (enterprise)
 	MaxSessions int `json:"max_sessions"`
 
-	// Maximum CPU per session (in millicores)
+	// MaxCPUPerSession is the maximum CPU per individual session (millicores).
+	// Example: 2000 (2 CPU cores)
 	MaxCPUPerSession int64 `json:"max_cpu_per_session"`
 
-	// Maximum memory per session (in MiB)
+	// MaxMemoryPerSession is the maximum memory per individual session (MiB).
+	// Example: 4096 (4 GiB)
 	MaxMemoryPerSession int64 `json:"max_memory_per_session"`
 
-	// Maximum total CPU across all sessions (in millicores)
+	// MaxTotalCPU is the maximum total CPU across all sessions (millicores).
+	// Example: 8000 (8 CPU cores total across all sessions)
 	MaxTotalCPU int64 `json:"max_total_cpu"`
 
-	// Maximum total memory across all sessions (in MiB)
+	// MaxTotalMemory is the maximum total memory across all sessions (MiB).
+	// Example: 16384 (16 GiB total across all sessions)
 	MaxTotalMemory int64 `json:"max_total_memory"`
 
-	// Maximum storage per user (in GiB)
+	// MaxStorage is the maximum persistent storage per user (GiB).
+	// Example: 50 (50 GiB for home directory)
 	MaxStorage int64 `json:"max_storage"`
 
-	// Maximum GPU count per session
+	// MaxGPUPerSession is the maximum GPU count per individual session.
+	// Example: 1 (one GPU per session), 0 (no GPU access)
 	MaxGPUPerSession int `json:"max_gpu_per_session"`
 }
 
-// Usage represents current resource usage for a user
+// Usage represents current resource consumption for a user.
+//
+// This is calculated from:
+//   - Running Kubernetes pods (for sessions, CPU, memory, GPU)
+//   - Persistent volume claims (for storage)
+//
+// Usage is checked before creating new sessions to enforce quotas.
+//
+// Example:
+//
+//	usage := &Usage{
+//	    ActiveSessions: 3,
+//	    TotalCPU: 6000,       // 6 CPU cores in use
+//	    TotalMemory: 12288,   // 12 GiB in use
+//	    TotalStorage: 45,     // 45 GiB in use
+//	    TotalGPU: 2,          // 2 GPUs in use
+//	}
 type Usage struct {
-	// Current number of active sessions
+	// ActiveSessions is the count of currently running sessions.
+	// Calculated from pods with status.phase == Running
 	ActiveSessions int `json:"active_sessions"`
 
-	// Total CPU usage across all sessions (in millicores)
+	// TotalCPU is the total CPU requests across all sessions (millicores).
+	// Sum of container.resources.requests.cpu
 	TotalCPU int64 `json:"total_cpu"`
 
-	// Total memory usage across all sessions (in MiB)
+	// TotalMemory is the total memory requests across all sessions (MiB).
+	// Sum of container.resources.requests.memory
 	TotalMemory int64 `json:"total_memory"`
 
-	// Total storage usage (in GiB)
+	// TotalStorage is the total persistent storage in use (GiB).
+	// Sum of PVC sizes
 	TotalStorage int64 `json:"total_storage"`
 
-	// Total GPU count across all sessions
+	// TotalGPU is the total GPU count across all sessions.
+	// Sum of container.resources.requests["nvidia.com/gpu"]
 	TotalGPU int `json:"total_gpu"`
 }
 
-// Enforcer enforces resource quotas for users and groups
+// Enforcer enforces resource quotas for users and groups.
+//
+// The enforcer:
+//   - Retrieves quotas from database (user and group tables)
+//   - Calculates effective limits (most restrictive)
+//   - Validates resource requests against limits
+//   - Checks current usage before allowing new sessions
+//
+// Thread safety:
+//   - Enforcer is stateless and safe for concurrent use
+//   - Database queries may run concurrently
+//
+// Example:
+//
+//	enforcer := NewEnforcer(userDB, groupDB)
+//	limits, _ := enforcer.GetUserLimits(ctx, "user1")
+//	fmt.Printf("Max sessions: %d\n", limits.MaxSessions)
 type Enforcer struct {
-	userDB  *db.UserDB
+	// userDB provides access to user quota data.
+	userDB *db.UserDB
+
+	// groupDB provides access to group quota data.
 	groupDB *db.GroupDB
 }
 
-// NewEnforcer creates a new quota enforcer
+// NewEnforcer creates a new quota enforcer instance.
+//
+// The enforcer is stateless and can be shared across goroutines.
+//
+// Example:
+//
+//	enforcer := NewEnforcer(userDB, groupDB)
+//	err := enforcer.CheckSessionCreation(ctx, username, cpu, memory, gpu, usage)
 func NewEnforcer(userDB *db.UserDB, groupDB *db.GroupDB) *Enforcer {
 	return &Enforcer{
 		userDB:  userDB,

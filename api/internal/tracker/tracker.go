@@ -1,3 +1,42 @@
+// Package tracker manages active WebSocket connections and auto-hibernation for StreamSpace sessions.
+//
+// The tracker provides:
+//   - Real-time connection tracking (WebSocket, VNC, HTTP)
+//   - Heartbeat monitoring with configurable timeout
+//   - Auto-start of hibernated sessions when connections arrive
+//   - Auto-hibernate idle sessions with zero active connections
+//   - Connection statistics and monitoring
+//
+// Architecture:
+//   - In-memory connection map for fast lookups
+//   - PostgreSQL persistence for connection history
+//   - Kubernetes integration for session state management
+//   - Background goroutine for periodic connection checks
+//
+// Lifecycle:
+//  1. User connects to session → AddConnection()
+//  2. Periodic heartbeats → UpdateHeartbeat()
+//  3. Connection lost → RemoveConnection()
+//  4. No connections + idle timeout → Auto-hibernate
+//
+// Configuration:
+//   - checkInterval: 30 seconds (how often to check connections)
+//   - heartbeatWindow: 60 seconds (max time without heartbeat)
+//
+// Example usage:
+//
+//	tracker := NewConnectionTracker(database, k8sClient)
+//	go tracker.Start()
+//
+//	// When user connects via WebSocket
+//	conn := &Connection{
+//	    ID: uuid.New().String(),
+//	    SessionID: sessionID,
+//	    UserID: userID,
+//	    ConnectedAt: time.Now(),
+//	    LastHeartbeat: time.Now(),
+//	}
+//	tracker.AddConnection(ctx, conn)
 package tracker
 
 import (
@@ -12,29 +51,113 @@ import (
 	"github.com/streamspace/streamspace/api/internal/k8s"
 )
 
-// ConnectionTracker manages active connections and auto-hibernation
+// ConnectionTracker manages active connections and implements auto-hibernation.
+//
+// Thread safety:
+//   - Uses sync.RWMutex for concurrent access
+//   - Safe for multiple goroutines to call AddConnection/RemoveConnection
+//   - Background checker runs in separate goroutine
+//
+// Hibernation logic:
+//   - Session is hibernated when activeConnections == 0 AND idle timeout elapsed
+//   - Session is auto-started when new connection arrives while hibernated
+//   - Heartbeat window prevents premature disconnection (grace period)
+//
+// Database persistence:
+//   - All connections are persisted to PostgreSQL
+//   - Connection history enables usage analytics
+//   - On startup, loads active connections from last 5 minutes
 type ConnectionTracker struct {
-	db              *db.Database
-	k8sClient       *k8s.Client
-	connections     map[string]*Connection // sessionID -> Connection
-	mu              sync.RWMutex
-	checkInterval   time.Duration
+	// db is the PostgreSQL database for connection persistence.
+	db *db.Database
+
+	// k8sClient interacts with Kubernetes to manage session state.
+	k8sClient *k8s.Client
+
+	// connections is the in-memory map of active connections.
+	// Key: connection ID, Value: Connection struct
+	// Protected by mu for thread safety.
+	connections map[string]*Connection
+
+	// mu protects concurrent access to connections map.
+	mu sync.RWMutex
+
+	// checkInterval is how often to check connection health.
+	// Default: 30 seconds
+	checkInterval time.Duration
+
+	// heartbeatWindow is the maximum time without heartbeat before disconnect.
+	// Default: 60 seconds
 	heartbeatWindow time.Duration
-	stopCh          chan struct{}
+
+	// stopCh signals the background checker to stop.
+	stopCh chan struct{}
 }
 
-// Connection represents an active connection to a session
+// Connection represents an active user connection to a session.
+//
+// Connections are created when:
+//   - User opens VNC viewer
+//   - User opens session in browser
+//   - API client establishes WebSocket
+//
+// Connections are tracked for:
+//   - Auto-hibernation (hibernate when count reaches zero)
+//   - Usage analytics (connection duration, IP addresses)
+//   - Concurrent user limits
+//   - Session sharing detection
+//
+// Example:
+//
+//	conn := &Connection{
+//	    ID: "conn-abc123",
+//	    SessionID: "user1-firefox",
+//	    UserID: "user1",
+//	    ClientIP: "192.168.1.100",
+//	    UserAgent: "Mozilla/5.0...",
+//	    ConnectedAt: time.Now(),
+//	    LastHeartbeat: time.Now(),
+//	}
 type Connection struct {
-	ID            string
-	SessionID     string
-	UserID        string
-	ClientIP      string
-	UserAgent     string
-	ConnectedAt   time.Time
+	// ID is a unique identifier for this connection.
+	// Format: UUID or similar unique string
+	ID string
+
+	// SessionID is the session this connection is for.
+	// Must match a valid session ID in database
+	SessionID string
+
+	// UserID is the authenticated user who owns this connection.
+	UserID string
+
+	// ClientIP is the IP address of the client.
+	// Used for security auditing and geo-location
+	ClientIP string
+
+	// UserAgent is the browser/client user agent string.
+	// Used for analytics and compatibility tracking
+	UserAgent string
+
+	// ConnectedAt is when this connection was established.
+	ConnectedAt time.Time
+
+	// LastHeartbeat is the last time this connection sent a heartbeat.
+	// Connections without recent heartbeats are considered stale.
 	LastHeartbeat time.Time
 }
 
-// NewConnectionTracker creates a new connection tracker
+// NewConnectionTracker creates a new connection tracker instance.
+//
+// Default configuration:
+//   - checkInterval: 30 seconds (connection health checks)
+//   - heartbeatWindow: 60 seconds (heartbeat timeout)
+//
+// The tracker must be started with Start() to begin monitoring.
+//
+// Example:
+//
+//	tracker := NewConnectionTracker(database, k8sClient)
+//	go tracker.Start()  // Run in background
 func NewConnectionTracker(database *db.Database, k8sClient *k8s.Client) *ConnectionTracker {
 	return &ConnectionTracker{
 		db:              database,
@@ -46,7 +169,23 @@ func NewConnectionTracker(database *db.Database, k8sClient *k8s.Client) *Connect
 	}
 }
 
-// Start begins the connection tracking loop
+// Start begins the connection tracking loop.
+//
+// This method:
+//  1. Loads active connections from database (last 5 minutes)
+//  2. Starts periodic checker (runs every checkInterval)
+//  3. Checks connection health and performs auto-hibernation
+//  4. Runs until Stop() is called
+//
+// This is a blocking call and should be run in a goroutine:
+//
+//	go tracker.Start()
+//
+// The checker performs these operations on each tick:
+//   - Count active connections per session
+//   - Remove stale connections (no heartbeat)
+//   - Update database connection counts
+//   - Auto-hibernate sessions with zero connections
 func (ct *ConnectionTracker) Start() {
 	log.Println("Connection tracker started")
 
@@ -143,7 +282,40 @@ func (ct *ConnectionTracker) checkConnections() {
 	}
 }
 
-// AddConnection registers a new connection
+// AddConnection registers a new connection and triggers auto-start if needed.
+//
+// This method:
+//  1. Adds connection to in-memory map
+//  2. Persists connection to database
+//  3. Updates session last_connection timestamp
+//  4. Increments session active_connections count
+//  5. Triggers auto-start if session is hibernated (async)
+//
+// Auto-start behavior:
+//   - Runs in background goroutine (doesn't block)
+//   - Only starts sessions in "hibernated" state
+//   - Updates Kubernetes Session resource to state="running"
+//
+// Parameters:
+//   - ctx: Context for database operations
+//   - conn: Connection to add (must have valid ID, SessionID, UserID)
+//
+// Returns an error if:
+//   - Database insert fails
+//   - Session update fails
+//
+// Example:
+//
+//	conn := &Connection{
+//	    ID: uuid.New().String(),
+//	    SessionID: sessionID,
+//	    UserID: userID,
+//	    ClientIP: r.RemoteAddr,
+//	    UserAgent: r.UserAgent(),
+//	    ConnectedAt: time.Now(),
+//	    LastHeartbeat: time.Now(),
+//	}
+//	err := tracker.AddConnection(ctx, conn)
 func (ct *ConnectionTracker) AddConnection(ctx context.Context, conn *Connection) error {
 	ct.mu.Lock()
 	ct.connections[conn.ID] = conn
