@@ -552,25 +552,36 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 			scaling.GET("/autoscaling/history", loadBalancingHandler.GetScalingHistory)
 		}
 
-		// Compliance & Governance - Admin only
-		compliance := protected.Group("/compliance")
-		compliance.Use(adminMiddleware)
+// // 		// Compliance & Governance - Admin only
+// 		compliance := protected.Group("/compliance")
+// 		compliance.Use(adminMiddleware)
+// 		{
+// 			// Frameworks
+// 			compliance.GET("/frameworks", h.ListComplianceFrameworks)
+// 			compliance.POST("/frameworks", h.CreateComplianceFramework)
+// 
+// 			// Policies
+// 			compliance.GET("/policies", h.ListCompliancePolicies)
+// 			compliance.POST("/policies", h.CreateCompliancePolicy)
+// 
+// 			// Violations
+// 			compliance.GET("/violations", h.ListViolations)
+// 			compliance.POST("/violations", h.RecordViolation)
+// 			compliance.POST("/violations/:violationId/resolve", h.ResolveViolation)
+
+// 		}
+
+// 
+// NOTE: Compliance & Governance is now handled by the streamspace-compliance plugin
+// Install it via: Admin → Plugins → streamspace-compliance
+		// Templates (read: all users, write: operators/admins)
+		templates := protected.Group("/templates")
 		{
-			// Frameworks
-			compliance.GET("/frameworks", h.ListComplianceFrameworks)
-			compliance.POST("/frameworks", h.CreateComplianceFramework)
+			// Read-only template endpoints (all authenticated users)
+			templates.GET("", cache.CacheMiddleware(redisCache, 5*time.Minute), h.ListTemplates)
+			templates.GET("/:id", cache.CacheMiddleware(redisCache, 5*time.Minute), h.GetTemplate)
 
-			// Policies
-			compliance.GET("/policies", h.ListCompliancePolicies)
-			compliance.POST("/policies", h.CreateCompliancePolicy)
-
-			// Violations
-			compliance.GET("/violations", h.ListViolations)
-			compliance.POST("/violations", h.RecordViolation)
-			compliance.POST("/violations/:violationId/resolve", h.ResolveViolation)
-
-		// NOTE: Compliance & Governance is now handled by the streamspace-compliance plugin
-		// Install it via: Admin → Plugins → streamspace-compliance
+			// Write operations require operator or admin role
 				templatesWrite := templates.Group("")
 				templatesWrite.Use(operatorMiddleware)
 				{
