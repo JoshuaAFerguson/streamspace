@@ -615,6 +615,7 @@ func (h *Handler) CalendarOAuthCallback(c *gin.Context) {
 	// Exchange code for tokens (implementation depends on provider)
 	var accessToken, refreshToken, email string
 	var expiry time.Time
+	var err error
 
 	// Implement OAuth token exchange based on provider
 	switch provider {
@@ -634,7 +635,7 @@ func (h *Handler) CalendarOAuthCallback(c *gin.Context) {
 
 	// Store integration
 	var id int64
-	err := h.DB.DB().QueryRow(`
+	err = h.DB.DB().QueryRow(`
 		INSERT INTO calendar_integrations
 		(user_id, provider, account_email, access_token, refresh_token, token_expiry, enabled, sync_enabled)
 		VALUES ($1, $2, $3, $4, $5, $6, true, true)
