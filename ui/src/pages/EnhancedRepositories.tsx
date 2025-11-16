@@ -24,7 +24,7 @@ import {
   ViewModule as ViewModuleIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
-} from '@mui/material-icons';
+} from '@mui/icons-material';
 import Layout from '../components/Layout';
 import RepositoryCard from '../components/RepositoryCard';
 import RepositoryDialog from '../components/RepositoryDialog';

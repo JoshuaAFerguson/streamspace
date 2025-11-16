@@ -28,7 +28,7 @@ import {
   Link as LinkIcon,
   Wifi as ConnectedIcon,
   WifiOff as DisconnectedIcon,
-} from '@mui/material-icons';
+} from '@mui/icons-material';
 import { api } from '../lib/api';
 import { useUserStore } from '../store/userStore';
 import { useSessionsWebSocket } from '../hooks/useWebSocket';
