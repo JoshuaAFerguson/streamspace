@@ -1,0 +1,197 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: streamspace-controller
+  namespace: streamspace
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: controller
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: streamspace-api
+  namespace: streamspace
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: streamspace-controller
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: controller
+rules:
+  # Session resources
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["sessions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["sessions/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["sessions/finalizers"]
+    verbs: ["update"]
+
+  # Template resources
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["templates"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["templates/status"]
+    verbs: ["get"]
+
+  # TemplateRepository resources
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["templaterepositories"]
+    verbs: ["get", "list", "watch"]
+
+  # Connection resources
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["connections"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["connections/status"]
+    verbs: ["get", "update", "patch"]
+
+  # Core K8s resources
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+
+  # Apps resources
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Networking resources
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: streamspace-controller
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: streamspace-controller
+subjects:
+  - kind: ServiceAccount
+    name: streamspace-controller
+    namespace: streamspace
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: streamspace-controller-leader-election
+  namespace: streamspace
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: controller
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: streamspace-controller-leader-election
+  namespace: streamspace
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: streamspace-controller-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: streamspace-controller
+    namespace: streamspace
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: streamspace-api
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: api
+rules:
+  # Read-only access to CRDs
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["sessions", "templates", "templaterepositories", "connections"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["stream.streamspace.io"]
+    resources: ["sessions/status", "templates/status", "connections/status"]
+    verbs: ["get"]
+
+  # Access to pods for session management
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+  # Access to services
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: streamspace-api
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: streamspace-api
+subjects:
+  - kind: ServiceAccount
+    name: streamspace-api
+    namespace: streamspace

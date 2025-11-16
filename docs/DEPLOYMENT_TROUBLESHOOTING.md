@@ -31,54 +31,33 @@ Error: 1 chart(s) linted, 1 chart(s) failed
 - Observed on macOS and Linux
 
 **Root Cause:**
-Helm v3.19.0 has a critical regression in the chart loader (`helm.sh/helm/v3/pkg/chart/loader`) that fails to load charts from directories. The bug affects:
-- `helm lint` - reports Chart.yaml is missing
-- `helm template` - fails to load chart
-- `helm install` from directory - fails with "Chart.yaml file is missing"
-- `helm package` - **WORKS** (this is the workaround)
+Helm v3.19.0 has a **critical regression** in the chart loader (`helm.sh/helm/v3/pkg/chart/loader`) that **completely breaks chart loading**. The bug affects:
+- ✗ `helm lint` - reports "Chart.yaml is missing"
+- ✗ `helm template` - fails to load chart
+- ✗ `helm install` from directory - fails with "Chart.yaml file is missing"
+- ✗ `helm package` - **ALSO BROKEN** (confirmed in testing)
+
+**This means Helm v3.19.0 is completely unusable for StreamSpace.**
 
 **Solutions:**
 
-#### Option 1: Use Updated Script (Automatic Workaround) ✅ RECOMMENDED
-The `local-deploy.sh` script now **automatically detects Helm v3.19.0** and uses a package-based workaround:
+#### Option 1: Use kubectl-based Deployment ✅ RECOMMENDED for Helm v3.19.0
+We've created a Helm-free deployment script that uses raw Kubernetes manifests:
 
 ```bash
-./scripts/local-deploy.sh
+./scripts/local-deploy-kubectl.sh
 ```
 
-The script will:
-1. Detect Helm v3.19.x
-2. Package the chart into a `.tgz` file
-3. Install from the packaged file (which works around the bug)
-4. Clean up temporary files
+This script:
+- ✅ Works with any Helm version (doesn't use Helm)
+- ✅ Deploys all components (controller, API, UI, database)
+- ✅ Creates RBAC, secrets, and services
+- ✅ Uses the same local Docker images
+- ✅ Perfect for Docker Desktop users stuck on Helm v3.19.0
 
-**No environment variables needed** - it just works!
+**This is the recommended approach if you can't downgrade Helm.**
 
-#### Option 2: Manual Package and Install
-If you prefer to do this manually or the script fails:
-
-```bash
-# Package the chart
-helm package ./chart -d /tmp
-
-# Install from the package
-helm install streamspace /tmp/streamspace-0.2.0.tgz \
-  --namespace streamspace \
-  --create-namespace \
-  --set controller.image.tag=local \
-  --set controller.image.pullPolicy=Never \
-  --set api.image.tag=local \
-  --set api.image.pullPolicy=Never \
-  --set ui.image.tag=local \
-  --set ui.image.pullPolicy=Never \
-  --set postgresql.enabled=true \
-  --set postgresql.auth.password=streamspace
-
-# Clean up
-rm /tmp/streamspace-0.2.0.tgz
-```
-
-#### Option 3: Downgrade Helm (Best Long-term Solution)
+#### Option 2: Downgrade Helm (Best Long-term Solution)
 Downgrade to Helm v3.18.0 or earlier:
 
 **On macOS (using Homebrew):**
@@ -102,18 +81,13 @@ tar -zxvf helm-v3.18.0-linux-amd64.tar.gz
 sudo mv linux-amd64/helm /usr/local/bin/helm
 ```
 
-#### Option 4: Force Package Mode
-Force the script to use package mode even on older Helm versions:
-
-```bash
-FORCE_PACKAGE=true ./scripts/local-deploy.sh
-```
-
-This can be useful for testing or if you encounter similar issues with other Helm versions.
+**Note for Docker Desktop Users:**
+If you're using Docker Desktop (macOS or Windows), Helm is bundled with the Kubernetes distribution and cannot be easily downgraded. In this case, **use the kubectl-based deployment** (Option 1) until Docker Desktop updates to a fixed Helm version.
 
 ---
 
-**Note:** Options like "skip validation" or "use helm template" don't work with Helm v3.19.0 because the bug affects all directory-based chart loading, not just validation. The package workaround is the only reliable solution short of downgrading Helm.
+**Why Package/Template Workarounds Don't Work:**
+Helm v3.19.0's bug is so severe that it affects **all chart loading operations**, including `helm package` and `helm template`. There is no workaround within Helm itself - you must either use kubectl-based deployment or downgrade Helm.
 
 **Verification:**
 After installation, verify the deployment is working:
