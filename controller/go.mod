@@ -1,6 +1,6 @@
 module github.com/streamspace/streamspace
 
-go 1.23
+go 1.24
 
 require (
 	github.com/onsi/ginkgo/v2 v2.11.0
