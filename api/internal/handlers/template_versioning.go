@@ -141,7 +141,7 @@ func NewTemplateVersioningHandler(database *db.Database) *TemplateVersioningHand
 
 // CreateTemplateVersion creates a new version of a template
 func (h *TemplateVersioningHandler) CreateTemplateVersion(c *gin.Context) {
-	templateID := c.Param("templateId")
+	templateID := c.Param("id")
 	userID := c.GetString("user_id")
 
 	var req struct {
@@ -196,7 +196,7 @@ func (h *TemplateVersioningHandler) CreateTemplateVersion(c *gin.Context) {
 
 // ListTemplateVersions lists all versions of a template
 func (h *TemplateVersioningHandler) ListTemplateVersions(c *gin.Context) {
-	templateID := c.Param("templateId")
+	templateID := c.Param("id")
 	status := c.Query("status")
 
 	query := `
@@ -519,7 +519,7 @@ func (h *TemplateVersioningHandler) UpdateTemplateTestStatus(c *gin.Context) {
 
 // GetTemplateInheritance retrieves the inheritance chain for a template
 func (h *TemplateVersioningHandler) GetTemplateInheritance(c *gin.Context) {
-	templateID := c.Param("templateId")
+	templateID := c.Param("id")
 
 	// Get parent template if exists
 	var parentTemplateID sql.NullString

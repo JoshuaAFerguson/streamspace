@@ -592,21 +592,21 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 					templatesWrite.DELETE("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.DeleteTemplate)
 
 					// Template Versioning (operator only)
-					templatesWrite.POST("/:templateId/versions", templateVersioningHandler.CreateTemplateVersion)
-					templatesWrite.GET("/:templateId/versions", templateVersioningHandler.ListTemplateVersions)
-					templatesWrite.GET("/:templateId/versions/:versionId", templateVersioningHandler.GetTemplateVersion)
-					templatesWrite.POST("/:templateId/versions/:versionId/publish", templateVersioningHandler.PublishTemplateVersion)
-					templatesWrite.POST("/:templateId/versions/:versionId/deprecate", templateVersioningHandler.DeprecateTemplateVersion)
-					templatesWrite.POST("/:templateId/versions/:versionId/set-default", templateVersioningHandler.SetDefaultTemplateVersion)
-					templatesWrite.POST("/:templateId/versions/:versionId/clone", templateVersioningHandler.CloneTemplateVersion)
+					templatesWrite.POST("/:id/versions", templateVersioningHandler.CreateTemplateVersion)
+					templatesWrite.GET("/:id/versions", templateVersioningHandler.ListTemplateVersions)
+					templatesWrite.GET("/:id/versions/:versionId", templateVersioningHandler.GetTemplateVersion)
+					templatesWrite.POST("/:id/versions/:versionId/publish", templateVersioningHandler.PublishTemplateVersion)
+					templatesWrite.POST("/:id/versions/:versionId/deprecate", templateVersioningHandler.DeprecateTemplateVersion)
+					templatesWrite.POST("/:id/versions/:versionId/set-default", templateVersioningHandler.SetDefaultTemplateVersion)
+					templatesWrite.POST("/:id/versions/:versionId/clone", templateVersioningHandler.CloneTemplateVersion)
 
 					// Template Testing (operator only)
-					templatesWrite.POST("/:templateId/versions/:versionId/tests", templateVersioningHandler.CreateTemplateTest)
-					templatesWrite.GET("/:templateId/versions/:versionId/tests", templateVersioningHandler.ListTemplateTests)
-					templatesWrite.PATCH("/:templateId/versions/:versionId/tests/:testId", templateVersioningHandler.UpdateTemplateTestStatus)
+					templatesWrite.POST("/:id/versions/:versionId/tests", templateVersioningHandler.CreateTemplateTest)
+					templatesWrite.GET("/:id/versions/:versionId/tests", templateVersioningHandler.ListTemplateTests)
+					templatesWrite.PATCH("/:id/versions/:versionId/tests/:testId", templateVersioningHandler.UpdateTemplateTestStatus)
 
 					// Template Inheritance
-					templatesWrite.GET("/:templateId/inheritance", templateVersioningHandler.GetTemplateInheritance)
+					templatesWrite.GET("/:id/inheritance", templateVersioningHandler.GetTemplateInheritance)
 				}
 			}
 
