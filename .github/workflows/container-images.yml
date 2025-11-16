@@ -103,17 +103,41 @@ jobs:
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
           echo "Image tag: $IMAGE_TAG"
 
-          # Use imagetools to get the manifest digest (works reliably for multi-platform builds)
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" --format '{{.Manifest.Digest}}')
-          echo "Extracted digest: $DIGEST"
+          # Retry logic for manifest propagation
+          MAX_RETRIES=5
+          RETRY_DELAY=2
 
-          # Validate digest format
-          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "ERROR: unexpected digest format: $DIGEST"
-            echo "Full imagetools output:"
-            docker buildx imagetools inspect "$IMAGE_TAG"
-            exit 1
-          fi
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES to fetch manifest digest..."
+
+            # Get the manifest digest using docker manifest inspect
+            # This returns the actual registry digest for multi-platform manifests
+            DIGEST=$(docker manifest inspect "$IMAGE_TAG" 2>&1 | jq -r '.digest // empty' || echo "")
+
+            # If jq didn't find .digest, try extracting from Docker-Content-Digest header
+            if [ -z "$DIGEST" ]; then
+              DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" 2>&1 | grep -oP 'Digest:\s*\K(sha256:[a-f0-9]{64})' | head -n1 || echo "")
+            fi
+
+            # Validate digest format
+            if [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "✅ Successfully extracted digest: $DIGEST"
+              break
+            else
+              echo "⚠️  Invalid digest format (attempt $i): $DIGEST"
+              if [ $i -eq $MAX_RETRIES ]; then
+                echo "ERROR: Failed to get valid digest after $MAX_RETRIES attempts"
+                echo "Full docker manifest inspect output:"
+                docker manifest inspect "$IMAGE_TAG" || true
+                echo "Full buildx imagetools output:"
+                docker buildx imagetools inspect "$IMAGE_TAG" || true
+                exit 1
+              fi
+              echo "Waiting ${RETRY_DELAY}s before retry..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+            fi
+          done
 
           IMAGE_REF="${{ env.IMAGE_PREFIX }}-controller@${DIGEST}"
           echo "Image reference for signing: $IMAGE_REF"
@@ -134,9 +158,35 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" --format '{{.Manifest.Digest}}')
-          echo "Using digest for SBOM attestation: $DIGEST"
+
+          # Retry logic for manifest propagation
+          MAX_RETRIES=5
+          RETRY_DELAY=2
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES to fetch manifest digest for SBOM attestation..."
+
+            DIGEST=$(docker manifest inspect "$IMAGE_TAG" 2>&1 | jq -r '.digest // empty' || echo "")
+            if [ -z "$DIGEST" ]; then
+              DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" 2>&1 | grep -oP 'Digest:\s*\K(sha256:[a-f0-9]{64})' | head -n1 || echo "")
+            fi
+
+            if [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "✅ Successfully extracted digest: $DIGEST"
+              break
+            else
+              if [ $i -eq $MAX_RETRIES ]; then
+                echo "ERROR: Failed to get valid digest after $MAX_RETRIES attempts"
+                exit 1
+              fi
+              echo "Waiting ${RETRY_DELAY}s before retry..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))
+            fi
+          done
+
           IMAGE_REF="${{ env.IMAGE_PREFIX }}-controller@${DIGEST}"
+          echo "Using digest for SBOM attestation: $DIGEST"
           cosign attest --yes --type spdxjson \
             --predicate sbom-controller.spdx.json \
             "$IMAGE_REF"
@@ -222,17 +272,41 @@ jobs:
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
           echo "Image tag: $IMAGE_TAG"
 
-          # Use imagetools to get the manifest digest (works reliably for multi-platform builds)
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" --format '{{.Manifest.Digest}}')
-          echo "Extracted digest: $DIGEST"
+          # Retry logic for manifest propagation
+          MAX_RETRIES=5
+          RETRY_DELAY=2
 
-          # Validate digest format
-          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "ERROR: unexpected digest format: $DIGEST"
-            echo "Full imagetools output:"
-            docker buildx imagetools inspect "$IMAGE_TAG"
-            exit 1
-          fi
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES to fetch manifest digest..."
+
+            # Get the manifest digest using docker manifest inspect
+            # This returns the actual registry digest for multi-platform manifests
+            DIGEST=$(docker manifest inspect "$IMAGE_TAG" 2>&1 | jq -r '.digest // empty' || echo "")
+
+            # If jq didn't find .digest, try extracting from Docker-Content-Digest header
+            if [ -z "$DIGEST" ]; then
+              DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" 2>&1 | grep -oP 'Digest:\s*\K(sha256:[a-f0-9]{64})' | head -n1 || echo "")
+            fi
+
+            # Validate digest format
+            if [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "✅ Successfully extracted digest: $DIGEST"
+              break
+            else
+              echo "⚠️  Invalid digest format (attempt $i): $DIGEST"
+              if [ $i -eq $MAX_RETRIES ]; then
+                echo "ERROR: Failed to get valid digest after $MAX_RETRIES attempts"
+                echo "Full docker manifest inspect output:"
+                docker manifest inspect "$IMAGE_TAG" || true
+                echo "Full buildx imagetools output:"
+                docker buildx imagetools inspect "$IMAGE_TAG" || true
+                exit 1
+              fi
+              echo "Waiting ${RETRY_DELAY}s before retry..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+            fi
+          done
 
           IMAGE_REF="${{ env.IMAGE_PREFIX }}-api@${DIGEST}"
           echo "Image reference for signing: $IMAGE_REF"
@@ -253,9 +327,35 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" --format '{{.Manifest.Digest}}')
-          echo "Using digest for SBOM attestation: $DIGEST"
+
+          # Retry logic for manifest propagation
+          MAX_RETRIES=5
+          RETRY_DELAY=2
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES to fetch manifest digest for SBOM attestation..."
+
+            DIGEST=$(docker manifest inspect "$IMAGE_TAG" 2>&1 | jq -r '.digest // empty' || echo "")
+            if [ -z "$DIGEST" ]; then
+              DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" 2>&1 | grep -oP 'Digest:\s*\K(sha256:[a-f0-9]{64})' | head -n1 || echo "")
+            fi
+
+            if [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "✅ Successfully extracted digest: $DIGEST"
+              break
+            else
+              if [ $i -eq $MAX_RETRIES ]; then
+                echo "ERROR: Failed to get valid digest after $MAX_RETRIES attempts"
+                exit 1
+              fi
+              echo "Waiting ${RETRY_DELAY}s before retry..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))
+            fi
+          done
+
           IMAGE_REF="${{ env.IMAGE_PREFIX }}-api@${DIGEST}"
+          echo "Using digest for SBOM attestation: $DIGEST"
           cosign attest --yes --type spdxjson \
             --predicate sbom-api.spdx.json \
             "$IMAGE_REF"
@@ -341,17 +441,41 @@ jobs:
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
           echo "Image tag: $IMAGE_TAG"
 
-          # Use imagetools to get the manifest digest (works reliably for multi-platform builds)
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" --format '{{.Manifest.Digest}}')
-          echo "Extracted digest: $DIGEST"
+          # Retry logic for manifest propagation
+          MAX_RETRIES=5
+          RETRY_DELAY=2
 
-          # Validate digest format
-          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "ERROR: unexpected digest format: $DIGEST"
-            echo "Full imagetools output:"
-            docker buildx imagetools inspect "$IMAGE_TAG"
-            exit 1
-          fi
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES to fetch manifest digest..."
+
+            # Get the manifest digest using docker manifest inspect
+            # This returns the actual registry digest for multi-platform manifests
+            DIGEST=$(docker manifest inspect "$IMAGE_TAG" 2>&1 | jq -r '.digest // empty' || echo "")
+
+            # If jq didn't find .digest, try extracting from Docker-Content-Digest header
+            if [ -z "$DIGEST" ]; then
+              DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" 2>&1 | grep -oP 'Digest:\s*\K(sha256:[a-f0-9]{64})' | head -n1 || echo "")
+            fi
+
+            # Validate digest format
+            if [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "✅ Successfully extracted digest: $DIGEST"
+              break
+            else
+              echo "⚠️  Invalid digest format (attempt $i): $DIGEST"
+              if [ $i -eq $MAX_RETRIES ]; then
+                echo "ERROR: Failed to get valid digest after $MAX_RETRIES attempts"
+                echo "Full docker manifest inspect output:"
+                docker manifest inspect "$IMAGE_TAG" || true
+                echo "Full buildx imagetools output:"
+                docker buildx imagetools inspect "$IMAGE_TAG" || true
+                exit 1
+              fi
+              echo "Waiting ${RETRY_DELAY}s before retry..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+            fi
+          done
 
           IMAGE_REF="${{ env.IMAGE_PREFIX }}-ui@${DIGEST}"
           echo "Image reference for signing: $IMAGE_REF"
@@ -372,9 +496,35 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" --format '{{.Manifest.Digest}}')
-          echo "Using digest for SBOM attestation: $DIGEST"
+
+          # Retry logic for manifest propagation
+          MAX_RETRIES=5
+          RETRY_DELAY=2
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES to fetch manifest digest for SBOM attestation..."
+
+            DIGEST=$(docker manifest inspect "$IMAGE_TAG" 2>&1 | jq -r '.digest // empty' || echo "")
+            if [ -z "$DIGEST" ]; then
+              DIGEST=$(docker buildx imagetools inspect "$IMAGE_TAG" 2>&1 | grep -oP 'Digest:\s*\K(sha256:[a-f0-9]{64})' | head -n1 || echo "")
+            fi
+
+            if [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "✅ Successfully extracted digest: $DIGEST"
+              break
+            else
+              if [ $i -eq $MAX_RETRIES ]; then
+                echo "ERROR: Failed to get valid digest after $MAX_RETRIES attempts"
+                exit 1
+              fi
+              echo "Waiting ${RETRY_DELAY}s before retry..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))
+            fi
+          done
+
           IMAGE_REF="${{ env.IMAGE_PREFIX }}-ui@${DIGEST}"
+          echo "Using digest for SBOM attestation: $DIGEST"
           cosign attest --yes --type spdxjson \
             --predicate sbom-ui.spdx.json \
             "$IMAGE_REF"
