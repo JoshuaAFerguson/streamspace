@@ -22,6 +22,9 @@ COPY api/ api/
 COPY controllers/ controllers/
 COPY pkg/ pkg/
 
+# Tidy modules to ensure go.mod and go.sum are up to date
+RUN go mod tidy
+
 # Build the controller with version info for the target architecture
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -a \
     -ldflags "-w -s -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
