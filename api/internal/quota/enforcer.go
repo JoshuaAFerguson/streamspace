@@ -189,7 +189,7 @@ func NewEnforcer(userDB *db.UserDB, groupDB *db.GroupDB) *Enforcer {
 // It combines user-specific limits with group limits (taking the most restrictive)
 func (e *Enforcer) GetUserLimits(ctx context.Context, username string) (*Limits, error) {
 	// Get user from database
-	user, err := e.userDB.GetByUsername(ctx, username)
+	user, err := e.userDB.GetUserByUsername(ctx, username)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
@@ -233,7 +233,7 @@ func (e *Enforcer) GetUserLimits(ctx context.Context, username string) (*Limits,
 	// Check group limits and apply the most restrictive
 	if len(user.Groups) > 0 {
 		for _, groupName := range user.Groups {
-			group, err := e.groupDB.GetByName(ctx, groupName)
+			group, err := e.groupDB.GetGroupByName(ctx, groupName)
 			if err != nil {
 				continue // Skip groups that don't exist
 			}
