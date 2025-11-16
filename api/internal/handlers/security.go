@@ -39,6 +39,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
+	"github.com/streamspace/streamspace/api/internal/db"
 	"github.com/streamspace/streamspace/api/internal/middleware"
 )
 
@@ -268,7 +269,18 @@ type TrustedDevice struct {
 //     "qr_code": "otpauth://totp/StreamSpace:user123?secret=JBSWY3DP...",
 //     "message": "Scan the QR code with your authenticator app and verify"
 //   }
-func (h *Handler) SetupMFA(c *gin.Context) {
+
+// SecurityHandler handles security-related endpoints (MFA, IP whitelisting, etc.)
+type SecurityHandler struct {
+	DB *db.Database
+}
+
+// NewSecurityHandler creates a new SecurityHandler instance
+func NewSecurityHandler(database *db.Database) *SecurityHandler {
+	return &SecurityHandler{DB: database}
+}
+
+func (h *SecurityHandler) SetupMFA(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	var req struct {
@@ -365,7 +377,7 @@ func (h *Handler) SetupMFA(c *gin.Context) {
 }
 
 // VerifyMFASetup verifies and enables MFA method (Step 2: Confirm setup)
-func (h *Handler) VerifyMFASetup(c *gin.Context) {
+func (h *SecurityHandler) VerifyMFASetup(c *gin.Context) {
 	userID := c.GetString("user_id")
 	mfaID := c.Param("mfaId")
 
@@ -498,7 +510,7 @@ func (h *Handler) VerifyMFASetup(c *gin.Context) {
 //   - 404 Not Found: MFA method not enabled
 //   - 429 Too Many Requests: Rate limit exceeded (>5 attempts/minute)
 //   - 501 Not Implemented: SMS/Email MFA requested
-func (h *Handler) VerifyMFA(c *gin.Context) {
+func (h *SecurityHandler) VerifyMFA(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	var req struct {
@@ -594,7 +606,7 @@ func (h *Handler) VerifyMFA(c *gin.Context) {
 }
 
 // ListMFAMethods lists all MFA methods for a user
-func (h *Handler) ListMFAMethods(c *gin.Context) {
+func (h *SecurityHandler) ListMFAMethods(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	rows, err := h.DB.DB().Query(`
@@ -637,7 +649,7 @@ func (h *Handler) ListMFAMethods(c *gin.Context) {
 }
 
 // DisableMFA disables an MFA method
-func (h *Handler) DisableMFA(c *gin.Context) {
+func (h *SecurityHandler) DisableMFA(c *gin.Context) {
 	userID := c.GetString("user_id")
 	mfaID := c.Param("mfaId")
 
@@ -661,7 +673,7 @@ func (h *Handler) DisableMFA(c *gin.Context) {
 }
 
 // GenerateBackupCodes generates new backup codes
-func (h *Handler) GenerateBackupCodes(c *gin.Context) {
+func (h *SecurityHandler) GenerateBackupCodes(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	// Invalidate old backup codes
@@ -677,7 +689,7 @@ func (h *Handler) GenerateBackupCodes(c *gin.Context) {
 }
 
 // Helper: Generate backup codes
-func (h *Handler) generateBackupCodes(userID string, count int) []string {
+func (h *SecurityHandler) generateBackupCodes(userID string, count int) []string {
 	codes := make([]string, count)
 
 	for i := 0; i < count; i++ {
@@ -698,7 +710,7 @@ func (h *Handler) generateBackupCodes(userID string, count int) []string {
 }
 
 // Helper: Verify backup code
-func (h *Handler) verifyBackupCode(userID, code string) bool {
+func (h *SecurityHandler) verifyBackupCode(userID, code string) bool {
 	hash := sha256.Sum256([]byte(code))
 	hashStr := hex.EncodeToString(hash[:])
 
@@ -744,7 +756,7 @@ type GeoRestriction struct {
 }
 
 // CreateIPWhitelist adds an IP to whitelist
-func (h *Handler) CreateIPWhitelist(c *gin.Context) {
+func (h *SecurityHandler) CreateIPWhitelist(c *gin.Context) {
 	createdBy := c.GetString("user_id")
 	role := c.GetString("role")
 
@@ -800,7 +812,7 @@ func (h *Handler) CreateIPWhitelist(c *gin.Context) {
 }
 
 // CheckIPAccess checks if an IP is allowed access
-func (h *Handler) CheckIPAccess(c *gin.Context) {
+func (h *SecurityHandler) CheckIPAccess(c *gin.Context) {
 	userID := c.Query("user_id")
 	ipAddress := c.Query("ip_address")
 
@@ -818,7 +830,7 @@ func (h *Handler) CheckIPAccess(c *gin.Context) {
 }
 
 // Helper: Check if IP is allowed
-func (h *Handler) isIPAllowed(userID, ipAddress string) bool {
+func (h *SecurityHandler) isIPAllowed(userID, ipAddress string) bool {
 	ip := net.ParseIP(ipAddress)
 	if ip == nil {
 		return false
@@ -864,7 +876,7 @@ func (h *Handler) isIPAllowed(userID, ipAddress string) bool {
 }
 
 // ListIPWhitelist lists IP whitelist entries
-func (h *Handler) ListIPWhitelist(c *gin.Context) {
+func (h *SecurityHandler) ListIPWhitelist(c *gin.Context) {
 	userID := c.Query("user_id")
 	role := c.GetString("role")
 
@@ -942,7 +954,7 @@ func (h *Handler) ListIPWhitelist(c *gin.Context) {
 //   - 200 OK: Entry deleted successfully
 //   - 404 Not Found: Entry doesn't exist OR user lacks permission (secure, no information leakage)
 //   - 500 Internal Server Error: Database error
-func (h *Handler) DeleteIPWhitelist(c *gin.Context) {
+func (h *SecurityHandler) DeleteIPWhitelist(c *gin.Context) {
 	entryID := c.Param("entryId")
 	userID := c.GetString("user_id")
 	role := c.GetString("role")
@@ -1017,7 +1029,7 @@ type DevicePosture struct {
 }
 
 // VerifySession performs continuous session verification
-func (h *Handler) VerifySession(c *gin.Context) {
+func (h *SecurityHandler) VerifySession(c *gin.Context) {
 	sessionID := c.Param("sessionId")
 	userID := c.GetString("user_id")
 
@@ -1067,7 +1079,7 @@ func (h *Handler) VerifySession(c *gin.Context) {
 }
 
 // CheckDevicePosture checks device security posture
-func (h *Handler) CheckDevicePosture(c *gin.Context) {
+func (h *SecurityHandler) CheckDevicePosture(c *gin.Context) {
 	var req DevicePosture
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1102,7 +1114,7 @@ func (h *Handler) CheckDevicePosture(c *gin.Context) {
 }
 
 // GetSecurityAlerts gets security alerts for a user
-func (h *Handler) GetSecurityAlerts(c *gin.Context) {
+func (h *SecurityHandler) GetSecurityAlerts(c *gin.Context) {
 	userID := c.GetString("user_id")
 
 	rows, err := h.DB.DB().Query(`
@@ -1141,7 +1153,7 @@ func (h *Handler) GetSecurityAlerts(c *gin.Context) {
 // ============================================================================
 
 // Get device fingerprint from request
-func (h *Handler) getDeviceFingerprint(c *gin.Context) string {
+func (h *SecurityHandler) getDeviceFingerprint(c *gin.Context) string {
 	// Simple fingerprint based on User-Agent and IP
 	// In production, use more sophisticated fingerprinting
 	data := c.Request.UserAgent() + c.ClientIP()
@@ -1150,7 +1162,7 @@ func (h *Handler) getDeviceFingerprint(c *gin.Context) string {
 }
 
 // Trust a device for MFA bypass
-func (h *Handler) trustDevice(userID, deviceID, userAgent, ipAddress string, duration time.Duration) {
+func (h *SecurityHandler) trustDevice(userID, deviceID, userAgent, ipAddress string, duration time.Duration) {
 	trustedUntil := time.Now().Add(duration)
 	deviceName := fmt.Sprintf("%s from %s", userAgent, ipAddress)
 
@@ -1164,7 +1176,7 @@ func (h *Handler) trustDevice(userID, deviceID, userAgent, ipAddress string, dur
 }
 
 // Calculate risk score (0-100)
-func (h *Handler) calculateRiskScore(userID, deviceID, ipAddress, userAgent string) int {
+func (h *SecurityHandler) calculateRiskScore(userID, deviceID, ipAddress, userAgent string) int {
 	score := 0
 
 	// Check if device is trusted

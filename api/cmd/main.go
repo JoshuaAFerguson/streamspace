@@ -256,6 +256,8 @@ func main() {
 	integrationsHandler := handlers.NewIntegrationsHandler(database)
 	loadBalancingHandler := handlers.NewLoadBalancingHandler(database)
 	schedulingHandler := handlers.NewSchedulingHandler(database)
+	securityHandler := handlers.NewSecurityHandler(database)
+	templateVersioningHandler := handlers.NewTemplateVersioningHandler(database)
 	// NOTE: Billing is now handled by the streamspace-billing plugin
 
 	// SECURITY: Initialize webhook authentication
@@ -266,7 +268,7 @@ func main() {
 	}
 
 	// Setup routes
-	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, websocketHandler, consoleHandler, collaborationHandler, integrationsHandler, loadBalancingHandler, schedulingHandler, jwtManager, userDB, redisCache, webhookSecret)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, websocketHandler, consoleHandler, collaborationHandler, integrationsHandler, loadBalancingHandler, schedulingHandler, securityHandler, templateVersioningHandler, jwtManager, userDB, redisCache, webhookSecret)
 
 	// Create HTTP server with security timeouts
 	srv := &http.Server{
@@ -347,7 +349,7 @@ func main() {
 	log.Println("Graceful shutdown completed")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, websocketHandler *handlers.WebSocketHandler, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, integrationsHandler *handlers.IntegrationsHandler, loadBalancingHandler *handlers.LoadBalancingHandler, schedulingHandler *handlers.SchedulingHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, websocketHandler *handlers.WebSocketHandler, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, integrationsHandler *handlers.IntegrationsHandler, loadBalancingHandler *handlers.LoadBalancingHandler, schedulingHandler *handlers.SchedulingHandler, securityHandler *handlers.SecurityHandler, templateVersioningHandler *handlers.TemplateVersioningHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
 	// SECURITY: Create authentication middleware
 	authMiddleware := auth.Middleware(jwtManager, userDB)
 	adminMiddleware := auth.RequireRole("admin")
@@ -493,23 +495,23 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 		security := protected.Group("/security")
 		{
 			// Multi-Factor Authentication (all users)
-			security.POST("/mfa/setup", h.SetupMFA)
-			security.POST("/mfa/:mfaId/verify-setup", h.VerifyMFASetup)
-			security.POST("/mfa/verify", h.VerifyMFA)
-			security.GET("/mfa/methods", h.ListMFAMethods)
-			security.DELETE("/mfa/:mfaId", h.DisableMFA)
-			security.POST("/mfa/backup-codes", h.GenerateBackupCodes)
+			security.POST("/mfa/setup", securityHandler.SetupMFA)
+			security.POST("/mfa/:mfaId/verify-setup", securityHandler.VerifyMFASetup)
+			security.POST("/mfa/verify", securityHandler.VerifyMFA)
+			security.GET("/mfa/methods", securityHandler.ListMFAMethods)
+			security.DELETE("/mfa/:mfaId", securityHandler.DisableMFA)
+			security.POST("/mfa/backup-codes", securityHandler.GenerateBackupCodes)
 
 			// IP Whitelisting (users can manage their own, admins can manage all)
-			security.POST("/ip-whitelist", h.CreateIPWhitelist)
-			security.GET("/ip-whitelist", h.ListIPWhitelist)
-			security.DELETE("/ip-whitelist/:entryId", h.DeleteIPWhitelist)
-			security.GET("/ip-whitelist/check", h.CheckIPAccess)
+			security.POST("/ip-whitelist", securityHandler.CreateIPWhitelist)
+			security.GET("/ip-whitelist", securityHandler.ListIPWhitelist)
+			security.DELETE("/ip-whitelist/:entryId", securityHandler.DeleteIPWhitelist)
+			security.GET("/ip-whitelist/check", securityHandler.CheckIPAccess)
 
 			// Zero Trust / Session Verification
-			security.POST("/sessions/:sessionId/verify", h.VerifySession)
-			security.POST("/device-posture", h.CheckDevicePosture)
-			security.GET("/alerts", h.GetSecurityAlerts)
+			security.POST("/sessions/:sessionId/verify", securityHandler.VerifySession)
+			security.POST("/device-posture", securityHandler.CheckDevicePosture)
+			security.GET("/alerts", securityHandler.GetSecurityAlerts)
 		}
 
 		// Session Scheduling & Calendar Integration
@@ -577,21 +579,21 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 					templatesWrite.DELETE("/:id", cache.InvalidateCacheMiddleware(redisCache, cache.TemplatePattern()), h.DeleteTemplate)
 
 					// Template Versioning (operator only)
-					templatesWrite.POST("/:templateId/versions", h.CreateTemplateVersion)
-					templatesWrite.GET("/:templateId/versions", h.ListTemplateVersions)
-					templatesWrite.GET("/versions/:versionId", h.GetTemplateVersion)
-					templatesWrite.POST("/versions/:versionId/publish", h.PublishTemplateVersion)
-					templatesWrite.POST("/versions/:versionId/deprecate", h.DeprecateTemplateVersion)
-					templatesWrite.POST("/versions/:versionId/set-default", h.SetDefaultTemplateVersion)
-					templatesWrite.POST("/versions/:versionId/clone", h.CloneTemplateVersion)
+					templatesWrite.POST("/:templateId/versions", templateVersioningHandler.CreateTemplateVersion)
+					templatesWrite.GET("/:templateId/versions", templateVersioningHandler.ListTemplateVersions)
+					templatesWrite.GET("/versions/:versionId", templateVersioningHandler.GetTemplateVersion)
+					templatesWrite.POST("/versions/:versionId/publish", templateVersioningHandler.PublishTemplateVersion)
+					templatesWrite.POST("/versions/:versionId/deprecate", templateVersioningHandler.DeprecateTemplateVersion)
+					templatesWrite.POST("/versions/:versionId/set-default", templateVersioningHandler.SetDefaultTemplateVersion)
+					templatesWrite.POST("/versions/:versionId/clone", templateVersioningHandler.CloneTemplateVersion)
 
 					// Template Testing (operator only)
-					templatesWrite.POST("/versions/:versionId/tests", h.CreateTemplateTest)
-					templatesWrite.GET("/versions/:versionId/tests", h.ListTemplateTests)
-					templatesWrite.PATCH("/tests/:testId", h.UpdateTemplateTestStatus)
+					templatesWrite.POST("/versions/:versionId/tests", templateVersioningHandler.CreateTemplateTest)
+					templatesWrite.GET("/versions/:versionId/tests", templateVersioningHandler.ListTemplateTests)
+					templatesWrite.PATCH("/tests/:testId", templateVersioningHandler.UpdateTemplateTestStatus)
 
 					// Template Inheritance
-					templatesWrite.GET("/:templateId/inheritance", h.GetTemplateInheritance)
+					templatesWrite.GET("/:templateId/inheritance", templateVersioningHandler.GetTemplateInheritance)
 				}
 			}
 
