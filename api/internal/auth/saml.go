@@ -554,6 +554,11 @@ func (sa *SAMLAuthenticator) GetMiddleware() *samlsp.Middleware {
 	return sa.middleware
 }
 
+// GetServiceProvider returns the SAML Service Provider instance.
+func (sa *SAMLAuthenticator) GetServiceProvider() *saml.ServiceProvider {
+	return sa.serviceProvider
+}
+
 // ExtractUserFromAssertion extracts user information from a SAML assertion.
 //
 // After the IdP authenticates a user, it sends a SAML assertion containing:
@@ -815,6 +820,70 @@ func (sa *SAMLAuthenticator) ExtractUserFromAssertion(assertion *saml.Assertion)
 	return user, nil
 }
 
+// ExtractUserFromAttributes extracts user information from SAML session attributes.
+//
+// This is a simpler version of ExtractUserFromAssertion that works with the
+// attributes map returned by SessionWithAttributes.GetAttributes().
+//
+// The attributes map contains key-value pairs from the SAML assertion's
+// AttributeStatements, already parsed and ready to use.
+func (sa *SAMLAuthenticator) ExtractUserFromAttributes(attributes samlsp.Attributes) (*UserInfo, error) {
+	if attributes == nil {
+		return nil, fmt.Errorf("attributes map is nil")
+	}
+
+	// Initialize user object
+	user := &UserInfo{
+		Attributes: make(map[string]interface{}),
+	}
+
+	// Helper function to get first attribute value
+	getAttribute := func(key string) string {
+		return attributes.Get(key)
+	}
+
+	// Helper function to get all attribute values
+	getAttributes := func(key string) []string {
+		if vals, ok := attributes[key]; ok {
+			return vals
+		}
+		return nil
+	}
+
+	// Extract mapped attributes
+	if sa.config.AttributeMapping.Email != "" {
+		user.Email = getAttribute(sa.config.AttributeMapping.Email)
+	}
+	if sa.config.AttributeMapping.Username != "" {
+		user.Username = getAttribute(sa.config.AttributeMapping.Username)
+	}
+	if sa.config.AttributeMapping.FirstName != "" {
+		user.FirstName = getAttribute(sa.config.AttributeMapping.FirstName)
+	}
+	if sa.config.AttributeMapping.LastName != "" {
+		user.LastName = getAttribute(sa.config.AttributeMapping.LastName)
+	}
+	if sa.config.AttributeMapping.Groups != "" {
+		user.Groups = getAttributes(sa.config.AttributeMapping.Groups)
+	}
+
+	// Store all attributes in Attributes map for custom use cases
+	for key, values := range attributes {
+		if len(values) == 1 {
+			user.Attributes[key] = values[0]
+		} else {
+			user.Attributes[key] = values
+		}
+	}
+
+	// Validate required fields
+	if user.Username == "" {
+		return nil, fmt.Errorf("username not found in SAML attributes")
+	}
+
+	return user, nil
+}
+
 // GinMiddleware returns a Gin middleware function that enforces SAML authentication.
 //
 // This middleware protects routes by requiring valid SAML authentication. It:
@@ -930,40 +999,26 @@ func (sa *SAMLAuthenticator) GinMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// STEP 2: Extract assertion from session
+		// STEP 2: Extract attributes from session
 		//
-		// The session contains the SAML assertion that was validated during login.
-		// We need to retrieve it to extract user attributes.
+		// The session contains the SAML attributes that were extracted during login.
+		// We need to retrieve them to get user information.
 		//
 		// WHY TYPE ASSERTION: Session interface doesn't expose attributes directly,
 		// must cast to SessionWithAttributes to access GetAttributes()
-		assertion := session.(samlsp.SessionWithAttributes).GetAttributes()
-		if assertion == nil {
-			// Session exists but has no assertion - corrupted session
+		attributes := session.(samlsp.SessionWithAttributes).GetAttributes()
+		if attributes == nil {
+			// Session exists but has no attributes - corrupted session
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid SAML session"})
 			c.Abort()
 			return
 		}
 
-		// STEP 3: Convert to SAML Assertion type
+		// STEP 3: Extract user information from attributes
 		//
-		// GetAttributes() returns interface{}, we need to type-assert to *saml.Assertion
-		// to access assertion fields like AttributeStatements.
-		//
-		// WHY TYPE CHECK: Ensures we have the correct type before using assertion methods
-		samlAssertion, ok := assertion.(*saml.Assertion)
-		if !ok {
-			// Assertion is not the expected type - should never happen in normal flow
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid assertion type"})
-			c.Abort()
-			return
-		}
-
-		// STEP 4: Extract user information from assertion
-		//
-		// Parse SAML assertion attributes and map them to StreamSpace user fields.
+		// Parse SAML attributes and map them to StreamSpace user fields.
 		// This uses the configured AttributeMapping to translate IdP attributes.
-		user, err := sa.ExtractUserFromAssertion(samlAssertion)
+		user, err := sa.ExtractUserFromAttributes(attributes)
 		if err != nil {
 			// Failed to extract required user fields (usually missing username)
 			// This indicates IdP misconfiguration or incorrect attribute mapping

@@ -133,7 +133,6 @@
 package auth
 
 import (
-	"context"
 	"net/http"
 	"strings"
 

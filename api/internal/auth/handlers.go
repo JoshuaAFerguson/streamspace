@@ -102,6 +102,8 @@ package auth
 
 import (
 	"context"
+	"encoding/xml"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -473,9 +475,18 @@ func (h *AuthHandler) SAMLMetadata(c *gin.Context) {
 	// Generate metadata XML
 	metadata := sp.Metadata()
 
+	// Marshal to XML bytes
+	metadataBytes, err := xml.Marshal(metadata)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to marshal metadata: %v", err),
+		})
+		return
+	}
+
 	// Return XML with proper content type
 	c.Header("Content-Type", "application/samlmetadata+xml")
-	c.String(http.StatusOK, string(metadata))
+	c.String(http.StatusOK, string(metadataBytes))
 }
 
 // PasswordChangeRequest represents a password change request

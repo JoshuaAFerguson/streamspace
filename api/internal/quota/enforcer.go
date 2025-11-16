@@ -210,23 +210,28 @@ func (e *Enforcer) GetUserLimits(ctx context.Context, username string) (*Limits,
 		if user.Quota.MaxSessions > 0 {
 			limits.MaxSessions = user.Quota.MaxSessions
 		}
-		if user.Quota.MaxCPUPerSession > 0 {
-			limits.MaxCPUPerSession = user.Quota.MaxCPUPerSession
+		if user.Quota.MaxCPU != "" {
+			// Parse MaxCPU as total CPU (both per-session and total)
+			cpu, err := ParseResourceQuantity(user.Quota.MaxCPU, "cpu")
+			if err == nil && cpu > 0 {
+				limits.MaxCPUPerSession = cpu
+				limits.MaxTotalCPU = cpu
+			}
 		}
-		if user.Quota.MaxMemoryPerSession > 0 {
-			limits.MaxMemoryPerSession = user.Quota.MaxMemoryPerSession
+		if user.Quota.MaxMemory != "" {
+			// Parse MaxMemory as total memory (both per-session and total)
+			memory, err := ParseResourceQuantity(user.Quota.MaxMemory, "memory")
+			if err == nil && memory > 0 {
+				limits.MaxMemoryPerSession = memory
+				limits.MaxTotalMemory = memory
+			}
 		}
-		if user.Quota.MaxTotalCPU > 0 {
-			limits.MaxTotalCPU = user.Quota.MaxTotalCPU
-		}
-		if user.Quota.MaxTotalMemory > 0 {
-			limits.MaxTotalMemory = user.Quota.MaxTotalMemory
-		}
-		if user.Quota.MaxStorage > 0 {
-			limits.MaxStorage = user.Quota.MaxStorage
-		}
-		if user.Quota.MaxGPUPerSession >= 0 {
-			limits.MaxGPUPerSession = user.Quota.MaxGPUPerSession
+		if user.Quota.MaxStorage != "" {
+			// Parse MaxStorage
+			storage, err := ParseResourceQuantity(user.Quota.MaxStorage, "memory")
+			if err == nil && storage > 0 {
+				limits.MaxStorage = storage
+			}
 		}
 	}
 
@@ -243,23 +248,29 @@ func (e *Enforcer) GetUserLimits(ctx context.Context, username string) (*Limits,
 				if group.Quota.MaxSessions > 0 && group.Quota.MaxSessions < limits.MaxSessions {
 					limits.MaxSessions = group.Quota.MaxSessions
 				}
-				if group.Quota.MaxCPUPerSession > 0 && group.Quota.MaxCPUPerSession < limits.MaxCPUPerSession {
-					limits.MaxCPUPerSession = group.Quota.MaxCPUPerSession
+				if group.Quota.MaxCPU != "" {
+					cpu, err := ParseResourceQuantity(group.Quota.MaxCPU, "cpu")
+					if err == nil && cpu > 0 && cpu < limits.MaxCPUPerSession {
+						limits.MaxCPUPerSession = cpu
+					}
+					if err == nil && cpu > 0 && cpu < limits.MaxTotalCPU {
+						limits.MaxTotalCPU = cpu
+					}
 				}
-				if group.Quota.MaxMemoryPerSession > 0 && group.Quota.MaxMemoryPerSession < limits.MaxMemoryPerSession {
-					limits.MaxMemoryPerSession = group.Quota.MaxMemoryPerSession
+				if group.Quota.MaxMemory != "" {
+					memory, err := ParseResourceQuantity(group.Quota.MaxMemory, "memory")
+					if err == nil && memory > 0 && memory < limits.MaxMemoryPerSession {
+						limits.MaxMemoryPerSession = memory
+					}
+					if err == nil && memory > 0 && memory < limits.MaxTotalMemory {
+						limits.MaxTotalMemory = memory
+					}
 				}
-				if group.Quota.MaxTotalCPU > 0 && group.Quota.MaxTotalCPU < limits.MaxTotalCPU {
-					limits.MaxTotalCPU = group.Quota.MaxTotalCPU
-				}
-				if group.Quota.MaxTotalMemory > 0 && group.Quota.MaxTotalMemory < limits.MaxTotalMemory {
-					limits.MaxTotalMemory = group.Quota.MaxTotalMemory
-				}
-				if group.Quota.MaxStorage > 0 && group.Quota.MaxStorage < limits.MaxStorage {
-					limits.MaxStorage = group.Quota.MaxStorage
-				}
-				if group.Quota.MaxGPUPerSession >= 0 && group.Quota.MaxGPUPerSession < limits.MaxGPUPerSession {
-					limits.MaxGPUPerSession = group.Quota.MaxGPUPerSession
+				if group.Quota.MaxStorage != "" {
+					storage, err := ParseResourceQuantity(group.Quota.MaxStorage, "memory")
+					if err == nil && storage > 0 && storage < limits.MaxStorage {
+						limits.MaxStorage = storage
+					}
 				}
 			}
 		}

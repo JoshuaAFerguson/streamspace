@@ -273,16 +273,16 @@ func (v *InputValidator) sanitizeMap(data map[string]interface{}) map[string]int
 	result := make(map[string]interface{})
 
 	for key, value := range data {
-		switch v := value.(type) {
+		switch val := value.(type) {
 		case string:
 			// Sanitize string values using bluemonday
-			result[key] = v.sanitizer.Sanitize(v)
+			result[key] = v.sanitizer.Sanitize(val)
 		case map[string]interface{}:
 			// Recursively sanitize nested maps
-			result[key] = v.sanitizeMap(v)
+			result[key] = v.sanitizeMap(val)
 		case []interface{}:
 			// Sanitize arrays
-			result[key] = v.sanitizeArray(v)
+			result[key] = v.sanitizeArray(val)
 		default:
 			// Keep other types as-is (numbers, booleans, etc.)
 			result[key] = value
@@ -297,13 +297,13 @@ func (v *InputValidator) sanitizeArray(data []interface{}) []interface{} {
 	result := make([]interface{}, len(data))
 
 	for i, value := range data {
-		switch v := value.(type) {
+		switch val := value.(type) {
 		case string:
-			result[i] = v.sanitizer.Sanitize(v)
+			result[i] = v.sanitizer.Sanitize(val)
 		case map[string]interface{}:
-			result[i] = v.sanitizeMap(v)
+			result[i] = v.sanitizeMap(val)
 		case []interface{}:
-			result[i] = v.sanitizeArray(v)
+			result[i] = v.sanitizeArray(val)
 		default:
 			result[i] = value
 		}

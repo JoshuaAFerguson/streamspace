@@ -47,6 +47,7 @@ package middleware
 import (
 	"compress/gzip"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -133,7 +134,7 @@ func Gzip(level int) gin.HandlerFunc {
 }
 
 // shouldCompress determines if the response should be compressed
-func shouldCompress(r *gin.Context.Request) bool {
+func shouldCompress(r *http.Request) bool {
 	// Check if client accepts gzip
 	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 		return false
