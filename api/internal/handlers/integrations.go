@@ -306,7 +306,7 @@ func (h *Handler) CreateWebhook(c *gin.Context) {
 		webhook.Secret = h.generateWebhookSecret()
 	}
 
-	err := h.DB.QueryRow(`
+	err := h.DB.DB().QueryRow(`
 		INSERT INTO webhooks (
 			name, description, url, secret, events, headers, enabled,
 			retry_policy, filters, metadata, created_by
@@ -349,7 +349,7 @@ func (h *Handler) ListWebhooks(c *gin.Context) {
 
 	query += " ORDER BY created_at DESC"
 
-	rows, err := h.DB.Query(query, args...)
+	rows, err := h.DB.DB().Query(query, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve webhooks"})
 		return
@@ -448,7 +448,7 @@ func (h *Handler) UpdateWebhook(c *gin.Context) {
 	var result sql.Result
 	if role == "admin" {
 		// Admins can update any webhook
-		result, err = h.DB.Exec(`
+		result, err = h.DB.DB().Exec(`
 			UPDATE webhooks SET
 				name = $1, description = $2, url = $3, events = $4, headers = $5,
 				enabled = $6, retry_policy = $7, filters = $8, metadata = $9,
@@ -459,7 +459,7 @@ func (h *Handler) UpdateWebhook(c *gin.Context) {
 			toJSONB(webhook.Filters), toJSONB(webhook.Metadata), time.Now(), webhookID)
 	} else {
 		// Non-admins can only update their own webhooks
-		result, err = h.DB.Exec(`
+		result, err = h.DB.DB().Exec(`
 			UPDATE webhooks SET
 				name = $1, description = $2, url = $3, events = $4, headers = $5,
 				enabled = $6, retry_policy = $7, filters = $8, metadata = $9,
@@ -502,10 +502,10 @@ func (h *Handler) DeleteWebhook(c *gin.Context) {
 	var result sql.Result
 	if role == "admin" {
 		// Admins can delete any webhook
-		result, err = h.DB.Exec("DELETE FROM webhooks WHERE id = $1", webhookID)
+		result, err = h.DB.DB().Exec("DELETE FROM webhooks WHERE id = $1", webhookID)
 	} else {
 		// Non-admins can only delete their own webhooks
-		result, err = h.DB.Exec("DELETE FROM webhooks WHERE id = $1 AND created_by = $2", webhookID, userID)
+		result, err = h.DB.DB().Exec("DELETE FROM webhooks WHERE id = $1 AND created_by = $2", webhookID, userID)
 	}
 
 	if err != nil {
@@ -542,14 +542,14 @@ func (h *Handler) TestWebhook(c *gin.Context) {
 
 	if role == "admin" {
 		// Admins can test any webhook
-		err = h.DB.QueryRow(`
+		err = h.DB.DB().QueryRow(`
 			SELECT id, name, url, secret, events, headers, enabled, retry_policy
 			FROM webhooks WHERE id = $1
 		`, webhookID).Scan(&webhook.ID, &webhook.Name, &webhook.URL, &webhook.Secret,
 			&events, &headers, &webhook.Enabled, &retryPolicy)
 	} else {
 		// Non-admins can only test their own webhooks
-		err = h.DB.QueryRow(`
+		err = h.DB.DB().QueryRow(`
 			SELECT id, name, url, secret, events, headers, enabled, retry_policy
 			FROM webhooks WHERE id = $1 AND created_by = $2
 		`, webhookID, userID).Scan(&webhook.ID, &webhook.Name, &webhook.URL, &webhook.Secret,
@@ -618,9 +618,9 @@ func (h *Handler) GetWebhookDeliveries(c *gin.Context) {
 
 	// Count total
 	var total int
-	h.DB.QueryRow("SELECT COUNT(*) FROM webhook_deliveries WHERE webhook_id = $1", webhookID).Scan(&total)
+	h.DB.DB().QueryRow("SELECT COUNT(*) FROM webhook_deliveries WHERE webhook_id = $1", webhookID).Scan(&total)
 
-	rows, err := h.DB.Query(`
+	rows, err := h.DB.DB().Query(`
 		SELECT id, webhook_id, event, payload, status, status_code, response_body,
 		       error_message, attempts, next_retry_at, delivered_at, created_at
 		FROM webhook_deliveries
@@ -683,7 +683,7 @@ func (h *Handler) CreateIntegration(c *gin.Context) {
 		return
 	}
 
-	err := h.DB.QueryRow(`
+	err := h.DB.DB().QueryRow(`
 		INSERT INTO integrations (
 			type, name, description, config, enabled, events, test_mode, created_by
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -727,7 +727,7 @@ func (h *Handler) ListIntegrations(c *gin.Context) {
 
 	query += " ORDER BY created_at DESC"
 
-	rows, err := h.DB.Query(query, args...)
+	rows, err := h.DB.DB().Query(query, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve integrations"})
 		return
@@ -775,14 +775,14 @@ func (h *Handler) TestIntegration(c *gin.Context) {
 
 	if role == "admin" {
 		// Admins can test any integration
-		err = h.DB.QueryRow(`
+		err = h.DB.DB().QueryRow(`
 			SELECT id, type, name, config, enabled, events
 			FROM integrations WHERE id = $1
 		`, integrationID).Scan(&integration.ID, &integration.Type, &integration.Name,
 			&config, &integration.Enabled, &events)
 	} else {
 		// Non-admins can only test their own integrations
-		err = h.DB.QueryRow(`
+		err = h.DB.DB().QueryRow(`
 			SELECT id, type, name, config, enabled, events
 			FROM integrations WHERE id = $1 AND created_by = $2
 		`, integrationID, userID).Scan(&integration.ID, &integration.Type, &integration.Name,
@@ -806,10 +806,10 @@ func (h *Handler) TestIntegration(c *gin.Context) {
 	success, message := h.testIntegration(integration)
 
 	// Update last test time
-	h.DB.Exec("UPDATE integrations SET last_test_at = $1 WHERE id = $2", time.Now(), integrationID)
+	h.DB.DB().Exec("UPDATE integrations SET last_test_at = $1 WHERE id = $2", time.Now(), integrationID)
 
 	if success {
-		h.DB.Exec("UPDATE integrations SET last_success_at = $1 WHERE id = $2", time.Now(), integrationID)
+		h.DB.DB().Exec("UPDATE integrations SET last_success_at = $1 WHERE id = $2", time.Now(), integrationID)
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": message})
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": message})

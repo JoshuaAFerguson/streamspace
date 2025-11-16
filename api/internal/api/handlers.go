@@ -283,8 +283,8 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	ctx := context.Background()
 	sessionID := c.Param("id")
 
-	// Get session info before deletion (for quota tracking)
-	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
+	// Verify session exists before deletion
+	_, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
