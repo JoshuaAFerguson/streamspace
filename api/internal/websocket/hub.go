@@ -1,3 +1,42 @@
+// Package websocket provides real-time WebSocket communication for StreamSpace.
+//
+// The WebSocket system enables:
+//   - Real-time session status updates to UI
+//   - Session event notifications (created, updated, deleted, state changes)
+//   - Connection tracking (connect, disconnect, heartbeat)
+//   - Resource usage updates
+//   - Sharing and collaboration notifications
+//
+// Architecture:
+//   - Hub: Manages all WebSocket connections and broadcasts
+//   - Client: Represents individual WebSocket connection
+//   - Notifier: Handles event subscriptions and targeted notifications
+//   - Manager: Coordinates hubs and notifiers
+//
+// Message flow:
+//  1. Browser establishes WebSocket connection
+//  2. Client registers with Hub
+//  3. Client subscribes to user/session events via Notifier
+//  4. Backend emits events (session created, state changed, etc.)
+//  5. Notifier routes events to subscribed clients
+//  6. Hub broadcasts messages to clients
+//  7. Client writePump sends messages to browser
+//
+// Concurrency:
+//   - Hub.Run() runs in goroutine, handles all channel operations
+//   - Each Client has readPump and writePump goroutines
+//   - Thread-safe with sync.RWMutex for shared state
+//
+// Example usage:
+//
+//	hub := NewHub()
+//	go hub.Run()
+//
+//	// On WebSocket connection
+//	hub.ServeClient(conn, clientID)
+//
+//	// Broadcast message to all clients
+//	hub.Broadcast([]byte(`{"type":"session.created","sessionId":"abc"}`))
 package websocket
 
 import (
@@ -7,30 +46,98 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Hub maintains the set of active WebSocket connections and broadcasts messages to them
+// Hub maintains active WebSocket connections and implements message broadcasting.
+//
+// The Hub pattern:
+//   - Centralizes connection management
+//   - Provides thread-safe registration/unregistration
+//   - Broadcasts messages to all clients efficiently
+//   - Handles slow/disconnected clients gracefully
+//
+// Channel-based design:
+//   - register: New clients connect
+//   - unregister: Clients disconnect
+//   - broadcast: Messages to send to all clients
+//   - All operations go through channels to avoid race conditions
+//
+// Hub lifecycle:
+//  1. Create with NewHub()
+//  2. Start with go hub.Run()
+//  3. Clients connect via ServeClient()
+//  4. Send messages via Broadcast()
+//  5. Clients disconnect automatically on connection close
+//
+// Thread safety:
+//   - All client map access protected by sync.RWMutex
+//   - Channel operations are inherently thread-safe
+//   - Safe to call Broadcast() from multiple goroutines
 type Hub struct {
-	// Registered clients
+	// clients is the set of registered clients.
+	// Map key: *Client, Map value: bool (always true, used as a set)
 	clients map[*Client]bool
 
-	// Inbound messages from clients
+	// broadcast is the channel for messages to send to all clients.
+	// Buffer size: 256 messages
 	broadcast chan []byte
 
-	// Register requests from clients
+	// register is the channel for new client registration requests.
+	// Unbuffered channel (synchronous registration)
 	register chan *Client
 
-	// Unregister requests from clients
+	// unregister is the channel for client disconnection requests.
+	// Unbuffered channel (synchronous unregistration)
 	unregister chan *Client
 
-	// Mutex for thread-safe operations
+	// mu protects concurrent access to clients map.
+	// Used when checking client count or iterating clients.
 	mu sync.RWMutex
 }
 
-// Client represents a WebSocket client connection
+// Client represents an individual WebSocket connection.
+//
+// Each client has:
+//   - Unique ID for identification
+//   - WebSocket connection for bidirectional communication
+//   - Buffered send channel for outbound messages
+//   - Reference to hub for registration/unregistration
+//
+// Client lifecycle:
+//  1. Created when browser establishes WebSocket
+//  2. Registered with Hub
+//  3. readPump goroutine reads messages from browser
+//  4. writePump goroutine writes messages to browser
+//  5. Unregistered when connection closes
+//  6. Send channel closed to signal writePump to stop
+//
+// Message buffering:
+//   - send channel has buffer of 256 messages
+//   - If buffer fills, client is slow and gets disconnected
+//   - Prevents slow clients from blocking the Hub
+//
+// Example:
+//
+//	client := &Client{
+//	    hub:  hub,
+//	    conn: websocketConn,
+//	    send: make(chan []byte, 256),
+//	    id:   "user1-session123",
+//	}
 type Client struct {
-	hub  *Hub
+	// hub is the Hub this client belongs to.
+	hub *Hub
+
+	// conn is the underlying WebSocket connection.
+	// gorilla/websocket.Conn
 	conn *websocket.Conn
+
+	// send is the buffered channel of outbound messages.
+	// Buffer size: 256 messages
+	// If buffer fills, client is considered slow and disconnected
 	send chan []byte
-	id   string
+
+	// id uniquely identifies this client.
+	// Format: "{userID}-{sessionID}" or UUID
+	id string
 }
 
 // NewHub creates a new WebSocket hub

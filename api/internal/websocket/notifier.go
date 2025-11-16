@@ -7,56 +7,178 @@ import (
 	"time"
 )
 
-// EventType represents the type of session event
+// EventType represents the type of session event for real-time notifications.
+//
+// Event types are organized by category:
+//   - Lifecycle: created, updated, deleted, state changes
+//   - Activity: connected, disconnected, idle, active
+//   - Resources: CPU/memory updates, tag changes
+//   - Sharing: shared, unshared
+//   - Errors: error notifications
+//
+// Events are sent to subscribed WebSocket clients in real-time,
+// enabling the UI to update without polling.
 type EventType string
 
 const (
-	// Session lifecycle events
-	EventSessionCreated    EventType = "session.created"
-	EventSessionUpdated    EventType = "session.updated"
-	EventSessionDeleted    EventType = "session.deleted"
+	// Session lifecycle events - fundamental session operations
+
+	// EventSessionCreated is emitted when a new session is created.
+	// Data: session details (template, resources, state)
+	EventSessionCreated EventType = "session.created"
+
+	// EventSessionUpdated is emitted when session metadata is modified.
+	// Data: changed fields (tags, description, etc.)
+	EventSessionUpdated EventType = "session.updated"
+
+	// EventSessionDeleted is emitted when a session is deleted.
+	// Data: none (session no longer exists)
+	EventSessionDeleted EventType = "session.deleted"
+
+	// EventSessionStateChange is emitted when session state transitions.
+	// Data: oldState, newState (running→hibernated, etc.)
 	EventSessionStateChange EventType = "session.state.changed"
 
-	// Session activity events
-	EventSessionConnected    EventType = "session.connected"
+	// Session activity events - connection and usage tracking
+
+	// EventSessionConnected is emitted when a user connects to a session.
+	// Data: connectionId, clientIP, userAgent
+	EventSessionConnected EventType = "session.connected"
+
+	// EventSessionDisconnected is emitted when a user disconnects.
+	// Data: connectionId, duration
 	EventSessionDisconnected EventType = "session.disconnected"
-	EventSessionHeartbeat    EventType = "session.heartbeat"
-	EventSessionIdle         EventType = "session.idle"
-	EventSessionActive       EventType = "session.active"
 
-	// Session resource events
+	// EventSessionHeartbeat is emitted on periodic heartbeat (optional).
+	// Data: timestamp, active connections count
+	EventSessionHeartbeat EventType = "session.heartbeat"
+
+	// EventSessionIdle is emitted when session becomes idle.
+	// Data: idleDuration (seconds)
+	EventSessionIdle EventType = "session.idle"
+
+	// EventSessionActive is emitted when idle session becomes active again.
+	// Data: none
+	EventSessionActive EventType = "session.active"
+
+	// Session resource events - configuration changes
+
+	// EventSessionResourcesUpdated is emitted when CPU/memory limits change.
+	// Data: resources (cpu, memory, storage)
 	EventSessionResourcesUpdated EventType = "session.resources.updated"
-	EventSessionTagsUpdated      EventType = "session.tags.updated"
 
-	// Session sharing events
-	EventSessionShared   EventType = "session.shared"
+	// EventSessionTagsUpdated is emitted when session tags are modified.
+	// Data: tags array
+	EventSessionTagsUpdated EventType = "session.tags.updated"
+
+	// Session sharing events - collaboration
+
+	// EventSessionShared is emitted when session is shared with another user.
+	// Data: sharedWith (userID), permissions
+	EventSessionShared EventType = "session.shared"
+
+	// EventSessionUnshared is emitted when sharing is revoked.
+	// Data: unsharedFrom (userID)
 	EventSessionUnshared EventType = "session.unshared"
 
-	// Session error events
+	// Session error events - problem notifications
+
+	// EventSessionError is emitted when an error occurs.
+	// Data: error (error message), code (error code)
 	EventSessionError EventType = "session.error"
 )
 
-// SessionEvent represents a session-related event
+// SessionEvent represents a session-related event sent to WebSocket clients.
+//
+// Events are JSON-encoded and sent over WebSocket connections to subscribed
+// clients. The UI can listen for specific event types and update in real-time.
+//
+// Event routing:
+//   - Events are routed to clients subscribed to the userID
+//   - Events are also routed to clients subscribed to the sessionID
+//   - A client can be subscribed to multiple users and sessions
+//
+// Example event:
+//
+//	{
+//	  "type": "session.created",
+//	  "sessionId": "user1-firefox",
+//	  "userId": "user1",
+//	  "timestamp": "2025-01-15T10:30:00Z",
+//	  "data": {
+//	    "template": "firefox-browser",
+//	    "state": "running",
+//	    "resources": {"cpu": "2000m", "memory": "4096Mi"}
+//	  }
+//	}
 type SessionEvent struct {
-	Type      EventType              `json:"type"`
-	SessionID string                 `json:"sessionId"`
-	UserID    string                 `json:"userId"`
-	Timestamp time.Time              `json:"timestamp"`
-	Data      map[string]interface{} `json:"data,omitempty"`
+	// Type identifies the event type (e.g., "session.created").
+	Type EventType `json:"type"`
+
+	// SessionID is the ID of the session this event relates to.
+	SessionID string `json:"sessionId"`
+
+	// UserID is the owner of the session.
+	// Events are routed to all clients subscribed to this user.
+	UserID string `json:"userId"`
+
+	// Timestamp is when the event occurred (server time).
+	Timestamp time.Time `json:"timestamp"`
+
+	// Data contains event-specific payload (optional).
+	// Structure depends on event type.
+	Data map[string]interface{} `json:"data,omitempty"`
 }
 
-// Notifier handles real-time event notifications
+// Notifier handles event subscriptions and targeted real-time notifications.
+//
+// The Notifier implements a pub/sub pattern:
+//   - Clients subscribe to user events (all sessions for a user)
+//   - Clients subscribe to session events (specific session)
+//   - Backend emits events via NotifySessionEvent()
+//   - Notifier routes events to subscribed clients
+//   - Hub delivers messages over WebSocket
+//
+// Subscription model:
+//   - User subscriptions: Get all events for a user's sessions
+//   - Session subscriptions: Get events for a specific session
+//   - Clients can have both types of subscriptions simultaneously
+//
+// Thread safety:
+//   - All map access protected by sync.RWMutex
+//   - Safe for concurrent subscriptions and notifications
+//
+// Example usage:
+//
+//	notifier := NewNotifier(manager)
+//
+//	// Client subscribes to user events
+//	notifier.SubscribeUser(clientID, userID)
+//
+//	// Backend emits event
+//	notifier.NotifySessionCreated(sessionID, userID, data)
+//
+//	// Event is routed to subscribed clients via WebSocket
 type Notifier struct {
+	// manager coordinates WebSocket hubs for message delivery.
 	manager *Manager
-	mu      sync.RWMutex
 
-	// User subscriptions: userID -> set of client IDs
+	// mu protects concurrent access to subscription maps.
+	mu sync.RWMutex
+
+	// userSubscriptions maps userID to set of subscribed client IDs.
+	// userID -> set of client IDs
+	// Clients in this map receive all events for the user's sessions.
 	userSubscriptions map[string]map[string]bool
 
-	// Session subscriptions: sessionID -> set of client IDs
+	// sessionSubscriptions maps sessionID to set of subscribed client IDs.
+	// sessionID -> set of client IDs
+	// Clients in this map receive events only for that specific session.
 	sessionSubscriptions map[string]map[string]bool
 
-	// Client to user mapping: clientID -> userID
+	// clientUsers maps client IDs to their associated userID.
+	// clientID -> userID
+	// Used for cleanup when client disconnects.
 	clientUsers map[string]string
 }
 
