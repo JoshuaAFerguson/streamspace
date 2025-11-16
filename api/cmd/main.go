@@ -411,6 +411,7 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 				// NOTE: Session recording is now handled by the streamspace-recording plugin
 				// Install it via: Admin → Plugins → streamspace-recording
 
+		}
 		// NOTE: Data Loss Prevention (DLP) is now handled by the streamspace-dlp plugin
 		// Install it via: Admin → Plugins → streamspace-dlp
 
