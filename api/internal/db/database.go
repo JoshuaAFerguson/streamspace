@@ -1089,13 +1089,16 @@ func (d *Database) Migrate() error {
 			max_memory INT,
 			max_storage INT,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE (user_id, COALESCE(team_id, ''))
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 
 		// Create indexes for resource quotas
 		`CREATE INDEX IF NOT EXISTS idx_resource_quotas_user_id ON resource_quotas(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_resource_quotas_team_id ON resource_quotas(team_id)`,
+
+		// Unique constraint for user quotas (handle NULL team_id with partial indexes)
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_quotas_user_team ON resource_quotas(user_id, team_id) WHERE team_id IS NOT NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_quotas_user_only ON resource_quotas(user_id) WHERE team_id IS NULL`,
 
 		// Quota policies table (defines quota enforcement rules)
 		`CREATE TABLE IF NOT EXISTS quota_policies (
