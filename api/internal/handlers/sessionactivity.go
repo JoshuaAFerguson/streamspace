@@ -213,7 +213,7 @@ func (h *SessionActivityHandler) LogActivityEvent(c *gin.Context) {
 // GetSessionActivity returns activity log for a specific session
 func (h *SessionActivityHandler) GetSessionActivity(c *gin.Context) {
 	ctx := context.Background()
-	sessionID := c.Param("sessionId")
+	sessionID := c.Param("id")
 
 	// Pagination
 	limit := 100
@@ -397,7 +397,7 @@ func (h *SessionActivityHandler) GetActivityStats(c *gin.Context) {
 // GetSessionTimeline returns a timeline view of session activity
 func (h *SessionActivityHandler) GetSessionTimeline(c *gin.Context) {
 	ctx := context.Background()
-	sessionID := c.Param("sessionId")
+	sessionID := c.Param("id")
 
 	query := `
 		SELECT id, event_type, event_category, description,

@@ -704,7 +704,7 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 			}
 
 			// Session activity recording and queries
-			sessionActivity := protected.Group("/sessions/:sessionId/activity")
+			sessionActivity := protected.Group("/sessions/:id/activity")
 			{
 				// Log new activity event (for internal API use)
 				sessionActivity.POST("/log", sessionActivityHandler.LogActivityEvent)
