@@ -252,6 +252,7 @@ func main() {
 	quotasHandler := handlers.NewQuotasHandler(database)
 	websocketHandler := handlers.NewWebSocketHandler(database)
 	consoleHandler := handlers.NewConsoleHandler(database)
+	collaborationHandler := handlers.NewCollaborationHandler(database)
 	// NOTE: Billing is now handled by the streamspace-billing plugin
 
 	// SECURITY: Initialize webhook authentication
@@ -262,7 +263,7 @@ func main() {
 	}
 
 	// Setup routes
-	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, websocketHandler, consoleHandler, jwtManager, userDB, redisCache, webhookSecret)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, websocketHandler, consoleHandler, collaborationHandler, jwtManager, userDB, redisCache, webhookSecret)
 
 	// Create HTTP server with security timeouts
 	srv := &http.Server{
@@ -343,7 +344,7 @@ func main() {
 	log.Println("Graceful shutdown completed")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, websocketHandler *handlers.WebSocketHandler, consoleHandler *handlers.ConsoleHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, websocketHandler *handlers.WebSocketHandler, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
 	// SECURITY: Create authentication middleware
 	authMiddleware := auth.Middleware(jwtManager, userDB)
 	adminMiddleware := auth.RequireRole("admin")
@@ -419,45 +420,44 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 				console.GET("/files/:sessionId/history", consoleHandler.GetFileOperationHistory)
 			}
 
-			// Multi-Monitor Support
-			monitors := protected.Group("/monitors")
-			{
-				monitors.GET("/sessions/:sessionId", h.GetMonitorConfiguration)
-				monitors.POST("/sessions/:sessionId", h.CreateMonitorConfiguration)
-				monitors.GET("/sessions/:sessionId/list", h.ListMonitorConfigurations)
-				monitors.PATCH("/configurations/:configId", h.UpdateMonitorConfiguration)
-				monitors.POST("/configurations/:configId/activate", h.ActivateMonitorConfiguration)
-				monitors.DELETE("/configurations/:configId", h.DeleteMonitorConfiguration)
-				monitors.GET("/sessions/:sessionId/streams", h.GetMonitorStreams)
-
-				// Preset configurations
-				monitors.POST("/sessions/:sessionId/presets/:preset", h.CreatePresetConfiguration)
-			}
+			// NOTE: Multi-Monitor Support is not yet implemented
+			// Will be added in a future release or via plugin
+			// monitors := protected.Group("/monitors")
+			// {
+			//	monitors.GET("/sessions/:sessionId", h.GetMonitorConfiguration)
+			//	monitors.POST("/sessions/:sessionId", h.CreateMonitorConfiguration)
+			//	monitors.GET("/sessions/:sessionId/list", h.ListMonitorConfigurations)
+			//	monitors.PATCH("/configurations/:configId", h.UpdateMonitorConfiguration)
+			//	monitors.POST("/configurations/:configId/activate", h.ActivateMonitorConfiguration)
+			//	monitors.DELETE("/configurations/:configId", h.DeleteMonitorConfiguration)
+			//	monitors.GET("/sessions/:sessionId/streams", h.GetMonitorStreams)
+			//	monitors.POST("/sessions/:sessionId/presets/:preset", h.CreatePresetConfiguration)
+			// }
 
 			// Real-time Collaboration
 			collaboration := protected.Group("/collaboration")
 			{
 				// Collaboration session management
-				collaboration.POST("/sessions/:sessionId", h.CreateCollaborationSession)
-				collaboration.POST("/:collabId/join", h.JoinCollaborationSession)
-				collaboration.POST("/:collabId/leave", h.LeaveCollaborationSession)
+				collaboration.POST("/sessions/:sessionId", collaborationHandler.CreateCollaborationSession)
+				collaboration.POST("/:collabId/join", collaborationHandler.JoinCollaborationSession)
+				collaboration.POST("/:collabId/leave", collaborationHandler.LeaveCollaborationSession)
 
 				// Participant management
-				collaboration.GET("/:collabId/participants", h.GetCollaborationParticipants)
-				collaboration.PATCH("/:collabId/participants/:userId", h.UpdateParticipantRole)
+				collaboration.GET("/:collabId/participants", collaborationHandler.GetCollaborationParticipants)
+				collaboration.PATCH("/:collabId/participants/:userId", collaborationHandler.UpdateParticipantRole)
 
 				// Chat operations
-				collaboration.POST("/:collabId/chat", h.SendChatMessage)
-				collaboration.GET("/:collabId/chat", h.GetChatHistory)
+				collaboration.POST("/:collabId/chat", collaborationHandler.SendChatMessage)
+				collaboration.GET("/:collabId/chat", collaborationHandler.GetChatHistory)
 
 				// Annotation operations
-				collaboration.POST("/:collabId/annotations", h.CreateAnnotation)
-				collaboration.GET("/:collabId/annotations", h.GetAnnotations)
-				collaboration.DELETE("/:collabId/annotations/:annotationId", h.DeleteAnnotation)
-				collaboration.DELETE("/:collabId/annotations", h.ClearAllAnnotations)
+				collaboration.POST("/:collabId/annotations", collaborationHandler.CreateAnnotation)
+				collaboration.GET("/:collabId/annotations", collaborationHandler.GetAnnotations)
+				collaboration.DELETE("/:collabId/annotations/:annotationId", collaborationHandler.DeleteAnnotation)
+				collaboration.DELETE("/:collabId/annotations", collaborationHandler.ClearAllAnnotations)
 
 				// Statistics
-				collaboration.GET("/:collabId/stats", h.GetCollaborationStats)
+				collaboration.GET("/:collabId/stats", collaborationHandler.GetCollaborationStats)
 			}
 
 		// Integration Hub & Webhooks - Operator/Admin only

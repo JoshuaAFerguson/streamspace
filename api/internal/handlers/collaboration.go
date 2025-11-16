@@ -261,18 +261,18 @@ import (
 )
 
 // Handler handles collaboration-related HTTP requests.
-type Handler struct {
+type CollaborationHandler struct {
 	// DB is the database connection for collaboration queries and updates.
 	DB *db.Database
 }
 
 // NewCollaborationHandler creates a new collaboration handler.
-func NewCollaborationHandler(database *db.Database) *Handler {
-	return &Handler{DB: database}
+func NewCollaborationHandler(database *db.Database) *CollaborationHandler {
+	return &CollaborationHandler{DB: database}
 }
 
 // canAccessSession checks if a user has access to a session.
-func (h *Handler) canAccessSession(userID, sessionID string) bool {
+func (h *CollaborationHandler) canAccessSession(userID, sessionID string) bool {
 	// Check if user owns the session
 	var owner string
 	err := h.DB.DB().QueryRow("SELECT user_id FROM sessions WHERE id = $1", sessionID).Scan(&owner)
@@ -416,7 +416,7 @@ type Point struct {
 }
 
 // CreateCollaborationSession creates a new collaboration session
-func (h *Handler) CreateCollaborationSession(c *gin.Context) {
+func (h *CollaborationHandler) CreateCollaborationSession(c *gin.Context) {
 	sessionID := c.Param("sessionId")
 	userID := c.GetString("user_id")
 
@@ -495,7 +495,7 @@ func (h *Handler) CreateCollaborationSession(c *gin.Context) {
 }
 
 // JoinCollaborationSession allows a user to join a collaboration
-func (h *Handler) JoinCollaborationSession(c *gin.Context) {
+func (h *CollaborationHandler) JoinCollaborationSession(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 
@@ -615,7 +615,7 @@ func (h *Handler) JoinCollaborationSession(c *gin.Context) {
 }
 
 // LeaveCollaborationSession removes a user from collaboration
-func (h *Handler) LeaveCollaborationSession(c *gin.Context) {
+func (h *CollaborationHandler) LeaveCollaborationSession(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 
@@ -649,7 +649,7 @@ func (h *Handler) LeaveCollaborationSession(c *gin.Context) {
 }
 
 // GetCollaborationParticipants lists all participants
-func (h *Handler) GetCollaborationParticipants(c *gin.Context) {
+func (h *CollaborationHandler) GetCollaborationParticipants(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 
@@ -701,7 +701,7 @@ func (h *Handler) GetCollaborationParticipants(c *gin.Context) {
 }
 
 // UpdateParticipantRole updates a participant's role and permissions
-func (h *Handler) UpdateParticipantRole(c *gin.Context) {
+func (h *CollaborationHandler) UpdateParticipantRole(c *gin.Context) {
 	collabID := c.Param("collabId")
 	targetUserID := c.Param("userId")
 	userID := c.GetString("user_id")
@@ -740,7 +740,7 @@ func (h *Handler) UpdateParticipantRole(c *gin.Context) {
 // Chat Operations
 
 // SendChatMessage sends a message to the collaboration chat
-func (h *Handler) SendChatMessage(c *gin.Context) {
+func (h *CollaborationHandler) SendChatMessage(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 
@@ -786,7 +786,7 @@ func (h *Handler) SendChatMessage(c *gin.Context) {
 }
 
 // GetChatHistory retrieves chat history
-func (h *Handler) GetChatHistory(c *gin.Context) {
+func (h *CollaborationHandler) GetChatHistory(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
@@ -856,7 +856,7 @@ func (h *Handler) GetChatHistory(c *gin.Context) {
 // Annotation Operations
 
 // CreateAnnotation creates a new annotation
-func (h *Handler) CreateAnnotation(c *gin.Context) {
+func (h *CollaborationHandler) CreateAnnotation(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 
@@ -905,7 +905,7 @@ func (h *Handler) CreateAnnotation(c *gin.Context) {
 }
 
 // GetAnnotations retrieves active annotations
-func (h *Handler) GetAnnotations(c *gin.Context) {
+func (h *CollaborationHandler) GetAnnotations(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 
@@ -948,7 +948,7 @@ func (h *Handler) GetAnnotations(c *gin.Context) {
 }
 
 // DeleteAnnotation removes an annotation
-func (h *Handler) DeleteAnnotation(c *gin.Context) {
+func (h *CollaborationHandler) DeleteAnnotation(c *gin.Context) {
 	collabID := c.Param("collabId")
 	annotationID := c.Param("annotationId")
 	userID := c.GetString("user_id")
@@ -972,7 +972,7 @@ func (h *Handler) DeleteAnnotation(c *gin.Context) {
 }
 
 // ClearAllAnnotations removes all annotations
-func (h *Handler) ClearAllAnnotations(c *gin.Context) {
+func (h *CollaborationHandler) ClearAllAnnotations(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 
@@ -993,7 +993,7 @@ func (h *Handler) ClearAllAnnotations(c *gin.Context) {
 
 // Helper functions
 
-func (h *Handler) isCollaborationParticipant(collabID, userID string) bool {
+func (h *CollaborationHandler) isCollaborationParticipant(collabID, userID string) bool {
 	var exists bool
 	h.DB.DB().QueryRow(`
 		SELECT EXISTS(SELECT 1 FROM collaboration_participants
@@ -1002,7 +1002,7 @@ func (h *Handler) isCollaborationParticipant(collabID, userID string) bool {
 	return exists
 }
 
-func (h *Handler) canManageCollaboration(collabID, userID string) bool {
+func (h *CollaborationHandler) canManageCollaboration(collabID, userID string) bool {
 	var permissions sql.NullString
 	h.DB.DB().QueryRow(`
 		SELECT permissions FROM collaboration_participants
@@ -1018,7 +1018,7 @@ func (h *Handler) canManageCollaboration(collabID, userID string) bool {
 	return perms.CanManage
 }
 
-func (h *Handler) hasCollaborationPermission(collabID, userID, permission string) bool {
+func (h *CollaborationHandler) hasCollaborationPermission(collabID, userID, permission string) bool {
 	var permissions sql.NullString
 	h.DB.DB().QueryRow(`
 		SELECT permissions FROM collaboration_participants
@@ -1047,7 +1047,7 @@ func (h *Handler) hasCollaborationPermission(collabID, userID, permission string
 }
 
 // GetCollaborationStats returns collaboration statistics
-func (h *Handler) GetCollaborationStats(c *gin.Context) {
+func (h *CollaborationHandler) GetCollaborationStats(c *gin.Context) {
 	collabID := c.Param("collabId")
 	userID := c.GetString("user_id")
 
