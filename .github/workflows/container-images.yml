@@ -99,7 +99,10 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
-          cosign sign --yes ${{ env.IMAGE_PREFIX }}-controller@${{ steps.build.outputs.digest }}
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+          IMAGE_REF="${{ env.IMAGE_PREFIX }}-controller@${{ steps.build.outputs.digest }}"
+          echo "Image reference: $IMAGE_REF"
+          cosign sign --yes "$IMAGE_REF"
 
       - name: Generate SBOM for Controller
         if: github.event_name != 'pull_request'
@@ -115,9 +118,10 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
+          IMAGE_REF="${{ env.IMAGE_PREFIX }}-controller@${{ steps.build.outputs.digest }}"
           cosign attest --yes --type spdxjson \
             --predicate sbom-controller.spdx.json \
-            ${{ env.IMAGE_PREFIX }}-controller@${{ steps.build.outputs.digest }}
+            "$IMAGE_REF"
 
       - name: Upload Controller SBOM
         if: github.event_name != 'pull_request'
@@ -196,7 +200,10 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
-          cosign sign --yes ${{ env.IMAGE_PREFIX }}-api@${{ steps.build.outputs.digest }}
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+          IMAGE_REF="${{ env.IMAGE_PREFIX }}-api@${{ steps.build.outputs.digest }}"
+          echo "Image reference: $IMAGE_REF"
+          cosign sign --yes "$IMAGE_REF"
 
       - name: Generate SBOM for API
         if: github.event_name != 'pull_request'
@@ -212,9 +219,10 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
+          IMAGE_REF="${{ env.IMAGE_PREFIX }}-api@${{ steps.build.outputs.digest }}"
           cosign attest --yes --type spdxjson \
             --predicate sbom-api.spdx.json \
-            ${{ env.IMAGE_PREFIX }}-api@${{ steps.build.outputs.digest }}
+            "$IMAGE_REF"
 
       - name: Upload API SBOM
         if: github.event_name != 'pull_request'
@@ -293,7 +301,10 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
-          cosign sign --yes ${{ env.IMAGE_PREFIX }}-ui@${{ steps.build.outputs.digest }}
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+          IMAGE_REF="${{ env.IMAGE_PREFIX }}-ui@${{ steps.build.outputs.digest }}"
+          echo "Image reference: $IMAGE_REF"
+          cosign sign --yes "$IMAGE_REF"
 
       - name: Generate SBOM for UI
         if: github.event_name != 'pull_request'
@@ -309,9 +320,10 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
+          IMAGE_REF="${{ env.IMAGE_PREFIX }}-ui@${{ steps.build.outputs.digest }}"
           cosign attest --yes --type spdxjson \
             --predicate sbom-ui.spdx.json \
-            ${{ env.IMAGE_PREFIX }}-ui@${{ steps.build.outputs.digest }}
+            "$IMAGE_REF"
 
       - name: Upload UI SBOM
         if: github.event_name != 'pull_request'
