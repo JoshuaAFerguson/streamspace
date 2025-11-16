@@ -610,12 +610,12 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 				}
 			}
 
-			// Catalog (read: all users, write: operators/admins)
+			// Catalog repositories (read: all users, write: operators/admins)
+			// NOTE: Template catalog routes are handled by CatalogHandler.RegisterRoutes()
 			catalog := protected.Group("/catalog")
 			{
-				// Cache catalog data for 10 minutes (changes on sync)
+				// Repository management
 				catalog.GET("/repositories", cache.CacheMiddleware(redisCache, 10*time.Minute), h.ListRepositories)
-				catalog.GET("/templates", cache.CacheMiddleware(redisCache, 10*time.Minute), h.BrowseCatalog)
 
 				// Write operations require operator role
 				catalogWrite := catalog.Group("")
