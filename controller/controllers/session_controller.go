@@ -1,3 +1,158 @@
+// Package controllers implements Kubernetes controllers for StreamSpace custom resources.
+//
+// SESSION CONTROLLER
+//
+// The SessionReconciler implements the core reconciliation loop that manages the lifecycle
+// of containerized workspace sessions in Kubernetes. It handles state transitions, resource
+// creation, hibernation, and cleanup.
+//
+// KUBERNETES CONTROLLER PATTERN:
+//
+// Controllers in Kubernetes follow a reconciliation loop pattern:
+// 1. Watch for changes to custom resources (Sessions, Templates)
+// 2. Compare desired state (Session.Spec) with actual state (Deployments, Pods)
+// 3. Take actions to make actual state match desired state
+// 4. Update status to reflect current state
+// 5. Requeue if necessary
+//
+// RECONCILIATION LOOP:
+//
+//   ┌─────────────────┐
+//   │  Event Trigger  │ ← Session created/updated/deleted
+//   └────────┬────────┘
+//            ↓
+//   ┌─────────────────┐
+//   │  Fetch Session  │ ← Get Session from cluster
+//   └────────┬────────┘
+//            ↓
+//   ┌─────────────────┐
+//   │  Fetch Template │ ← Get Template for session
+//   └────────┬────────┘
+//            ↓
+//   ┌─────────────────┐
+//   │  Check State    │ ← running | hibernated | terminated
+//   └────────┬────────┘
+//            ↓
+//   ┌─────────────────┐
+//   │  Reconcile      │ ← Create/update/delete resources
+//   └────────┬────────┘
+//            ↓
+//   ┌─────────────────┐
+//   │  Update Status  │ ← Set phase, URL, pod name
+//   └────────┬────────┘
+//            ↓
+//   ┌─────────────────┐
+//   │  Record Metrics │ ← Prometheus metrics
+//   └─────────────────┘
+//
+// SESSION STATES:
+//
+// 1. RUNNING: Session is active with pod running
+//    - Creates: Deployment (replicas=1), Service, Ingress, PVC (if persistent)
+//    - Updates: Status.Phase = "Running", Status.URL = session URL
+//
+// 2. HIBERNATED: Session is paused to save resources
+//    - Scales: Deployment replicas=0 (pod stopped but definition preserved)
+//    - Preserves: PVC data, Service, Ingress
+//    - Can wake up quickly by scaling back to replicas=1
+//
+// 3. TERMINATED: Session is permanently deleted
+//    - Deletes: Deployment, Service, Ingress
+//    - Preserves: PVC (user data persists across sessions)
+//    - Updates: Status.Phase = "Terminated"
+//
+// KUBERNETES RESOURCES MANAGED:
+//
+// For each Session, the controller creates and manages:
+//
+// 1. Deployment (ss-{user}-{template}):
+//    - Runs container from Template.Spec.BaseImage
+//    - Mounts user PVC at /config (if persistent home enabled)
+//    - Exposes VNC port for browser streaming
+//    - Scales 0-1 for hibernation/wake
+//
+// 2. Service ({deployment}-svc):
+//    - ClusterIP service for pod networking
+//    - Routes traffic to VNC port
+//    - Selector matches deployment labels
+//
+// 3. Ingress ({deployment}):
+//    - External URL: {session-name}.{ingress-domain}
+//    - Routes HTTPS traffic to Service
+//    - Uses Traefik (default) or configured ingress class
+//
+// 4. PersistentVolumeClaim (home-{user}):
+//    - Shared across all sessions for same user
+//    - ReadWriteMany (NFS backed)
+//    - Persists data even when sessions are terminated
+//    - No owner reference (survives session deletion)
+//
+// OWNER REFERENCES AND GARBAGE COLLECTION:
+//
+// - Deployment, Service, Ingress have owner reference to Session
+// - Kubernetes automatically deletes these when Session is deleted
+// - PVC does NOT have owner reference (survives session deletion)
+// - PVC must be manually deleted or cleaned up by separate process
+//
+// RECONCILIATION TRIGGERS:
+//
+// Controller reconciles when:
+// - New Session created
+// - Session spec updated (state changed, resources changed)
+// - Owned resource changed (Deployment scaled, pod crashed)
+// - Template updated (not currently watched, but could be)
+// - Periodic resync (default: 10 hours)
+//
+// ERROR HANDLING:
+//
+// - Kubernetes API errors: Retry with exponential backoff
+// - Template not found: Return error, requeue
+// - Resource creation fails: Return error, requeue
+// - Status update fails: Log error but don't requeue (status updates retry automatically)
+//
+// METRICS:
+//
+// The controller exports Prometheus metrics:
+// - session_reconciliations_total: Total reconciliations (success/error)
+// - session_reconciliation_duration_seconds: Reconciliation latency
+// - sessions_by_user: Sessions per user
+// - sessions_by_template: Sessions per template
+// - sessions_by_state: Sessions in each state (running/hibernated/terminated)
+// - session_hibernations_total: Hibernation events (manual/auto-idle)
+// - session_wakes_total: Wake from hibernation events
+//
+// EXAMPLE SESSION LIFECYCLE:
+//
+// 1. User creates Session via API:
+//    kubectl apply -f session.yaml
+//
+// 2. Controller reconciles:
+//    - Creates Deployment, Service, Ingress, PVC
+//    - Sets Status.Phase = "Running"
+//    - Sets Status.URL = "https://my-session.streamspace.local"
+//
+// 3. User finishes work, session hibernates:
+//    kubectl patch session my-session -p '{"spec":{"state":"hibernated"}}'
+//
+// 4. Controller reconciles:
+//    - Scales Deployment to 0 replicas
+//    - Sets Status.Phase = "Hibernated"
+//
+// 5. User resumes work:
+//    kubectl patch session my-session -p '{"spec":{"state":"running"}}'
+//
+// 6. Controller reconciles:
+//    - Scales Deployment to 1 replica
+//    - Pod starts quickly (image cached, PVC data preserved)
+//    - Sets Status.Phase = "Running"
+//
+// 7. User permanently deletes session:
+//    kubectl delete session my-session
+//
+// 8. Controller reconciles (if state was "terminated" first):
+//    - Deletes Deployment
+//    - Kubernetes garbage collection deletes Service, Ingress
+//    - PVC persists for future sessions
 package controllers
 
 import (
@@ -22,10 +177,50 @@ import (
 	"github.com/streamspace/streamspace/pkg/metrics"
 )
 
-// SessionReconciler reconciles a Session object
+// SessionReconciler reconciles Session custom resources.
+//
+// The reconciler implements the controller-runtime Reconciler interface and is
+// responsible for managing the complete lifecycle of containerized workspace sessions.
+//
+// FIELDS:
+//
+// - Client: Kubernetes client for reading and writing resources
+// - Scheme: Runtime scheme for object type information
+//
+// RBAC PERMISSIONS (defined by kubebuilder markers below):
+//
+// Sessions: get, list, watch, create, update, patch, delete, update status
+// Templates: get, list, watch (read-only)
+// Deployments: get, list, watch, create, update, patch, delete
+// Services: get, list, watch, create, update, patch, delete
+// PersistentVolumeClaims: get, list, watch, create, update, patch, delete
+// Ingresses: get, list, watch, create, update, patch, delete
+//
+// WHY THESE PERMISSIONS:
+//
+// - Sessions: Full CRUD to manage custom resource
+// - Templates: Read-only to get application configuration
+// - Deployments/Services/Ingresses/PVCs: Full CRUD to manage session infrastructure
+// - No delete on Templates: Prevents accidental template deletion
+//
+// CONTROLLER RUNTIME:
+//
+// This reconciler is managed by controller-runtime which provides:
+// - Event watching and queueing
+// - Leader election for HA deployments
+// - Exponential backoff retry
+// - Periodic resyncs
+// - Metrics and health endpoints
+//
+// CONCURRENCY:
+//
+// - Multiple reconcilers can run concurrently
+// - Each reconciliation is for a single Session
+// - Kubernetes optimistic concurrency prevents conflicts
+// - Status updates use separate client with retry
 type SessionReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
+	client.Client  // Kubernetes API client
+	Scheme *runtime.Scheme  // Type information for objects
 }
 
 //+kubebuilder:rbac:groups=stream.streamspace.io,resources=sessions,verbs=get;list;watch;create;update;patch;delete

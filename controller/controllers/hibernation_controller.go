@@ -1,3 +1,138 @@
+// Package controllers implements Kubernetes controllers for StreamSpace.
+//
+// HIBERNATION CONTROLLER
+//
+// The HibernationReconciler implements automatic resource optimization by detecting
+// idle sessions and hibernating them to save compute resources and reduce costs.
+//
+// AUTO-HIBERNATION MECHANISM:
+//
+// When a session is inactive for longer than the configured idle timeout:
+// 1. Controller detects idle session via LastActivity timestamp
+// 2. Updates Session.Spec.State from "running" to "hibernated"
+// 3. SessionReconciler observes state change and scales Deployment to 0
+// 4. Pod is terminated, resources are freed
+// 5. PVC data is preserved for when user returns
+//
+// COST SAVINGS:
+//
+// Example cost calculation:
+// - Active session: 2 CPU, 4GB RAM = $0.15/hour
+// - Idle 20 hours/day: 20 * $0.15 = $3.00/day wasted
+// - With auto-hibernation: Saves $3.00/day per session
+// - 100 users: $300/day = $9,000/month saved
+//
+// WHY HIBERNATION VS DELETE:
+//
+// Hibernation (scale to 0):
+// ✅ Wake time: ~5 seconds (pod start)
+// ✅ Data preserved: PVC mounted immediately
+// ✅ User experience: Seamless resume
+// ✅ Network config: Ingress/Service remain
+//
+// Deletion:
+// ❌ Wake time: ~30+ seconds (recreate all resources)
+// ❌ Data preserved: Yes, but must remount PVC
+// ❌ User experience: Feels like new session
+// ❌ Network config: New Ingress URL may change
+//
+// RECONCILIATION STRATEGY:
+//
+// Unlike SessionReconciler which reacts to spec changes, HibernationReconciler
+// proactively monitors sessions on a schedule:
+//
+// 1. List all running sessions
+// 2. Check each session's LastActivity timestamp
+// 3. Calculate idle duration: now - LastActivity
+// 4. If idle > IdleTimeout: Trigger hibernation
+// 5. Requeue for next check
+//
+// REQUEUE INTERVALS:
+//
+// The controller uses intelligent requeue scheduling:
+//
+// - CheckInterval (default: 1 minute): How often to check sessions
+// - Dynamic requeue: Next check at (IdleTimeout - idleDuration)
+//
+// Example timeline:
+//   0:00 - User active, LastActivity updated by API
+//   0:05 - Controller checks: idle 5min < 30min timeout ✓ OK
+//         Requeue in 25 minutes (30 - 5)
+//   0:30 - Controller checks: idle 30min = 30min timeout ✗ HIBERNATE
+//         Session state → "hibernated"
+//   0:31 - SessionReconciler scales Deployment to 0
+//
+// LAST ACTIVITY TRACKING:
+//
+// The LastActivity timestamp is updated by:
+// - API backend when user interacts with session (HTTP requests)
+// - WebSocket connections for real-time activity
+// - VNC proxy for mouse/keyboard events
+//
+// WHY NOT controller-runtime: LastActivity is business logic tracked by API,
+// not a Kubernetes resource change. Controller only reads the timestamp.
+//
+// CONFIGURATION:
+//
+// - Session.Spec.IdleTimeout: Per-session idle timeout (e.g., "30m", "1h")
+// - CheckInterval: How often to check sessions (default: 1 minute)
+// - DefaultIdleTime: Fallback if Session.Spec.IdleTimeout not set (default: 30 minutes)
+//
+// METRICS:
+//
+// The controller exports Prometheus metrics:
+// - session_hibernations_total{reason="idle"}: Auto-hibernations triggered
+// - session_idle_duration_seconds: How long sessions were idle before hibernation
+//
+// These metrics help:
+// - Measure cost savings from auto-hibernation
+// - Tune IdleTimeout values for optimal UX vs cost
+// - Identify users with long idle periods
+//
+// EXAMPLE CONFIGURATION:
+//
+//   apiVersion: stream.streamspace.io/v1alpha1
+//   kind: Session
+//   metadata:
+//     name: user1-firefox
+//   spec:
+//     user: user1
+//     template: firefox-browser
+//     state: running
+//     idleTimeout: "30m"  # Hibernate after 30 minutes of inactivity
+//
+// OPTING OUT:
+//
+// Users can disable auto-hibernation by:
+// - Not setting Session.Spec.IdleTimeout (empty string)
+// - Setting very long timeout (e.g., "999h")
+//
+// EDGE CASES:
+//
+// 1. Session created without LastActivity:
+//    - Controller initializes LastActivity to current time
+//    - Prevents immediate hibernation of new sessions
+//
+// 2. Clock skew:
+//    - LastActivity in future (user's clock ahead)
+//    - idleDuration would be negative
+//    - Controller treats as active (doesn't hibernate)
+//
+// 3. LastActivity never updated:
+//    - API backend down or misconfigured
+//    - Session will eventually hibernate
+//    - This is safe: prevents zombie sessions
+//
+// 4. Concurrent updates:
+//    - User activates session while controller hibernating
+//    - Optimistic concurrency: SessionReconciler wins
+//    - Controller requeues, sees "running" state, skips
+//
+// PRODUCTION CONSIDERATIONS:
+//
+// - Leader election: Only one controller instance hibernates sessions
+// - Throttling: CheckInterval prevents API server overload
+// - Fairness: All sessions checked, not just one per reconcile
 package controllers
 
 import (
@@ -14,12 +149,41 @@ import (
 	"github.com/streamspace/streamspace/pkg/metrics"
 )
 
-// HibernationReconciler handles automatic hibernation of idle sessions
+// HibernationReconciler handles automatic hibernation of idle sessions.
+//
+// This controller monitors running sessions and automatically hibernates them
+// when they've been inactive for longer than their configured idle timeout.
+//
+// FIELDS:
+//
+// - Client: Kubernetes client for reading/writing Sessions
+// - Scheme: Runtime scheme for type information
+// - CheckInterval: How often to check sessions for idle timeout (default: 1 minute)
+// - DefaultIdleTime: Fallback idle timeout if Session doesn't specify (default: 30 minutes)
+//
+// RECONCILIATION FREQUENCY:
+//
+// Unlike SessionReconciler (event-driven), this controller uses scheduled requeuing:
+// - Each reconciliation checks ONE session
+// - Requeues itself after CheckInterval or calculated next check time
+// - All sessions eventually checked within CheckInterval
+//
+// WHY THIS APPROACH:
+//
+// - Avoids listing all sessions repeatedly (scales better)
+// - Distributes load over time instead of spikes
+// - Smart requeuing reduces unnecessary checks
+//
+// RESOURCE USAGE:
+//
+// - Minimal CPU: Only checks timestamp comparison
+// - Minimal memory: No caching, works with single session at a time
+// - Network: One API call per reconciliation (get session)
 type HibernationReconciler struct {
-	client.Client
-	Scheme          *runtime.Scheme
-	CheckInterval   time.Duration
-	DefaultIdleTime time.Duration
+	client.Client        // Kubernetes API client
+	Scheme *runtime.Scheme   // Type information for objects
+	CheckInterval time.Duration  // How often to check for idle sessions
+	DefaultIdleTime time.Duration  // Default idle timeout if not specified
 }
 
 // Reconcile checks sessions for idle timeout and triggers hibernation
