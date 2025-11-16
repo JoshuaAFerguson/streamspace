@@ -39,7 +39,6 @@ Thumbs.db
 # Test and docs
 *.md
 !README.md
-!Chart.yaml
 test/
 tests/
 *.test

@@ -22,8 +22,8 @@ NAMESPACE="${NAMESPACE:-streamspace}"
 RELEASE_NAME="${RELEASE_NAME:-streamspace}"
 VERSION="${VERSION:-local}"
 
-# Helm chart location
-CHART_PATH="${PROJECT_ROOT}/chart"
+# Helm chart location - use absolute path
+CHART_PATH="$(cd "${PROJECT_ROOT}/chart" && pwd)"
 
 # Helper functions
 log() {
@@ -59,6 +59,10 @@ check_prerequisites() {
         log_error "Helm is not installed or not in PATH"
         exit 1
     fi
+
+    # Check Helm version
+    local helm_version=$(helm version --short 2>/dev/null || echo "unknown")
+    log_info "Helm version: ${helm_version}"
 
     if ! kubectl cluster-info &> /dev/null; then
         log_error "Cannot connect to Kubernetes cluster"
@@ -119,6 +123,31 @@ apply_crds() {
 deploy_helm() {
     log "Deploying StreamSpace with Helm..."
 
+    # Debug output
+    log_info "Chart path: ${CHART_PATH}"
+    log_info "Chart.yaml exists: $(test -f "${CHART_PATH}/Chart.yaml" && echo "YES" || echo "NO")"
+    log_info "Chart directory contents:"
+    ls -la "${CHART_PATH}/" 2>&1 | head -10
+
+    # Validate chart with helm lint
+    log_info "Validating chart with helm lint..."
+    if ! helm lint "${CHART_PATH}"; then
+        log_error "Helm chart validation failed!"
+        exit 1
+    fi
+    log_success "Chart validation passed"
+
+    # Test if Helm can package the chart
+    log_info "Testing chart packaging..."
+    local temp_dir=$(mktemp -d)
+    if helm package "${CHART_PATH}" -d "${temp_dir}" &> /dev/null; then
+        log_success "Chart packaging test passed"
+        rm -rf "${temp_dir}"
+    else
+        log_warning "Chart packaging test failed (may not be critical)"
+        rm -rf "${temp_dir}"
+    fi
+
     # Check if release exists
     if helm status "${RELEASE_NAME}" -n "${NAMESPACE}" &> /dev/null; then
         log_info "Release exists, upgrading..."
@@ -136,6 +165,7 @@ deploy_helm() {
             --timeout 5m
     else
         log_info "Installing fresh release..."
+        log_info "Running: helm install ${RELEASE_NAME} ${CHART_PATH}"
         helm install "${RELEASE_NAME}" "${CHART_PATH}" \
             --namespace "${NAMESPACE}" \
             --create-namespace \
@@ -147,6 +177,7 @@ deploy_helm() {
             --set ui.image.pullPolicy=Never \
             --set postgresql.enabled=true \
             --set postgresql.auth.password=streamspace \
+            --debug \
             --wait \
             --timeout 5m
     fi

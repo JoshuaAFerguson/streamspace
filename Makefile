@@ -21,6 +21,10 @@ NAMESPACE := streamspace
 HELM_RELEASE := streamspace
 KUBE_CONTEXT := $(shell kubectl config current-context)
 
+# Paths
+PROJECT_ROOT := $(shell pwd)
+CHART_PATH := $(PROJECT_ROOT)/chart
+
 # Build configuration
 GO_VERSION := 1.21
 NODE_VERSION := 18
@@ -197,19 +201,22 @@ docker-build-multiarch: ## Build multi-architecture images (amd64, arm64)
 
 helm-lint: ## Lint Helm chart
 	@echo "$(COLOR_GREEN)Linting Helm chart...$(COLOR_RESET)"
-	@helm lint chart/
+	@echo "$(COLOR_YELLOW)Chart: $(CHART_PATH)$(COLOR_RESET)"
+	@helm lint $(CHART_PATH)
 	@echo "$(COLOR_GREEN)✓ Helm chart is valid$(COLOR_RESET)"
 
 helm-template: ## Render Helm templates (dry-run)
 	@echo "$(COLOR_GREEN)Rendering Helm templates...$(COLOR_RESET)"
-	@helm template $(HELM_RELEASE) chart/ --namespace $(NAMESPACE)
+	@echo "$(COLOR_YELLOW)Chart: $(CHART_PATH)$(COLOR_RESET)"
+	@helm template $(HELM_RELEASE) $(CHART_PATH) --namespace $(NAMESPACE)
 
 helm-install: ## Install StreamSpace using Helm
 	@echo "$(COLOR_GREEN)Installing StreamSpace...$(COLOR_RESET)"
 	@echo "$(COLOR_YELLOW)Context: $(KUBE_CONTEXT)$(COLOR_RESET)"
 	@echo "$(COLOR_YELLOW)Namespace: $(NAMESPACE)$(COLOR_RESET)"
+	@echo "$(COLOR_YELLOW)Chart: $(CHART_PATH)$(COLOR_RESET)"
 	@kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
-	@helm install $(HELM_RELEASE) chart/ \
+	@helm install $(HELM_RELEASE) $(CHART_PATH) \
 		--namespace $(NAMESPACE) \
 		--set controller.image.tag=$(VERSION) \
 		--set api.image.tag=$(VERSION) \
@@ -221,7 +228,8 @@ helm-install: ## Install StreamSpace using Helm
 
 helm-upgrade: ## Upgrade StreamSpace Helm release
 	@echo "$(COLOR_GREEN)Upgrading StreamSpace...$(COLOR_RESET)"
-	@helm upgrade $(HELM_RELEASE) chart/ \
+	@echo "$(COLOR_YELLOW)Chart: $(CHART_PATH)$(COLOR_RESET)"
+	@helm upgrade $(HELM_RELEASE) $(CHART_PATH) \
 		--namespace $(NAMESPACE) \
 		--set controller.image.tag=$(VERSION) \
 		--set api.image.tag=$(VERSION) \
