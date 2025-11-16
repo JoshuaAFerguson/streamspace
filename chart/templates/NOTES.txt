@@ -1,185 +1,151 @@
+================================================================================
+  🚀 StreamSpace v{{ .Chart.AppVersion }} has been installed!
+================================================================================
 
-████████████████████████████████████████████████████████████████
-█                                                              █
-█   StreamSpace v{{ .Chart.AppVersion }} has been installed!  █
-█                                                              █
-████████████████████████████████████████████████████████████████
+{{- if .Values.api.enabled }}
 
-🚀 Stream any app, anywhere - 100% open source
+📋 INITIAL ADMIN CREDENTIALS
+────────────────────────────────────────────────────────────────────────────
 
-Your StreamSpace installation is ready. Here's what to do next:
+{{- if .Values.auth.admin.existingSecret }}
 
-📋 INSTALLATION STATUS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Your admin credentials are stored in the existing secret:
+  {{ .Values.auth.admin.existingSecret }}
 
-Namespace:     {{ .Release.Namespace }}
-Release Name:  {{ .Release.Name }}
+{{- else }}
 
-Components installed:
-  {{- if .Values.controller.enabled }}
-  ✓ Controller ({{ .Values.controller.replicaCount }} replica{{ if gt (.Values.controller.replicaCount | int) 1 }}s{{ end }})
-  {{- end }}
-  {{- if .Values.api.enabled }}
-  ✓ API Backend ({{ .Values.api.replicaCount }} replica{{ if gt (.Values.api.replicaCount | int) 1 }}s{{ end }})
-  {{- end }}
-  {{- if .Values.ui.enabled }}
-  ✓ Web UI ({{ .Values.ui.replicaCount }} replica{{ if gt (.Values.ui.replicaCount | int) 1 }}s{{ end }})
-  {{- end }}
-  {{- if and .Values.postgresql.enabled (not .Values.postgresql.external.enabled) }}
-  ✓ PostgreSQL Database
-  {{- end }}
-  {{- if .Values.monitoring.enabled }}
-  ✓ Monitoring (ServiceMonitor, PrometheusRules, Dashboard)
-  {{- end }}
+Username: admin
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{- if .Values.auth.admin.password }}
 
-🔍 CHECK STATUS
+Password: (You provided a custom password)
 
-Watch pods starting up:
-  kubectl get pods -n {{ .Release.Namespace }} -w
+{{- else }}
 
-Check controller logs:
-  kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "streamspace.fullname" . }}-controller -f
+Password: Run this command to retrieve your auto-generated password:
 
-Check API logs:
-  kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "streamspace.fullname" . }}-api -f
+  kubectl get secret {{ include "streamspace.fullname" . }}-admin-credentials \
+    -n {{ .Release.Namespace }} \
+    -o jsonpath='{.data.password}' | base64 -d && echo
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{{- end }}
+
+Email: {{ .Values.auth.admin.email | default "admin@streamspace.local" }}
+
+⚠️  IMPORTANT SECURITY NOTES:
+  1. SAVE THIS PASSWORD - This is the only time it will be displayed!
+  2. Change the password after first login via the web UI
+  3. The secret is marked with "keep" policy - it won't be deleted on uninstall
+
+{{- end }}
+
+{{- end }}
 
 🌐 ACCESS STREAMSPACE
+────────────────────────────────────────────────────────────────────────────
 
 {{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
 
-Web UI URL:
-  {{- range .Values.ingress.hosts }}
-  {{- if .host }}
-  {{ if $.Values.ingress.tls.enabled }}https{{ else }}http{{ end }}://{{ .host }}
-  {{- end }}
-  {{- end }}
+Web UI:  https://{{ .host }}
+API:     https://{{ .host }}/api
+Health:  https://{{ .host }}/health
 
-{{- if not .Values.ingress.tls.enabled }}
+{{- end }}
 
-⚠️  WARNING: TLS is disabled. Your connection is NOT encrypted.
-   Enable TLS in production with:
-   --set ingress.tls.enabled=true
+{{- if .Values.ingress.tls.enabled }}
+✓ TLS/HTTPS is ENABLED
+{{- else }}
+⚠️  TLS/HTTPS is DISABLED - Enable it for production!
 {{- end }}
 
 {{- else }}
 
-Port-forward to access locally:
-  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "streamspace.fullname" . }}-ui 3000:80
+Ingress is disabled. To access StreamSpace:
 
-Then visit: http://localhost:3000
+1. Port-forward the UI service:
+   kubectl port-forward -n {{ .Release.Namespace }} \
+     svc/{{ include "streamspace.fullname" . }}-ui 8080:80
+
+2. Port-forward the API service:
+   kubectl port-forward -n {{ .Release.Namespace }} \
+     svc/{{ include "streamspace.fullname" . }}-api 8000:8000
+
+3. Access the application:
+   Web UI:  http://localhost:8080
+   API:     http://localhost:8000
 
 {{- end }}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📚 NEXT STEPS
-
-1. Verify all pods are running:
-   kubectl get pods -n {{ .Release.Namespace }}
-
-2. {{- if and .Values.postgresql.enabled (not .Values.postgresql.external.enabled) }}
-   Check database is ready:
-   kubectl get statefulset {{ include "streamspace.fullname" . }}-postgres -n {{ .Release.Namespace }}
-   {{- end }}
-
-3. {{- if .Values.templates.deploy }}
-   View available templates:
-   kubectl get templates -n {{ .Release.Namespace }}
-   {{- else }}
-   Create application templates:
-   kubectl apply -f manifests/templates/
-   {{- end }}
-
-4. Create your first session:
-   kubectl apply -f - <<EOF
-   apiVersion: stream.streamspace.io/v1alpha1
-   kind: Session
-   metadata:
-     name: my-first-session
-     namespace: {{ .Release.Namespace }}
-   spec:
-     user: demo
-     template: firefox-browser
-     state: running
-     resources:
-       requests:
-         memory: 2Gi
-         cpu: 1000m
-   EOF
-
-5. Watch the session being created:
-   kubectl get sessions -n {{ .Release.Namespace }} -w
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-{{- if .Values.monitoring.enabled }}
 
 📊 MONITORING
+────────────────────────────────────────────────────────────────────────────
 
 {{- if .Values.monitoring.serviceMonitor.enabled }}
-Prometheus metrics are being scraped automatically.
+✓ Prometheus ServiceMonitor is ENABLED
 {{- end }}
-
-View controller metrics:
-  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "streamspace.fullname" . }}-controller 8080:8080
-  curl http://localhost:8080/metrics
 
 {{- if .Values.monitoring.grafanaDashboard.enabled }}
-
-Grafana dashboard has been created. Import it into your Grafana instance.
+✓ Grafana Dashboard is ENABLED
 {{- end }}
 
+{{- if or .Values.monitoring.serviceMonitor.enabled .Values.monitoring.grafanaDashboard.enabled }}
+
+View metrics:
+  kubectl port-forward -n {{ .Release.Namespace }} \
+    svc/{{ include "streamspace.fullname" . }}-controller 8080:8080
+
+  curl http://localhost:8080/metrics
+
 {{- end }}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔧 ALTERNATIVE ADMIN ONBOARDING METHODS
+────────────────────────────────────────────────────────────────────────────
 
-⚙️  CONFIGURATION
+If you cannot access the admin credentials:
 
-{{- if .Values.secrets.create }}
+Method 1: Environment Variable (Manual Deployments)
+  Set ADMIN_PASSWORD environment variable in the API deployment:
 
-⚠️  SECURITY WARNING:
-   Using default auto-generated secrets. This is NOT secure for production!
+  kubectl set env deployment/{{ include "streamspace.fullname" . }}-api \
+    -n {{ .Release.Namespace }} \
+    ADMIN_PASSWORD='your-secure-password'
 
-   For production, create your own secret:
-     kubectl create secret generic streamspace-secrets \
-       -n {{ .Release.Namespace }} \
-       --from-literal=postgres-password='YOUR-SECURE-PASSWORD'
+  Restart the API pods to apply.
 
-   Then update the release:
-     helm upgrade {{ .Release.Name }} streamspace/streamspace \
-       --set secrets.create=false \
-       --set secrets.existingSecret=streamspace-secrets
-{{- end }}
+Method 2: Setup Wizard (First-Run or Recovery)
+  If the admin account has no password, the setup wizard is automatically
+  enabled at:
 
-Ingress domain: {{ (index .Values.ingress.hosts 0).host | default "streamspace.local" }}
-Ingress class: {{ .Values.ingress.className }}
+    {{ if .Values.ingress.enabled }}https://{{ (index .Values.ingress.hosts 0).host }}{{ else }}http://localhost:8080{{ end }}/setup
 
-Session defaults:
-  - Memory: {{ .Values.sessionDefaults.resources.requests.memory }}
-  - CPU: {{ .Values.sessionDefaults.resources.requests.cpu }}
-  - Idle timeout: {{ .Values.sessionDefaults.idleTimeout }}
-  - Persistent home: {{ .Values.sessionDefaults.persistentHome.enabled }}
+  Complete the setup wizard to configure the admin password.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Method 3: Password Reset (Account Lockout Recovery)
+  To reset the admin password, set ADMIN_PASSWORD_RESET environment variable:
 
-📖 DOCUMENTATION
+  kubectl set env deployment/{{ include "streamspace.fullname" . }}-api \
+    -n {{ .Release.Namespace }} \
+    ADMIN_PASSWORD_RESET='new-secure-password'
 
-Full documentation: https://docs.streamspace.io (coming soon)
-GitHub: https://github.com/streamspace/streamspace
-Issues: https://github.com/streamspace/streamspace/issues
+  Restart the API pods, then remove the variable:
 
-Quick reference:
-  - List sessions: kubectl get sessions -n {{ .Release.Namespace }}
-  - List templates: kubectl get templates -n {{ .Release.Namespace }}
-  - View logs: kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=streamspace
-  - Upgrade: helm upgrade {{ .Release.Name }} streamspace/streamspace
+  kubectl set env deployment/{{ include "streamspace.fullname" . }}-api \
+    -n {{ .Release.Namespace }} \
+    ADMIN_PASSWORD_RESET-
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 NEXT STEPS
+────────────────────────────────────────────────────────────────────────────
 
-Thank you for installing StreamSpace! 🎉
+1. Log in with admin credentials
+2. Change the default admin password
+3. Create additional users or configure SSO
+4. Browse the template catalog and launch your first session
+5. Review security settings and enable TLS if not already done
 
-For support, visit: https://github.com/streamspace/streamspace/discussions
+📖 Documentation: https://docs.streamspace.io
+🐛 Issues:        https://github.com/JoshuaAFerguson/streamspace/issues
+💬 Discussions:   https://github.com/JoshuaAFerguson/streamspace/discussions
+
+================================================================================
+  Thank you for using StreamSpace! 🎉
+================================================================================

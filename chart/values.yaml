@@ -140,6 +140,25 @@ api:
       secret: ""  # Set via existingSecret or auto-generate
       expiration: 24h
 
+## Admin User Configuration
+# Configure the initial admin user credentials
+auth:
+  admin:
+    # Admin password (leave empty for auto-generation)
+    # ⚠️ SECURITY: For production, provide a secure password or use existingSecret
+    password: ""  # Empty = auto-generate 32-character random password
+
+    # Admin email
+    email: "admin@streamspace.local"
+
+    # Use existing secret for admin credentials (optional)
+    # If set, password and email above will be ignored
+    existingSecret: ""
+    # Keys in the existing secret:
+    # - username: Admin username (default: admin)
+    # - password: Admin password
+    # - email: Admin email
+
     # SAML SSO configuration
     saml:
       enabled: false

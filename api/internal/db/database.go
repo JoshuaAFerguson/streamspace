@@ -69,11 +69,14 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"net"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
 	_ "github.com/lib/pq"
 )
 
@@ -1959,6 +1962,134 @@ func (d *Database) Migrate() error {
 			return fmt.Errorf("migration %d failed: %w", i, err)
 		}
 	}
+
+	// After migrations, ensure admin password is configured
+	if err := d.ensureAdminPassword(); err != nil {
+		return fmt.Errorf("failed to configure admin password: %w", err)
+	}
+
+	// Check for password reset request
+	if err := d.checkPasswordReset(); err != nil {
+		return fmt.Errorf("failed to process password reset: %w", err)
+	}
+
+	return nil
+}
+
+// ensureAdminPassword configures the admin password using multiple fallback methods
+// Priority order:
+//  1. ADMIN_PASSWORD environment variable (Kubernetes Secret or manual)
+//  2. Leave NULL - enables setup wizard mode
+func (d *Database) ensureAdminPassword() error {
+	// Check if admin user exists and has a password
+	var passwordHash sql.NullString
+	err := d.db.QueryRow("SELECT password_hash FROM users WHERE id = 'admin'").Scan(&passwordHash)
+	if err != nil {
+		// Admin user doesn't exist yet, skip (will be created by migration)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("failed to check admin user: %w", err)
+	}
+
+	// Admin already has a password - don't override
+	if passwordHash.Valid && passwordHash.String != "" {
+		log.Println("✓ Admin user already has a password configured")
+		return nil
+	}
+
+	// Priority 1: Check ADMIN_PASSWORD environment variable
+	password := os.Getenv("ADMIN_PASSWORD")
+	if password != "" {
+		log.Println("🔑 Using admin password from ADMIN_PASSWORD environment variable")
+
+		// Validate password strength
+		if len(password) < 8 {
+			return fmt.Errorf("ADMIN_PASSWORD must be at least 8 characters long")
+		}
+
+		// Hash password
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("failed to hash admin password: %w", err)
+		}
+
+		// Update admin user
+		_, err = d.db.Exec("UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 'admin'", string(hashedPassword))
+		if err != nil {
+			return fmt.Errorf("failed to set admin password: %w", err)
+		}
+
+		log.Println("✓ Admin password configured successfully from environment variable")
+		return nil
+	}
+
+	// Priority 2: No password - enable setup wizard mode
+	log.Println("⚠️  ═══════════════════════════════════════════════════════════════")
+	log.Println("⚠️  ADMIN USER HAS NO PASSWORD SET!")
+	log.Println("⚠️  ═══════════════════════════════════════════════════════════════")
+	log.Println("⚠️  ")
+	log.Println("⚠️  The admin account requires password configuration.")
+	log.Println("⚠️  ")
+	log.Println("⚠️  Setup wizard mode is ENABLED at: /api/v1/auth/setup")
+	log.Println("⚠️  ")
+	log.Println("⚠️  Alternative methods:")
+	log.Println("⚠️  1. Set ADMIN_PASSWORD environment variable")
+	log.Println("⚠️  2. Use the setup wizard in your browser")
+	log.Println("⚠️  3. Check Helm chart for auto-generated credentials")
+	log.Println("⚠️  ")
+	log.Println("⚠️  ═══════════════════════════════════════════════════════════════")
+
+	return nil // Not an error, just informational
+}
+
+// checkPasswordReset checks for ADMIN_PASSWORD_RESET environment variable
+// and resets the admin password if set. This is for account recovery.
+func (d *Database) checkPasswordReset() error {
+	resetPassword := os.Getenv("ADMIN_PASSWORD_RESET")
+	if resetPassword == "" {
+		return nil // No reset requested
+	}
+
+	log.Println("⚠️  ═══════════════════════════════════════════════════════════════")
+	log.Println("⚠️  ADMIN PASSWORD RESET DETECTED!")
+	log.Println("⚠️  ═══════════════════════════════════════════════════════════════")
+
+	// Validate password strength
+	if len(resetPassword) < 8 {
+		return fmt.Errorf("ADMIN_PASSWORD_RESET must be at least 8 characters long")
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(resetPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash reset password: %w", err)
+	}
+
+	// Update admin password
+	result, err := d.db.Exec("UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 'admin'", string(hashedPassword))
+	if err != nil {
+		return fmt.Errorf("failed to reset admin password: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check reset result: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		log.Println("⚠️  Admin user not found - password reset failed")
+		return fmt.Errorf("admin user not found")
+	}
+
+	log.Println("✓ Admin password RESET successfully!")
+	log.Println("⚠️  ")
+	log.Println("⚠️  NEXT STEPS:")
+	log.Println("⚠️  1. Remove ADMIN_PASSWORD_RESET environment variable")
+	log.Println("⚠️  2. Restart the API deployment")
+	log.Println("⚠️  3. Log in with the new password")
+	log.Println("⚠️  ")
+	log.Println("⚠️  ═══════════════════════════════════════════════════════════════")
 
 	return nil
 }

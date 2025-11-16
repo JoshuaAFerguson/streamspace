@@ -78,15 +78,25 @@ kubectl port-forward -n streamspace svc/streamspace-ui 8080:80
 
 Open your browser to: `http://localhost:8080`
 
-### 2. Create Your First User
+### 2. Log In with Admin Account
 
-**Using Local Authentication**:
+**Retrieve Admin Credentials** (Helm deployment):
 
 ```bash
-# Create user via API or web UI
-# Default admin credentials are set during installation
-# See chart/values.yaml for configuration
+# Get auto-generated admin password
+kubectl get secret streamspace-admin-credentials \
+  -n streamspace \
+  -o jsonpath='{.data.password}' | base64 -d && echo
+
+# Username: admin
+# Email: admin@streamspace.local
 ```
+
+**Alternative Methods**:
+- **Environment Variable**: Set `ADMIN_PASSWORD` in API deployment
+- **Setup Wizard**: Visit `/setup` if no password is configured
+
+See [Admin Onboarding Guide](docs/ADMIN_ONBOARDING.md) for complete details.
 
 **Using SSO** (Authentik/Keycloak):
 
