@@ -336,7 +336,9 @@ func (p *SlackPlugin) getBool(m map[string]interface{}, key string) bool {
 	return false
 }
 
-// init registers the plugin
+// init auto-registers the plugin globally
 func init() {
-	plugins.RegisterBuiltinPlugin("streamspace-slack", NewSlackPlugin())
+	plugins.Register("streamspace-slack", func() plugins.PluginHandler {
+		return NewSlackPlugin()
+	})
 }

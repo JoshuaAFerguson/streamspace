@@ -1,0 +1,84 @@
+[
+  {
+    "name": "streamspace-slack",
+    "version": "1.0.0",
+    "displayName": "Slack Integration",
+    "description": "Send session and user event notifications to Slack channels",
+    "author": "StreamSpace Team",
+    "category": "Integrations",
+    "tags": ["notifications", "slack", "integration", "messaging"],
+    "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-slack/icon.png",
+    "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-slack/plugin.tar.gz",
+    "manifest": {
+      "name": "streamspace-slack",
+      "version": "1.0.0",
+      "displayName": "Slack Integration",
+      "description": "Send session and user event notifications to Slack channels",
+      "author": "StreamSpace Team",
+      "type": "webhook",
+      "category": "Integrations",
+      "tags": ["notifications", "slack"],
+      "permissions": ["network"],
+      "configSchema": {
+        "type": "object",
+        "properties": {
+          "webhookUrl": {
+            "type": "string",
+            "title": "Slack Webhook URL",
+            "description": "Your Slack incoming webhook URL"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Default Channel",
+            "default": "#general"
+          },
+          "notifyOnSessionCreated": {
+            "type": "boolean",
+            "title": "Notify on Session Created",
+            "default": true
+          }
+        },
+        "required": ["webhookUrl"]
+      }
+    }
+  },
+  {
+    "name": "streamspace-teams",
+    "version": "1.0.0",
+    "displayName": "Microsoft Teams Integration",
+    "description": "Send notifications to Microsoft Teams channels",
+    "author": "StreamSpace Team",
+    "category": "Integrations",
+    "tags": ["notifications", "teams", "microsoft", "integration"],
+    "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-teams/icon.png",
+    "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-teams/plugin.tar.gz",
+    "manifest": {
+      "name": "streamspace-teams",
+      "version": "1.0.0",
+      "displayName": "Microsoft Teams Integration",
+      "description": "Send notifications to Microsoft Teams channels",
+      "author": "StreamSpace Team",
+      "type": "webhook",
+      "permissions": ["network"]
+    }
+  },
+  {
+    "name": "streamspace-discord",
+    "version": "1.0.0",
+    "displayName": "Discord Integration",
+    "description": "Send notifications to Discord channels",
+    "author": "StreamSpace Team",
+    "category": "Integrations",
+    "tags": ["notifications", "discord", "integration"],
+    "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-discord/icon.png",
+    "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-discord/plugin.tar.gz",
+    "manifest": {
+      "name": "streamspace-discord",
+      "version": "1.0.0",
+      "displayName": "Discord Integration",
+      "author": "StreamSpace Team",
+      "type": "webhook",
+      "permissions": ["network"]
+    }
+  }
+]
