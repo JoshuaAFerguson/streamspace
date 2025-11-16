@@ -408,5 +408,60 @@
     "tags": ["analytics", "reporting", "metrics", "insights", "cost-analysis", "dashboard"],
     "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-analytics-advanced/icon.png",
     "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-analytics-advanced/plugin.tar.gz"
+  },
+  {
+    "name": "streamspace-auth-saml",
+    "version": "1.0.0",
+    "displayName": "SAML 2.0 Authentication",
+    "description": "Enterprise SSO authentication with SAML 2.0 protocol - supports Okta, OneLogin, Azure AD, Google Workspace, JumpCloud, and Auth0",
+    "author": "StreamSpace Team",
+    "category": "Authentication",
+    "tags": ["saml", "sso", "authentication", "enterprise", "okta", "onelogin", "azure-ad"],
+    "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-auth-saml/icon.png",
+    "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-auth-saml/plugin.tar.gz"
+  },
+  {
+    "name": "streamspace-auth-oauth",
+    "version": "1.0.0",
+    "displayName": "OAuth2 / OIDC Authentication",
+    "description": "Modern OAuth2 and OpenID Connect authentication - supports Google, GitHub, GitLab, Okta, Azure AD, Auth0, Keycloak, and custom OIDC providers",
+    "author": "StreamSpace Team",
+    "category": "Authentication",
+    "tags": ["oauth2", "oidc", "sso", "google", "github", "azure-ad", "okta"],
+    "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-auth-oauth/icon.png",
+    "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-auth-oauth/plugin.tar.gz"
+  },
+  {
+    "name": "streamspace-storage-s3",
+    "version": "1.0.0",
+    "displayName": "S3 Object Storage",
+    "description": "AWS S3 and S3-compatible object storage backend for session recordings, snapshots, and file storage - supports AWS S3, MinIO, DigitalOcean Spaces, and Wasabi",
+    "author": "StreamSpace Team",
+    "category": "Storage",
+    "tags": ["storage", "s3", "aws", "minio", "object-storage", "cloud"],
+    "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-storage-s3/icon.png",
+    "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-storage-s3/plugin.tar.gz"
+  },
+  {
+    "name": "streamspace-storage-azure",
+    "version": "1.0.0",
+    "displayName": "Azure Blob Storage",
+    "description": "Microsoft Azure Blob Storage backend for session recordings, snapshots, and file storage",
+    "author": "StreamSpace Team",
+    "category": "Storage",
+    "tags": ["storage", "azure", "blob-storage", "cloud", "microsoft"],
+    "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-storage-azure/icon.png",
+    "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-storage-azure/plugin.tar.gz"
+  },
+  {
+    "name": "streamspace-storage-gcs",
+    "version": "1.0.0",
+    "displayName": "Google Cloud Storage",
+    "description": "Google Cloud Storage backend for session recordings, snapshots, and file storage",
+    "author": "StreamSpace Team",
+    "category": "Storage",
+    "tags": ["storage", "gcs", "google-cloud", "cloud"],
+    "iconUrl": "https://raw.githubusercontent.com/JoshuaAFerguson/streamspace-plugins/main/streamspace-storage-gcs/icon.png",
+    "downloadUrl": "https://github.com/JoshuaAFerguson/streamspace-plugins/raw/main/streamspace-storage-gcs/plugin.tar.gz"
   }
 ]
