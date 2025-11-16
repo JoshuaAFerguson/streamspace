@@ -26,23 +26,59 @@ Error: 1 chart(s) linted, 1 chart(s) failed
 ```
 
 **Affected Versions:**
-- Helm v3.19.0 and possibly later versions
-- Primarily observed on macOS
+- Helm v3.19.0 (confirmed critical bug)
+- Possibly affects v3.19.1+ as well
+- Observed on macOS and Linux
 
 **Root Cause:**
-This appears to be a regression or change in behavior in Helm v3.19.0 where the chart linting process incorrectly reports that Chart.yaml is missing even though the file exists and is valid.
+Helm v3.19.0 has a critical regression in the chart loader (`helm.sh/helm/v3/pkg/chart/loader`) that fails to load charts from directories. The bug affects:
+- `helm lint` - reports Chart.yaml is missing
+- `helm template` - fails to load chart
+- `helm install` from directory - fails with "Chart.yaml file is missing"
+- `helm package` - **WORKS** (this is the workaround)
 
 **Solutions:**
 
-#### Option 1: Skip Validation (Quick Fix)
-Use the `SKIP_LINT` environment variable to bypass validation:
+#### Option 1: Use Updated Script (Automatic Workaround) ✅ RECOMMENDED
+The `local-deploy.sh` script now **automatically detects Helm v3.19.0** and uses a package-based workaround:
+
 ```bash
-SKIP_LINT=true ./scripts/local-deploy.sh
+./scripts/local-deploy.sh
 ```
 
-The deployment script will now automatically try an alternative validation method (`helm template`) if `helm lint` fails.
+The script will:
+1. Detect Helm v3.19.x
+2. Package the chart into a `.tgz` file
+3. Install from the packaged file (which works around the bug)
+4. Clean up temporary files
 
-#### Option 2: Downgrade Helm (Recommended for Stability)
+**No environment variables needed** - it just works!
+
+#### Option 2: Manual Package and Install
+If you prefer to do this manually or the script fails:
+
+```bash
+# Package the chart
+helm package ./chart -d /tmp
+
+# Install from the package
+helm install streamspace /tmp/streamspace-0.2.0.tgz \
+  --namespace streamspace \
+  --create-namespace \
+  --set controller.image.tag=local \
+  --set controller.image.pullPolicy=Never \
+  --set api.image.tag=local \
+  --set api.image.pullPolicy=Never \
+  --set ui.image.tag=local \
+  --set ui.image.pullPolicy=Never \
+  --set postgresql.enabled=true \
+  --set postgresql.auth.password=streamspace
+
+# Clean up
+rm /tmp/streamspace-0.2.0.tgz
+```
+
+#### Option 3: Downgrade Helm (Best Long-term Solution)
 Downgrade to Helm v3.18.0 or earlier:
 
 **On macOS (using Homebrew):**
@@ -66,34 +102,18 @@ tar -zxvf helm-v3.18.0-linux-amd64.tar.gz
 sudo mv linux-amd64/helm /usr/local/bin/helm
 ```
 
-#### Option 3: Use helm template for Validation
-Manually validate the chart using `helm template` instead of `helm lint`:
+#### Option 4: Force Package Mode
+Force the script to use package mode even on older Helm versions:
+
 ```bash
-helm template streamspace ./chart \
-  --set controller.image.tag=local \
-  --set api.image.tag=local \
-  --set ui.image.tag=local \
-  --set postgresql.enabled=true \
-  --validate > /dev/null
+FORCE_PACKAGE=true ./scripts/local-deploy.sh
 ```
 
-If this command succeeds, your chart is valid and you can proceed with installation.
+This can be useful for testing or if you encounter similar issues with other Helm versions.
 
-#### Option 4: Direct Installation (Skip lint entirely)
-Modify the deployment script to skip the lint step, or install directly with Helm:
-```bash
-helm install streamspace ./chart \
-  --namespace streamspace \
-  --create-namespace \
-  --set controller.image.tag=local \
-  --set controller.image.pullPolicy=Never \
-  --set api.image.tag=local \
-  --set api.image.pullPolicy=Never \
-  --set ui.image.tag=local \
-  --set ui.image.pullPolicy=Never \
-  --set postgresql.enabled=true \
-  --set postgresql.auth.password=streamspace
-```
+---
+
+**Note:** Options like "skip validation" or "use helm template" don't work with Helm v3.19.0 because the bug affects all directory-based chart loading, not just validation. The package workaround is the only reliable solution short of downgrading Helm.
 
 **Verification:**
 After installation, verify the deployment is working:

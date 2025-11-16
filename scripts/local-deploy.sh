@@ -129,44 +129,63 @@ deploy_helm() {
     log_info "Chart directory contents:"
     ls -la "${CHART_PATH}/" 2>&1 | head -10
 
-    # Validate chart with helm lint (make it non-fatal as helm v3.19.0 has known issues)
-    log_info "Validating chart with helm lint..."
-    if helm lint "${CHART_PATH}" 2>&1 | tee /tmp/helm-lint.log; then
-        log_success "Chart validation passed"
-    else
-        log_warning "Helm lint reported errors (this may be a Helm v3.19.0 issue)"
-        log_info "Attempting alternative validation with 'helm template'..."
-        if helm template test-release "${CHART_PATH}" \
-            --set controller.image.tag="${VERSION}" \
-            --set api.image.tag="${VERSION}" \
-            --set ui.image.tag="${VERSION}" > /dev/null 2>&1; then
-            log_success "Chart templates are valid - proceeding with deployment"
+    # Workaround for Helm v3.19.0: Package chart first, then install from .tgz
+    # This avoids the directory loading bug in v3.19.0
+    local helm_version=$(helm version --short 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+    local use_package_workaround=false
+
+    if [[ "${helm_version}" == "v3.19."* ]] || [[ "${FORCE_PACKAGE:-false}" == "true" ]]; then
+        log_warning "Detected Helm ${helm_version} - using package workaround for chart loading bug"
+        use_package_workaround=true
+    fi
+
+    # Try validation only if not using package workaround
+    if [ "${use_package_workaround}" = false ] && [ "${SKIP_LINT:-false}" != "true" ]; then
+        log_info "Validating chart with helm lint..."
+        if helm lint "${CHART_PATH}" 2>&1 | tee /tmp/helm-lint.log; then
+            log_success "Chart validation passed"
         else
-            log_error "Chart validation failed with both 'helm lint' and 'helm template'"
-            log_info "If using Helm v3.19.0, try downgrading to v3.18.0 or earlier"
-            log_info "Or skip validation with: SKIP_LINT=true ./scripts/local-deploy.sh"
-            if [ "${SKIP_LINT:-false}" != "true" ]; then
-                exit 1
-            fi
-            log_warning "Skipping validation due to SKIP_LINT=true"
+            log_warning "Helm lint reported errors (this may be a Helm v3.19.0 issue)"
+            log_info "Will use package workaround for installation"
+            use_package_workaround=true
         fi
     fi
 
-    # Test if Helm can package the chart
-    log_info "Testing chart packaging..."
-    local temp_dir=$(mktemp -d)
-    if helm package "${CHART_PATH}" -d "${temp_dir}" &> /dev/null; then
-        log_success "Chart packaging test passed"
-        rm -rf "${temp_dir}"
-    else
-        log_warning "Chart packaging test failed (may not be critical)"
-        rm -rf "${temp_dir}"
+    # Prepare chart for installation
+    local chart_ref="${CHART_PATH}"
+    local temp_dir=""
+
+    if [ "${use_package_workaround}" = true ]; then
+        log_info "Packaging chart to work around Helm v3.19.0 directory loading bug..."
+        temp_dir=$(mktemp -d)
+
+        if helm package "${CHART_PATH}" -d "${temp_dir}" 2>&1 | tee /tmp/helm-package.log; then
+            # Find the packaged chart file
+            local chart_package=$(find "${temp_dir}" -name "streamspace-*.tgz" | head -1)
+            if [ -n "${chart_package}" ]; then
+                chart_ref="${chart_package}"
+                log_success "Chart packaged successfully: $(basename ${chart_package})"
+            else
+                log_error "Chart packaging failed - package file not found"
+                log_info "Package output:"
+                cat /tmp/helm-package.log
+                rm -rf "${temp_dir}"
+                exit 1
+            fi
+        else
+            log_error "Chart packaging failed"
+            log_info "This is a critical Helm v3.19.0 bug. Please downgrade Helm to v3.18.0 or earlier."
+            log_info "See docs/DEPLOYMENT_TROUBLESHOOTING.md for detailed instructions."
+            rm -rf "${temp_dir}"
+            exit 1
+        fi
     fi
 
     # Check if release exists
     if helm status "${RELEASE_NAME}" -n "${NAMESPACE}" &> /dev/null; then
         log_info "Release exists, upgrading..."
-        helm upgrade "${RELEASE_NAME}" "${CHART_PATH}" \
+        log_info "Running: helm upgrade ${RELEASE_NAME} ${chart_ref}"
+        helm upgrade "${RELEASE_NAME}" "${chart_ref}" \
             --namespace "${NAMESPACE}" \
             --set controller.image.tag="${VERSION}" \
             --set controller.image.pullPolicy=Never \
@@ -180,8 +199,8 @@ deploy_helm() {
             --timeout 5m
     else
         log_info "Installing fresh release..."
-        log_info "Running: helm install ${RELEASE_NAME} ${CHART_PATH}"
-        helm install "${RELEASE_NAME}" "${CHART_PATH}" \
+        log_info "Running: helm install ${RELEASE_NAME} ${chart_ref}"
+        helm install "${RELEASE_NAME}" "${chart_ref}" \
             --namespace "${NAMESPACE}" \
             --create-namespace \
             --set controller.image.tag="${VERSION}" \
@@ -195,6 +214,12 @@ deploy_helm() {
             --debug \
             --wait \
             --timeout 5m
+    fi
+
+    # Clean up temporary directory if we created one
+    if [ -n "${temp_dir}" ] && [ -d "${temp_dir}" ]; then
+        rm -rf "${temp_dir}"
+        log_info "Cleaned up temporary package directory"
     fi
 
     log_success "Helm deployment complete"
