@@ -99,7 +99,7 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
-          echo "${{ steps.meta.outputs.tags }}" | xargs -I {} cosign sign --yes {}@${{ steps.build.outputs.digest }}
+          cosign sign --yes ${{ env.IMAGE_PREFIX }}-controller@${{ steps.build.outputs.digest }}
 
       - name: Generate SBOM for Controller
         if: github.event_name != 'pull_request'
@@ -196,7 +196,7 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
-          echo "${{ steps.meta.outputs.tags }}" | xargs -I {} cosign sign --yes {}@${{ steps.build.outputs.digest }}
+          cosign sign --yes ${{ env.IMAGE_PREFIX }}-api@${{ steps.build.outputs.digest }}
 
       - name: Generate SBOM for API
         if: github.event_name != 'pull_request'
@@ -293,7 +293,7 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
         run: |
-          echo "${{ steps.meta.outputs.tags }}" | xargs -I {} cosign sign --yes {}@${{ steps.build.outputs.digest }}
+          cosign sign --yes ${{ env.IMAGE_PREFIX }}-ui@${{ steps.build.outputs.digest }}
 
       - name: Generate SBOM for UI
         if: github.event_name != 'pull_request'
