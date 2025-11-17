@@ -60,24 +60,14 @@ function EnhancedWebSocketStatus({
     return 60; // 60 seconds for all subsequent retries
   };
 
-  // Countdown timer for reconnection
+  // Countdown timer for reconnection - DISABLED to prevent sidebar flickering
+  // The countdown state update every second was causing the entire component tree to re-render,
+  // which made the sidebar flicker. Instead, we show a static "Reconnecting..." message.
   useEffect(() => {
     if (reconnectAttempts > 0 && !isConnected) {
+      // Calculate next retry time but don't update state every second
       const delay = getReconnectDelay(reconnectAttempts - 1);
-      let remainingTime = delay;
-      setCountdown(remainingTime);
-
-      const interval = setInterval(() => {
-        remainingTime -= 1;
-        if (remainingTime <= 0) {
-          clearInterval(interval);
-          setCountdown(null);
-        } else {
-          setCountdown(remainingTime);
-        }
-      }, 1000);
-
-      return () => clearInterval(interval);
+      setCountdown(delay); // Set once, don't update every second
     } else {
       setCountdown(null);
     }
@@ -113,9 +103,8 @@ function EnhancedWebSocketStatus({
       return latency ? `Live • ${latency}ms` : 'Live Updates';
     }
     if (reconnectAttempts > 0) {
-      return countdown !== null
-        ? `Reconnecting in ${countdown}s...`
-        : `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`;
+      // Show attempt count only, not countdown (to prevent re-renders)
+      return `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`;
     }
     if (reconnectAttempts >= maxReconnectAttempts) {
       return 'Connection Failed';
@@ -197,13 +186,12 @@ function EnhancedWebSocketStatus({
                   </Typography>
                   {countdown !== null && (
                     <Typography variant="caption" color="text.secondary">
-                      {countdown}s
+                      Next retry in ~{countdown}s
                     </Typography>
                   )}
                 </Box>
                 <LinearProgress
-                  variant={countdown !== null ? 'determinate' : 'indeterminate'}
-                  value={countdown !== null ? ((getReconnectDelay(reconnectAttempts - 1) - countdown) / getReconnectDelay(reconnectAttempts - 1)) * 100 : undefined}
+                  variant="indeterminate"
                   color={reconnectAttempts >= maxReconnectAttempts ? 'error' : 'primary'}
                 />
               </Box>

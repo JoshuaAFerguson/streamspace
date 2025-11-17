@@ -42,6 +42,7 @@ package websocket
 import (
 	"log"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -199,33 +200,46 @@ func (h *Hub) ClientCount() int {
 
 // writePump pumps messages from the hub to the websocket connection
 func (c *Client) writePump() {
+	ticker := time.NewTicker(30 * time.Second) // Send ping every 30 seconds
 	defer func() {
+		ticker.Stop()
 		c.conn.Close()
 	}()
 
 	for {
-		message, ok := <-c.send
-		if !ok {
-			// Hub closed the channel
-			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-			return
-		}
+		select {
+		case message, ok := <-c.send:
+			// Set write deadline to prevent hanging on slow connections
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if !ok {
+				// Hub closed the channel
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
 
-		w, err := c.conn.NextWriter(websocket.TextMessage)
-		if err != nil {
-			return
-		}
-		w.Write(message)
+			w, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
 
-		// Add queued messages to the current websocket message
-		n := len(c.send)
-		for i := 0; i < n; i++ {
-			w.Write([]byte{'\n'})
-			w.Write(<-c.send)
-		}
+			// Add queued messages to the current websocket message
+			n := len(c.send)
+			for i := 0; i < n; i++ {
+				w.Write([]byte{'\n'})
+				w.Write(<-c.send)
+			}
 
-		if err := w.Close(); err != nil {
-			return
+			if err := w.Close(); err != nil {
+				return
+			}
+
+		case <-ticker.C:
+			// Send ping to keep connection alive
+			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -237,6 +251,13 @@ func (c *Client) readPump() {
 		c.conn.Close()
 	}()
 
+	// Set read deadline and pong handler to keep connection alive
+	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.conn.SetPongHandler(func(string) error {
+		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
@@ -245,6 +266,9 @@ func (c *Client) readPump() {
 			}
 			break
 		}
+
+		// Reset read deadline on any message
+		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		// For now, we just log received messages
 		// In the future, we could handle client->server messages
