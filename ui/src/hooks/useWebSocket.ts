@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useUserStore } from '../store/userStore';
 
 interface UseWebSocketOptions {
   url: string;
@@ -177,32 +178,11 @@ export function useWebSocket({
 /**
  * Hook for subscribing to session updates via WebSocket
  * Only connects when a valid authentication token is available
+ * Uses Zustand store for reactive token updates
  */
 export function useSessionsWebSocket(onUpdate: (sessions: any[]) => void) {
-  // Get token from store to react to authentication changes
-  const [token, setToken] = useState(localStorage.getItem('token'));
-
-  // Listen for token changes (login/logout)
-  useEffect(() => {
-    const checkToken = () => {
-      const newToken = localStorage.getItem('token');
-      if (newToken !== token) {
-        setToken(newToken);
-      }
-    };
-
-    // Check immediately
-    checkToken();
-
-    // Check periodically and on storage events
-    const interval = setInterval(checkToken, 1000);
-    window.addEventListener('storage', checkToken);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', checkToken);
-    };
-  }, [token]);
+  // Get token directly from Zustand store - automatically reactive
+  const token = useUserStore((state) => state.token);
 
   // Memoize URL construction, recalculate when token changes
   const wsUrl = useMemo(() => {
@@ -229,32 +209,11 @@ export function useSessionsWebSocket(onUpdate: (sessions: any[]) => void) {
 /**
  * Hook for subscribing to cluster metrics via WebSocket
  * Only connects when a valid authentication token is available
+ * Uses Zustand store for reactive token updates
  */
 export function useMetricsWebSocket(onUpdate: (metrics: any) => void) {
-  // Get token from store to react to authentication changes
-  const [token, setToken] = useState(localStorage.getItem('token'));
-
-  // Listen for token changes (login/logout)
-  useEffect(() => {
-    const checkToken = () => {
-      const newToken = localStorage.getItem('token');
-      if (newToken !== token) {
-        setToken(newToken);
-      }
-    };
-
-    // Check immediately
-    checkToken();
-
-    // Check periodically and on storage events
-    const interval = setInterval(checkToken, 1000);
-    window.addEventListener('storage', checkToken);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', checkToken);
-    };
-  }, [token]);
+  // Get token directly from Zustand store - automatically reactive
+  const token = useUserStore((state) => state.token);
 
   // Memoize URL construction, recalculate when token changes
   const wsUrl = useMemo(() => {
@@ -281,18 +240,21 @@ export function useMetricsWebSocket(onUpdate: (metrics: any) => void) {
 /**
  * Hook for subscribing to pod logs via WebSocket
  * Only connects when a valid authentication token is available
+ * Uses Zustand store for reactive token updates
  */
 export function useLogsWebSocket(namespace: string, podName: string, onLog: (log: string) => void) {
-  // Memoize URL construction to prevent recalculation on every render
+  // Get token directly from Zustand store - automatically reactive
+  const token = useUserStore((state) => state.token);
+
+  // Memoize URL construction, recalculate when token or params change
   const wsUrl = useMemo(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const token = localStorage.getItem('token');
 
     // Don't connect without a token
     return token
       ? `${protocol}//${window.location.host}/api/v1/ws/logs/${namespace}/${podName}?token=${encodeURIComponent(token)}`
       : '';
-  }, [namespace, podName]); // Recalculate if namespace or podName changes
+  }, [token, namespace, podName]); // Recalculate when any dependency changes
 
   return useWebSocket({
     url: wsUrl,

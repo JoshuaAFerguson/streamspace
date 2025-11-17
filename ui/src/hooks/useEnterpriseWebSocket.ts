@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { useUserStore } from '../store/userStore';
 
 export interface WebSocketMessage {
   type: string;
@@ -84,30 +85,8 @@ export function useEnterpriseWebSocket(
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Get token from state to react to authentication changes
-  const [token, setToken] = useState(localStorage.getItem('token'));
-
-  // Listen for token changes (login/logout)
-  useEffect(() => {
-    const checkToken = () => {
-      const newToken = localStorage.getItem('token');
-      if (newToken !== token) {
-        setToken(newToken);
-      }
-    };
-
-    // Check immediately
-    checkToken();
-
-    // Check periodically and on storage events
-    const interval = setInterval(checkToken, 1000);
-    window.addEventListener('storage', checkToken);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', checkToken);
-    };
-  }, [token]);
+  // Get token directly from Zustand store - automatically reactive
+  const token = useUserStore((state) => state.token);
 
   // Memoize WebSocket URL, recalculate when token changes
   const wsUrl = useMemo(() => {
