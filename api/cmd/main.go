@@ -797,23 +797,23 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 	{
 		// Session updates WebSocket - connects to wsManager for real-time session broadcasts
 		ws.GET("/sessions", func(c *gin.Context) {
-			// Extract token and upgrade connection
-			conn, err := websocket.Upgrade(c.Writer, c.Request, nil)
-			if err != nil {
-				log.Printf("Failed to upgrade WebSocket connection: %v", err)
-				return
-			}
-
 			// Get user ID from auth middleware
 			userID, exists := c.Get("userID")
 			if !exists {
-				conn.Close()
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
 				return
 			}
 
 			userIDStr, ok := userID.(string)
 			if !ok {
-				conn.Close()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user ID"})
+				return
+			}
+
+			// Upgrade HTTP connection to WebSocket
+			conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+			if err != nil {
+				log.Printf("Failed to upgrade WebSocket connection: %v", err)
 				return
 			}
 
@@ -823,7 +823,8 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 
 		// Metrics WebSocket - connects to wsManager for real-time metrics broadcasts
 		ws.GET("/cluster", operatorMiddleware, func(c *gin.Context) {
-			conn, err := websocket.Upgrade(c.Writer, c.Request, nil)
+			// Upgrade HTTP connection to WebSocket
+			conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 			if err != nil {
 				log.Printf("Failed to upgrade WebSocket connection: %v", err)
 				return
