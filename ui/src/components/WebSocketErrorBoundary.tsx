@@ -31,6 +31,7 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: React.ErrorInfo | null;
+  dismissed: boolean; // Track if user has dismissed the error
 }
 
 export default class WebSocketErrorBoundary extends Component<Props, State> {
@@ -40,14 +41,14 @@ export default class WebSocketErrorBoundary extends Component<Props, State> {
       hasError: false,
       error: null,
       errorInfo: null,
+      dismissed: false,
     };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return {
       hasError: true,
       error,
-      errorInfo: null,
     };
   }
 
@@ -70,10 +71,17 @@ export default class WebSocketErrorBoundary extends Component<Props, State> {
       hasError: false,
       error: null,
       errorInfo: null,
+      dismissed: true, // Mark as dismissed
     });
   };
 
   render() {
+    // If error was already dismissed, just render children without showing error UI
+    if (this.state.hasError && this.state.dismissed) {
+      console.warn('WebSocket error (dismissed):', this.state.error?.message);
+      return this.props.children;
+    }
+
     if (this.state.hasError) {
       // Use custom fallback if provided
       if (this.props.fallback) {
