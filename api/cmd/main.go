@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/streamspace/streamspace/api/internal/activity"
 	"github.com/streamspace/streamspace/api/internal/api"
 	"github.com/streamspace/streamspace/api/internal/auth"
@@ -23,7 +24,7 @@ import (
 	"github.com/streamspace/streamspace/api/internal/quota"
 	"github.com/streamspace/streamspace/api/internal/sync"
 	"github.com/streamspace/streamspace/api/internal/tracker"
-	"github.com/streamspace/streamspace/api/internal/websocket"
+	internalWebsocket "github.com/streamspace/streamspace/api/internal/websocket"
 )
 
 func main() {
@@ -118,7 +119,7 @@ func main() {
 
 	// Initialize WebSocket manager
 	log.Println("Initializing WebSocket manager...")
-	wsManager := websocket.NewManager(database, k8sClient)
+	wsManager := internalWebsocket.NewManager(database, k8sClient)
 	wsManager.Start()
 
 	// Initialize activity tracker
@@ -253,7 +254,7 @@ func main() {
 	batchHandler := handlers.NewBatchHandler(database)
 	monitoringHandler := handlers.NewMonitoringHandler(database)
 	quotasHandler := handlers.NewQuotasHandler(database)
-	websocketHandler := handlers.NewWebSocketHandler(database)
+	// NOTE: WebSocket routes now use wsManager directly (see ws.GET routes below)
 	consoleHandler := handlers.NewConsoleHandler(database)
 	collaborationHandler := handlers.NewCollaborationHandler(database)
 	integrationsHandler := handlers.NewIntegrationsHandler(database)
@@ -272,7 +273,7 @@ func main() {
 	}
 
 	// Setup routes
-	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, websocketHandler, consoleHandler, collaborationHandler, integrationsHandler, loadBalancingHandler, schedulingHandler, securityHandler, templateVersioningHandler, setupHandler, jwtManager, userDB, redisCache, webhookSecret)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, wsManager, consoleHandler, collaborationHandler, integrationsHandler, loadBalancingHandler, schedulingHandler, securityHandler, templateVersioningHandler, setupHandler, jwtManager, userDB, redisCache, webhookSecret)
 
 	// Create HTTP server with security timeouts
 	srv := &http.Server{
@@ -353,7 +354,7 @@ func main() {
 	log.Println("Graceful shutdown completed")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, websocketHandler *handlers.WebSocketHandler, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, integrationsHandler *handlers.IntegrationsHandler, loadBalancingHandler *handlers.LoadBalancingHandler, schedulingHandler *handlers.SchedulingHandler, securityHandler *handlers.SecurityHandler, templateVersioningHandler *handlers.TemplateVersioningHandler, setupHandler *handlers.SetupHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, wsManager *internalWebsocket.Manager, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, integrationsHandler *handlers.IntegrationsHandler, loadBalancingHandler *handlers.LoadBalancingHandler, schedulingHandler *handlers.SchedulingHandler, securityHandler *handlers.SecurityHandler, templateVersioningHandler *handlers.TemplateVersioningHandler, setupHandler *handlers.SetupHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
 	// SECURITY: Create authentication middleware
 	authMiddleware := auth.Middleware(jwtManager, userDB)
 	adminMiddleware := auth.RequireRole("admin")
@@ -363,6 +364,16 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 	var webhookAuth *middleware.WebhookAuth
 	if webhookSecret != "" {
 		webhookAuth = middleware.NewWebhookAuth(webhookSecret)
+	}
+
+	// WebSocket upgrader for real-time connections
+	var upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			// Allow all origins for development (should be restricted in production)
+			return true
+		},
 	}
 
 	// Health check (public - no auth required)
@@ -784,15 +795,47 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 	ws := router.Group("/api/v1/ws")
 	ws.Use(authMiddleware)
 	{
-		// NOTE: /ws/sessions is now handled by websocketHandler.RegisterRoutes() below
-		ws.GET("/cluster", operatorMiddleware, h.ClusterWebSocket)
+		// Session updates WebSocket - connects to wsManager for real-time session broadcasts
+		ws.GET("/sessions", func(c *gin.Context) {
+			// Extract token and upgrade connection
+			conn, err := websocket.Upgrade(c.Writer, c.Request, nil)
+			if err != nil {
+				log.Printf("Failed to upgrade WebSocket connection: %v", err)
+				return
+			}
+
+			// Get user ID from auth middleware
+			userID, exists := c.Get("userID")
+			if !exists {
+				conn.Close()
+				return
+			}
+
+			userIDStr, ok := userID.(string)
+			if !ok {
+				conn.Close()
+				return
+			}
+
+			// Delegate to wsManager which broadcasts sessions every 3 seconds
+			wsManager.HandleSessionsWebSocket(conn, userIDStr, "")
+		})
+
+		// Metrics WebSocket - connects to wsManager for real-time metrics broadcasts
+		ws.GET("/cluster", operatorMiddleware, func(c *gin.Context) {
+			conn, err := websocket.Upgrade(c.Writer, c.Request, nil)
+			if err != nil {
+				log.Printf("Failed to upgrade WebSocket connection: %v", err)
+				return
+			}
+
+			// Delegate to wsManager which broadcasts metrics every 5 seconds
+			wsManager.HandleMetricsWebSocket(conn)
+		})
+
 		ws.GET("/logs/:namespace/:pod", operatorMiddleware, h.LogsWebSocket)
 		ws.GET("/enterprise", handlers.HandleEnterpriseWebSocket) // Real-time enterprise features
 	}
-
-	// Real-time updates via WebSocket - using dedicated handler (all authenticated users)
-	// Registers: /ws/sessions, /ws/notifications, /ws/metrics, /ws/alerts
-	websocketHandler.RegisterRoutes(router.Group("/api/v1", authMiddleware))
 
 	// Webhook endpoints (HMAC signature validation required)
 	webhooks := router.Group("/webhooks")
