@@ -89,13 +89,14 @@ export function useEnterpriseWebSocket(
     const host = window.location.host;
     const token = localStorage.getItem('token');
 
-    // Include token as query parameter for WebSocket authentication
-    // Browsers cannot send custom headers in WebSocket connections
-    if (token) {
-      return `${protocol}//${host}/api/v1/ws/enterprise?token=${encodeURIComponent(token)}`;
+    // Don't connect without a token
+    if (!token) {
+      return '';
     }
 
-    return `${protocol}//${host}/api/v1/ws/enterprise`;
+    // Include token as query parameter for WebSocket authentication
+    // Browsers cannot send custom headers in WebSocket connections
+    return `${protocol}//${host}/api/v1/ws/enterprise?token=${encodeURIComponent(token)}`;
   }, []);
 
   const connect = useCallback(() => {
@@ -104,8 +105,15 @@ export function useEnterpriseWebSocket(
       return;
     }
 
+    const wsUrl = getWebSocketUrl();
+
+    // Don't connect if no token available
+    if (!wsUrl) {
+      console.log('[WebSocket] No authentication token, skipping connection');
+      return;
+    }
+
     try {
-      const wsUrl = getWebSocketUrl();
       // console.log(`[WebSocket] Connecting to ${wsUrl}`);
 
       wsRef.current = new WebSocket(wsUrl);

@@ -72,6 +72,11 @@ export function useWebSocket({
   }, [onClose]);
 
   const connect = useCallback(() => {
+    // Don't connect if URL is empty (used to disable connection)
+    if (!url) {
+      return;
+    }
+
     try {
       const ws = new WebSocket(url);
 
@@ -104,7 +109,7 @@ export function useWebSocket({
 
         // Attempt reconnection with custom backoff pattern
         const currentAttempts = reconnectAttemptsRef.current;
-        if (shouldReconnectRef.current && currentAttempts < maxReconnectAttempts) {
+        if (shouldReconnectRef.current && currentAttempts < maxReconnectAttempts && url) {
           const delay = getReconnectDelay(currentAttempts);
           console.log(`Reconnecting in ${delay / 1000}s (attempt ${currentAttempts + 1}/${maxReconnectAttempts})`);
 
@@ -166,33 +171,66 @@ export function useWebSocket({
 
 /**
  * Hook for subscribing to session updates via WebSocket
+ * Only connects when a valid authentication token is available
  */
 export function useSessionsWebSocket(onUpdate: (sessions: any[]) => void) {
+  const [isEnabled, setIsEnabled] = useState(false);
+
+  // Check for token on mount and when storage changes
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    setIsEnabled(!!token);
+
+    // Listen for storage changes (login/logout in other tabs)
+    const handleStorageChange = () => {
+      const newToken = localStorage.getItem('token');
+      setIsEnabled(!!newToken);
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Use window.location to connect through Vite proxy in dev, or directly in production
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('token');
   const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/sessions${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 
-  return useWebSocket({
-    url: wsUrl,
+  // Only initialize WebSocket if we have a token
+  const ws = useWebSocket({
+    url: isEnabled ? wsUrl : '', // Empty URL prevents connection
     onMessage: (data) => {
       if (data.type === 'sessions_update' && data.sessions) {
         onUpdate(data.sessions);
       }
     },
+    onError: (error) => {
+      // Token might be expired - check if we should reconnect
+      const currentToken = localStorage.getItem('token');
+      if (!currentToken) {
+        setIsEnabled(false); // Stop trying to reconnect without token
+      }
+    },
     // onOpen: () => console.log('Sessions WebSocket connected'),
     // onClose: () => console.log('Sessions WebSocket disconnected'),
   });
+
+  return ws;
 }
 
 /**
  * Hook for subscribing to cluster metrics via WebSocket
+ * Only connects when a valid authentication token is available
  */
 export function useMetricsWebSocket(onUpdate: (metrics: any) => void) {
   // Use window.location to connect through Vite proxy in dev, or directly in production
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('token');
-  const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/cluster${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+
+  // Don't connect without a token
+  const wsUrl = token
+    ? `${protocol}//${window.location.host}/api/v1/ws/cluster?token=${encodeURIComponent(token)}`
+    : '';
 
   return useWebSocket({
     url: wsUrl,
@@ -208,12 +246,17 @@ export function useMetricsWebSocket(onUpdate: (metrics: any) => void) {
 
 /**
  * Hook for subscribing to pod logs via WebSocket
+ * Only connects when a valid authentication token is available
  */
 export function useLogsWebSocket(namespace: string, podName: string, onLog: (log: string) => void) {
   // Use window.location to connect through Vite proxy in dev, or directly in production
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const token = localStorage.getItem('token');
-  const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/logs/${namespace}/${podName}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+
+  // Don't connect without a token
+  const wsUrl = token
+    ? `${protocol}//${window.location.host}/api/v1/ws/logs/${namespace}/${podName}?token=${encodeURIComponent(token)}`
+    : '';
 
   return useWebSocket({
     url: wsUrl,
