@@ -52,6 +52,29 @@ export function useEnterpriseWebSocket(
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shouldReconnectRef = useRef(true);
 
+  // Store callbacks in refs to avoid reconnection when they change
+  const onMessageRef = useRef(onMessage);
+  const onErrorRef = useRef(onError);
+  const onOpenRef = useRef(onOpen);
+  const onCloseRef = useRef(onClose);
+
+  // Update refs when callbacks change
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  useEffect(() => {
+    onOpenRef.current = onOpen;
+  }, [onOpen]);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   const getWebSocketUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
@@ -84,8 +107,8 @@ export function useEnterpriseWebSocket(
         setReconnectAttempts(0);
         shouldReconnectRef.current = true;
 
-        if (onOpen) {
-          onOpen();
+        if (onOpenRef.current) {
+          onOpenRef.current();
         }
       };
 
@@ -96,8 +119,8 @@ export function useEnterpriseWebSocket(
 
           setLastMessage(message);
 
-          if (onMessage) {
-            onMessage(message);
+          if (onMessageRef.current) {
+            onMessageRef.current(message);
           }
         } catch (error) {
           console.error('[WebSocket] Failed to parse message:', error);
@@ -108,8 +131,8 @@ export function useEnterpriseWebSocket(
         console.error('[WebSocket] Error:', error);
         setIsConnected(false);
 
-        if (onError) {
-          onError(error);
+        if (onErrorRef.current) {
+          onErrorRef.current(error);
         }
       };
 
@@ -117,8 +140,8 @@ export function useEnterpriseWebSocket(
         // console.log('[WebSocket] Connection closed');
         setIsConnected(false);
 
-        if (onClose) {
-          onClose();
+        if (onCloseRef.current) {
+          onCloseRef.current();
         }
 
         // Attempt reconnection if enabled and within retry limit
@@ -145,10 +168,6 @@ export function useEnterpriseWebSocket(
     }
   }, [
     getWebSocketUrl,
-    onOpen,
-    onMessage,
-    onError,
-    onClose,
     autoReconnect,
     reconnectInterval,
     maxReconnectAttempts,
