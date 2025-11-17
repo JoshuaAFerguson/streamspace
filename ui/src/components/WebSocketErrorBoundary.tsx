@@ -96,7 +96,7 @@ export default class WebSocketErrorBoundary extends Component<Props, State> {
               <AlertTitle>WebSocket Connection Error</AlertTitle>
               <Typography variant="body2" paragraph>
                 There was an error with the real-time connection. The page will continue to work,
-                but live updates may be unavailable. You can try refreshing the page or reconnecting.
+                but live updates may be unavailable.
               </Typography>
 
               {this.props.showErrorDetails && this.state.error && (
@@ -110,18 +110,18 @@ export default class WebSocketErrorBoundary extends Component<Props, State> {
               <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                 <Button
                   variant="contained"
+                  onClick={this.handleReset}
+                  size="small"
+                >
+                  Continue Without Live Updates
+                </Button>
+                <Button
+                  variant="outlined"
                   startIcon={<RefreshIcon />}
                   onClick={() => window.location.reload()}
                   size="small"
                 >
                   Reload Page
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={this.handleReset}
-                  size="small"
-                >
-                  Try Again
                 </Button>
               </Box>
             </Alert>
