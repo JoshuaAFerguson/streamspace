@@ -60,16 +60,17 @@ export default function EnhancedWebSocketStatus({
   useEffect(() => {
     if (reconnectAttempts > 0 && !isConnected) {
       const delay = getReconnectDelay(reconnectAttempts - 1);
-      setCountdown(delay);
+      let remainingTime = delay;
+      setCountdown(remainingTime);
 
       const interval = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev === null || prev <= 1) {
-            clearInterval(interval);
-            return null;
-          }
-          return prev - 1;
-        });
+        remainingTime -= 1;
+        if (remainingTime <= 0) {
+          clearInterval(interval);
+          setCountdown(null);
+        } else {
+          setCountdown(remainingTime);
+        }
       }, 1000);
 
       return () => clearInterval(interval);

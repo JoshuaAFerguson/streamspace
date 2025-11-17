@@ -1,6 +1,5 @@
-import { ReactNode, useCallback, useEffect } from 'react';
+import { ReactNode, useCallback, useEffect, useState, useRef } from 'react';
 import { Snackbar, Alert } from '@mui/material';
-import { useState } from 'react';
 import {
   useEnterpriseWebSocket,
   WebSocketMessage,
@@ -69,7 +68,8 @@ export default function EnterpriseWebSocketProvider({
   enableNotifications = true,
 }: EnterpriseWebSocketProviderProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [reconnectDismissed, setReconnectDismissed] = useState(false); // Track if reconnect banner was dismissed
+  const reconnectDismissedRef = useRef(false); // Use ref to persist across reconnection attempts
+  const [showReconnectBanner, setShowReconnectBanner] = useState(false);
 
   const addNotification = useCallback((message: string, severity: Notification['severity']) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -164,27 +164,35 @@ export default function EnterpriseWebSocketProvider({
     onMessage: handleMessage,
     onError: (error) => {
       console.error('[EnterpriseWebSocket] Error:', error);
-      if (enableNotifications) {
+      if (enableNotifications && !reconnectDismissedRef.current) {
         addNotification('Real-time updates disconnected', 'error');
       }
     },
     onClose: () => {
       // console.log('[EnterpriseWebSocket] Connection closed');
-      if (enableNotifications && reconnectAttempts > 0) {
-        addNotification('Reconnecting to real-time updates...', 'info');
-      }
+      // Don't show notification if banner was already dismissed
     },
     autoReconnect: true,
     reconnectInterval: 3000,
     maxReconnectAttempts: 10,
   });
 
-  // Show connection status indicator
+  // Show connection status indicator and manage banner visibility
   useEffect(() => {
     if (isConnected && reconnectAttempts > 0) {
-      addNotification('Real-time updates reconnected', 'success');
+      if (!reconnectDismissedRef.current) {
+        addNotification('Real-time updates reconnected', 'success');
+      }
+      setShowReconnectBanner(false);
+    } else if (!isConnected && reconnectAttempts > 0 && !reconnectDismissedRef.current) {
+      setShowReconnectBanner(true);
     }
   }, [isConnected, reconnectAttempts, addNotification]);
+
+  const handleDismissReconnectBanner = useCallback(() => {
+    reconnectDismissedRef.current = true;
+    setShowReconnectBanner(false);
+  }, []);
 
   return (
     <>
@@ -214,16 +222,16 @@ export default function EnterpriseWebSocketProvider({
       ))}
 
       {/* Connection status indicator (optional) */}
-      {!isConnected && reconnectAttempts > 0 && !reconnectDismissed && (
+      {showReconnectBanner && (
         <Snackbar
           open={true}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-          onClose={() => setReconnectDismissed(true)}
+          onClose={handleDismissReconnectBanner}
         >
           <Alert
             severity="info"
             variant="outlined"
-            onClose={() => setReconnectDismissed(true)}
+            onClose={handleDismissReconnectBanner}
             sx={{
               backgroundColor: 'background.paper',
               boxShadow: 1,
