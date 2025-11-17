@@ -138,35 +138,35 @@ function QuotaCard() {
   const metrics: QuotaMetric[] = [
     {
       label: 'Sessions',
-      used: quota.usedSessions,
-      max: quota.maxSessions,
+      used: quota?.usedSessions ?? 0,
+      max: quota?.maxSessions ?? 0,
       unit: '',
       icon: <SessionsIcon />,
-      color: getColor(getPercentage(quota.usedSessions, quota.maxSessions)),
+      color: getColor(getPercentage(quota?.usedSessions ?? 0, quota?.maxSessions ?? 0)),
     },
     {
       label: 'CPU',
-      used: parseCPU(quota.usedCpu),
-      max: parseCPU(quota.maxCpu),
+      used: parseCPU(quota?.usedCpu || '0'),
+      max: parseCPU(quota?.maxCpu || '0'),
       unit: ' cores',
       icon: <CPUIcon />,
-      color: getColor(getPercentage(parseCPU(quota.usedCpu), parseCPU(quota.maxCpu))),
+      color: getColor(getPercentage(parseCPU(quota?.usedCpu || '0'), parseCPU(quota?.maxCpu || '0'))),
     },
     {
       label: 'Memory',
-      used: parseMemory(quota.usedMemory),
-      max: parseMemory(quota.maxMemory),
+      used: parseMemory(quota?.usedMemory || '0'),
+      max: parseMemory(quota?.maxMemory || '0'),
       unit: ' GiB',
       icon: <MemoryIcon />,
-      color: getColor(getPercentage(parseMemory(quota.usedMemory), parseMemory(quota.maxMemory))),
+      color: getColor(getPercentage(parseMemory(quota?.usedMemory || '0'), parseMemory(quota?.maxMemory || '0'))),
     },
     {
       label: 'Storage',
-      used: parseStorage(quota.usedStorage),
-      max: parseStorage(quota.maxStorage),
+      used: parseStorage(quota?.usedStorage || '0'),
+      max: parseStorage(quota?.maxStorage || '0'),
       unit: ' GiB',
       icon: <StorageIcon />,
-      color: getColor(getPercentage(parseStorage(quota.usedStorage), parseStorage(quota.maxStorage))),
+      color: getColor(getPercentage(parseStorage(quota?.usedStorage || '0'), parseStorage(quota?.maxStorage || '0'))),
     },
   ];
 
@@ -200,8 +200,8 @@ function QuotaCard() {
                   {metric.label}
                 </Typography>
                 <Typography variant="body2" fontWeight={600}>
-                  {metric.used.toFixed(metric.label === 'Sessions' ? 0 : 1)}
-                  {metric.unit} / {metric.max.toFixed(metric.label === 'Sessions' ? 0 : 1)}
+                  {(metric.used ?? 0).toFixed(metric.label === 'Sessions' ? 0 : 1)}
+                  {metric.unit} / {(metric.max ?? 0).toFixed(metric.label === 'Sessions' ? 0 : 1)}
                   {metric.unit}
                 </Typography>
               </Box>
