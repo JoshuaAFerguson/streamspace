@@ -68,11 +68,17 @@ export default function SetupWizard() {
 
   // Check if setup is required on component mount
   useEffect(() => {
+    let retryCount = 0;
+    const maxRetries = 5;
+    const retryDelay = 2000; // 2 seconds
+
     const checkSetupStatus = async () => {
       try {
         const status = await api.getSetupStatus();
+        console.log('Setup status response:', status);
         setSetupRequired(status.setupRequired);
         setStatusMessage(status.message || '');
+        setError(''); // Clear any previous errors
 
         if (!status.setupRequired) {
           // Setup not required - redirect to login after 3 seconds
@@ -81,11 +87,23 @@ export default function SetupWizard() {
           }, 3000);
         }
       } catch (err: any) {
-        console.error('Failed to check setup status:', err);
-        setError('Failed to check setup status. Please try again.');
-      } finally {
-        setCheckingStatus(false);
+        console.error('Failed to check setup status (attempt ' + (retryCount + 1) + '):', err);
+
+        // Retry if API is not ready yet (502/503/connection refused)
+        if (retryCount < maxRetries) {
+          retryCount++;
+          setError(`Connecting to API server (attempt ${retryCount}/${maxRetries})...`);
+          setTimeout(() => {
+            checkSetupStatus();
+          }, retryDelay);
+        } else {
+          setError('Failed to connect to API server. Please refresh the page or check that the API is running.');
+          setCheckingStatus(false);
+        }
+        return; // Don't set checkingStatus to false yet if retrying
       }
+
+      setCheckingStatus(false);
     };
 
     checkSetupStatus();
@@ -168,9 +186,14 @@ export default function SetupWizard() {
           }}
         >
           <CircularProgress size={60} sx={{ mb: 2 }} />
-          <Typography variant="h6" color="text.secondary">
+          <Typography variant="h6" color="text.secondary" gutterBottom>
             Checking setup status...
           </Typography>
+          {error && (
+            <Typography variant="body2" color="warning.main" sx={{ mt: 2 }}>
+              {error}
+            </Typography>
+          )}
         </Box>
       </Container>
     );
@@ -197,17 +220,38 @@ export default function SetupWizard() {
               textAlign: 'center',
             }}
           >
-            <InfoIcon color="primary" sx={{ fontSize: 60, mb: 2 }} />
-            <Typography variant="h5" gutterBottom>
-              Setup Not Required
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              {statusMessage || 'Admin account is already configured.'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Redirecting to login page...
-            </Typography>
-            <LinearProgress sx={{ mt: 2 }} />
+            {error ? (
+              <>
+                <ErrorIcon color="error" sx={{ fontSize: 60, mb: 2 }} />
+                <Typography variant="h5" gutterBottom>
+                  Connection Error
+                </Typography>
+                <Typography variant="body1" color="text.secondary" paragraph>
+                  {error}
+                </Typography>
+                <Button
+                  variant="contained"
+                  onClick={() => window.location.reload()}
+                  sx={{ mt: 2 }}
+                >
+                  Refresh Page
+                </Button>
+              </>
+            ) : (
+              <>
+                <InfoIcon color="primary" sx={{ fontSize: 60, mb: 2 }} />
+                <Typography variant="h5" gutterBottom>
+                  Setup Not Required
+                </Typography>
+                <Typography variant="body1" color="text.secondary" paragraph>
+                  {statusMessage || 'Admin account is already configured.'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Redirecting to login page...
+                </Typography>
+                <LinearProgress sx={{ mt: 2 }} />
+              </>
+            )}
           </Paper>
         </Box>
       </Container>
