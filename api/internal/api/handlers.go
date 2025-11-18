@@ -361,7 +361,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	// Verify template exists
 	template, err := h.k8sClient.GetTemplate(ctx, h.namespace, req.Template)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Template not found: %s", req.Template)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Template not found: %s. Please ensure the application is properly installed.", req.Template)})
 		return
 	}
 
