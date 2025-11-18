@@ -494,7 +494,7 @@ export default function AdminNodes() {
                         Total CPU
                       </Typography>
                       <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                        {stats.totalCapacity.cpu}
+                        {stats.totalCapacity?.cpu ?? 'N/A'}
                       </Typography>
                       {stats.totalUsage && (
                         <Typography variant="caption" color="text.secondary">
@@ -519,7 +519,7 @@ export default function AdminNodes() {
                         Total Memory
                       </Typography>
                       <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                        {stats.totalCapacity.memory}
+                        {stats.totalCapacity?.memory ?? 'N/A'}
                       </Typography>
                       {stats.totalUsage && (
                         <Typography variant="caption" color="text.secondary">
