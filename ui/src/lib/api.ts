@@ -4,6 +4,9 @@ import { toast } from './toast';
 // API Base URL - uses Vite proxy in development, direct URL in production
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
+// CSRF token storage - captured from response headers and sent on state-changing requests
+let csrfToken: string | null = null;
+
 // API Error Response Type
 export interface APIErrorResponse {
   error: string;
@@ -867,7 +870,7 @@ class APIClient {
       withCredentials: true, // Enable cookies for SAML session
     });
 
-    // Request interceptor for adding auth tokens
+    // Request interceptor for adding auth tokens and CSRF tokens
     this.client.interceptors.request.use(
       (config) => {
         // BUG FIX: Use Zustand persisted store as single source of truth for token
@@ -884,14 +887,30 @@ class APIClient {
             console.error('Failed to parse auth state:', e);
           }
         }
+
+        // Add CSRF token for state-changing requests (POST, PUT, DELETE, PATCH)
+        // The server validates this token against the csrf_token cookie
+        const method = config.method?.toUpperCase();
+        if (csrfToken && (method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH')) {
+          config.headers['X-CSRF-Token'] = csrfToken;
+        }
+
         return config;
       },
       (error) => Promise.reject(error)
     );
 
-    // Response interceptor for error handling
+    // Response interceptor for CSRF token capture and error handling
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        // Capture CSRF token from response headers
+        // Server sends this on GET/HEAD/OPTIONS requests
+        const newCsrfToken = response.headers['x-csrf-token'];
+        if (newCsrfToken) {
+          csrfToken = newCsrfToken;
+        }
+        return response;
+      },
       (error: AxiosError<APIErrorResponse>) => {
         // Handle network errors
         if (!error.response) {
