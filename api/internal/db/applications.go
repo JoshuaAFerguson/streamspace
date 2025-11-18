@@ -216,6 +216,12 @@ func (a *ApplicationDB) ListApplications(ctx context.Context, enabledOnly bool) 
 	}
 	defer rows.Close()
 
+	// Get base path for folder checks
+	basePath := os.Getenv("APPS_BASE_PATH")
+	if basePath == "" {
+		basePath = "/app"
+	}
+
 	apps := []*models.InstalledApplication{}
 	for rows.Next() {
 		app := &models.InstalledApplication{}
@@ -234,6 +240,21 @@ func (a *ApplicationDB) ListApplications(ctx context.Context, enabledOnly bool) 
 		// Unmarshal configuration
 		if len(configJSON) > 0 {
 			json.Unmarshal(configJSON, &app.Configuration)
+		}
+
+		// Check if folder exists - if not and app is enabled, auto-disable it
+		if app.Enabled && app.FolderPath != "" {
+			fullPath := filepath.Join(basePath, app.FolderPath)
+			if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+				// Folder doesn't exist, disable the application
+				_, updateErr := a.db.ExecContext(ctx,
+					"UPDATE installed_applications SET enabled = false, updated_at = $1 WHERE id = $2",
+					time.Now(), app.ID)
+				if updateErr == nil {
+					app.Enabled = false
+					fmt.Printf("Auto-disabled application %s: folder %s does not exist\n", app.DisplayName, fullPath)
+				}
+			}
 		}
 
 		apps = append(apps, app)
