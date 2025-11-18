@@ -284,7 +284,7 @@ export default function UserDetail() {
                       Role
                     </Typography>
                     <Box sx={{ mt: 0.5 }}>
-                      <Chip label={user.role.toUpperCase()} size="small" />
+                      <Chip label={user.role?.toUpperCase() || 'N/A'} size="small" />
                     </Box>
                   </Box>
                   <Box>
@@ -292,7 +292,7 @@ export default function UserDetail() {
                       Provider
                     </Typography>
                     <Box sx={{ mt: 0.5 }}>
-                      <Chip label={user.provider.toUpperCase()} size="small" variant="outlined" />
+                      <Chip label={user.provider?.toUpperCase() || 'N/A'} size="small" variant="outlined" />
                     </Box>
                   </Box>
                   <Box>

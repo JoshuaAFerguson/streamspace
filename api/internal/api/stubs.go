@@ -675,45 +675,53 @@ func (h *Handler) UpdateConfig(c *gin.Context) {
 func (h *Handler) GetMetrics(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// Get cluster nodes
-	nodes, err := h.k8sClient.GetNodes(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cluster nodes"})
-		return
-	}
-
-	// Count ready nodes
+	// Initialize default values
+	totalNodes := 0
 	readyNodes := 0
 	totalCPU := int64(0)
 	totalMemory := int64(0)
 	usedPods := 0
 	totalPods := 0
 
-	for _, node := range nodes.Items {
-		// Check if node is ready
-		for _, condition := range node.Status.Conditions {
-			if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
-				readyNodes++
-				break
+	// Get cluster nodes (handle nil k8sClient gracefully)
+	if h.k8sClient != nil {
+		nodes, err := h.k8sClient.GetNodes(ctx)
+		if err != nil {
+			log.Printf("Failed to get cluster nodes: %v", err)
+			// Continue with default values instead of failing
+		} else {
+			totalNodes = len(nodes.Items)
+
+			// Count ready nodes and sum resources
+			for _, node := range nodes.Items {
+				// Check if node is ready
+				for _, condition := range node.Status.Conditions {
+					if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+						readyNodes++
+						break
+					}
+				}
+
+				// Sum up allocatable resources
+				if cpu, ok := node.Status.Allocatable[corev1.ResourceCPU]; ok {
+					totalCPU += cpu.MilliValue()
+				}
+				if memory, ok := node.Status.Allocatable[corev1.ResourceMemory]; ok {
+					totalMemory += memory.Value()
+				}
+				if pods, ok := node.Status.Allocatable[corev1.ResourcePods]; ok {
+					totalPods += int(pods.Value())
+				}
+			}
+
+			// Get all pods to calculate resource usage
+			pods, err := h.k8sClient.GetPods(ctx, h.namespace)
+			if err == nil {
+				usedPods = len(pods.Items)
 			}
 		}
-
-		// Sum up allocatable resources
-		if cpu, ok := node.Status.Allocatable[corev1.ResourceCPU]; ok {
-			totalCPU += cpu.MilliValue()
-		}
-		if memory, ok := node.Status.Allocatable[corev1.ResourceMemory]; ok {
-			totalMemory += memory.Value()
-		}
-		if pods, ok := node.Status.Allocatable[corev1.ResourcePods]; ok {
-			totalPods += int(pods.Value())
-		}
-	}
-
-	// Get all pods to calculate resource usage
-	pods, err := h.k8sClient.GetPods(ctx, h.namespace)
-	if err == nil {
-		usedPods = len(pods.Items)
+	} else {
+		log.Printf("Warning: k8sClient is nil, returning metrics without cluster data")
 	}
 
 	// Get session counts from database
@@ -784,9 +792,9 @@ func (h *Handler) GetMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"cluster": gin.H{
 			"nodes": gin.H{
-				"total":    len(nodes.Items),
+				"total":    totalNodes,
 				"ready":    readyNodes,
-				"notReady": len(nodes.Items) - readyNodes,
+				"notReady": totalNodes - readyNodes,
 			},
 			"sessions": gin.H{
 				"total":      sessionCounts.Total,
