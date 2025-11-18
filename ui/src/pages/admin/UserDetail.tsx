@@ -459,7 +459,7 @@ export default function UserDetail() {
               </Box>
               <Divider sx={{ mb: 2 }} />
 
-              {userGroups && userGroups.groups.length > 0 ? (
+              {userGroups?.groups && userGroups.groups.length > 0 ? (
                 <TableContainer component={Paper} variant="outlined">
                   <Table size="small">
                     <TableHead>
