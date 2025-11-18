@@ -40,6 +40,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -256,28 +257,32 @@ func (h *ApplicationHandler) InstallApplication(c *gin.Context) {
 
 	// Step 4: Create Kubernetes Template CRD
 	// This is REQUIRED for users to launch sessions - without it, session creation fails
-	if h.k8sClient != nil {
-		_, err = h.k8sClient.CreateTemplate(ctx, template)
-		if err != nil {
-			// "already exists" is OK - template may have been installed before
-			errStr := err.Error()
-			if strings.Contains(errStr, "already exists") {
-				log.Printf("K8s template %s already exists, continuing with installation", name)
-			} else {
-				// Any other error is fatal - fail the installation
-				log.Printf("Failed to create K8s template %s: %v", name, err)
-				c.JSON(http.StatusInternalServerError, ErrorResponse{
-					Error:   "Failed to create Kubernetes template",
-					Message: err.Error(),
-				})
-				return
-			}
+	if h.k8sClient == nil {
+		log.Printf("Error: k8sClient is nil, cannot create K8s template for %s", name)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error:   "Kubernetes client not configured",
+			Message: "Cannot create template: Kubernetes client is not available. Please check API server configuration.",
+		})
+		return
+	}
+
+	_, err = h.k8sClient.CreateTemplate(ctx, template)
+	if err != nil {
+		// "already exists" is OK - template may have been installed before
+		errStr := err.Error()
+		if strings.Contains(errStr, "already exists") {
+			log.Printf("K8s template %s already exists, continuing with installation", name)
 		} else {
-			log.Printf("Successfully created K8s template %s", name)
+			// Any other error is fatal - fail the installation
+			log.Printf("Failed to create K8s template %s: %v", name, err)
+			c.JSON(http.StatusInternalServerError, ErrorResponse{
+				Error:   "Failed to create Kubernetes template",
+				Message: fmt.Sprintf("Could not create template '%s': %v", name, err),
+			})
+			return
 		}
 	} else {
-		// k8sClient being nil is a configuration error - log warning
-		log.Printf("Warning: k8sClient is nil, cannot create K8s template for %s", name)
+		log.Printf("Successfully created K8s template %s", name)
 	}
 
 	// Step 5: Create database record in installed_applications table
