@@ -523,6 +523,16 @@ func (d *Database) Migrate() error {
 		VALUES ('admin', 100, '64000m', '256Gi', '1Ti')
 		ON CONFLICT (user_id) DO NOTHING`,
 
+		// Insert default all_users group that all users belong to
+		`INSERT INTO groups (id, name, display_name, description, type)
+		VALUES ('all-users', 'all_users', 'All Users', 'Default group containing all users', 'system')
+		ON CONFLICT (id) DO NOTHING`,
+
+		// Add admin user to all_users group
+		`INSERT INTO group_memberships (id, user_id, group_id, role, created_at)
+		VALUES ('admin-all-users', 'admin', 'all-users', 'member', NOW())
+		ON CONFLICT (user_id, group_id) DO NOTHING`,
+
 		// Insert default configuration values
 		`INSERT INTO configuration (key, value, category, description) VALUES
 			('ingress.domain', 'streamspace.local', 'ingress', 'Default ingress domain'),
