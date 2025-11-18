@@ -527,11 +527,12 @@ func (d *Database) Migrate() error {
 		// Insert default all_users group that all users belong to
 		`INSERT INTO groups (id, name, display_name, description, type)
 		VALUES ('all-users', 'all_users', 'All Users', 'Default group containing all users', 'system')
-		ON CONFLICT (id) DO NOTHING`,
+		ON CONFLICT (name) DO NOTHING`,
 
 		// Add admin user to all_users group
 		`INSERT INTO group_memberships (id, user_id, group_id, role, created_at)
-		VALUES ('admin-all-users', 'admin', 'all-users', 'member', NOW())
+		SELECT 'admin-all-users', 'admin', id, 'member', NOW()
+		FROM groups WHERE name = 'all_users'
 		ON CONFLICT (user_id, group_id) DO NOTHING`,
 
 		// Insert default configuration values
