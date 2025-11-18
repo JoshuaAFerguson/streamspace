@@ -163,10 +163,12 @@ func (a *ApplicationDB) GetApplication(ctx context.Context, appID string) (*mode
 		SELECT
 			ia.id, ia.catalog_template_id, ia.name, ia.display_name, ia.folder_path,
 			ia.enabled, ia.configuration, ia.created_by, ia.created_at, ia.updated_at,
-			ct.name as template_name, ct.display_name as template_display_name,
-			ct.description, ct.category, ct.app_type, ct.icon_url, ct.manifest
+			COALESCE(ct.name, '') as template_name, COALESCE(ct.display_name, ia.display_name) as template_display_name,
+			COALESCE(ct.description, '') as description, COALESCE(ct.category, '') as category,
+			COALESCE(ct.app_type, '') as app_type, COALESCE(ct.icon_url, '') as icon_url,
+			COALESCE(ct.manifest, '') as manifest
 		FROM installed_applications ia
-		JOIN catalog_templates ct ON ia.catalog_template_id = ct.id
+		LEFT JOIN catalog_templates ct ON ia.catalog_template_id = ct.id
 		WHERE ia.id = $1
 	`
 
@@ -197,10 +199,11 @@ func (a *ApplicationDB) ListApplications(ctx context.Context, enabledOnly bool) 
 		SELECT
 			ia.id, ia.catalog_template_id, ia.name, ia.display_name, ia.folder_path,
 			ia.enabled, ia.configuration, ia.created_by, ia.created_at, ia.updated_at,
-			ct.name as template_name, ct.display_name as template_display_name,
-			ct.description, ct.category, ct.app_type, ct.icon_url
+			COALESCE(ct.name, '') as template_name, COALESCE(ct.display_name, ia.display_name) as template_display_name,
+			COALESCE(ct.description, '') as description, COALESCE(ct.category, '') as category,
+			COALESCE(ct.app_type, '') as app_type, COALESCE(ct.icon_url, '') as icon_url
 		FROM installed_applications ia
-		JOIN catalog_templates ct ON ia.catalog_template_id = ct.id
+		LEFT JOIN catalog_templates ct ON ia.catalog_template_id = ct.id
 		WHERE 1=1
 	`
 
@@ -427,10 +430,11 @@ func (a *ApplicationDB) GetUserAccessibleApplications(ctx context.Context, userI
 		SELECT DISTINCT
 			ia.id, ia.catalog_template_id, ia.name, ia.display_name, ia.folder_path,
 			ia.enabled, ia.configuration, ia.created_by, ia.created_at, ia.updated_at,
-			ct.name as template_name, ct.display_name as template_display_name,
-			ct.description, ct.category, ct.app_type, ct.icon_url
+			COALESCE(ct.name, '') as template_name, COALESCE(ct.display_name, ia.display_name) as template_display_name,
+			COALESCE(ct.description, '') as description, COALESCE(ct.category, '') as category,
+			COALESCE(ct.app_type, '') as app_type, COALESCE(ct.icon_url, '') as icon_url
 		FROM installed_applications ia
-		JOIN catalog_templates ct ON ia.catalog_template_id = ct.id
+		LEFT JOIN catalog_templates ct ON ia.catalog_template_id = ct.id
 		WHERE ia.enabled = true
 		AND (
 			ia.created_by = $1
