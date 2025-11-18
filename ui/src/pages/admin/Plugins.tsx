@@ -282,7 +282,7 @@ export default function AdminPlugins() {
   const loadCatalogPlugins = async () => {
     setCatalogLoading(true);
     try {
-      const response = await api.browseCatalog({ search: catalogSearch, limit: 50 });
+      const response = await api.browsePlugins({ search: catalogSearch, limit: 50 });
       // Filter out already installed plugins
       const installedNames = new Set(plugins.map(p => p.name));
       const availablePlugins = response.plugins.filter(p => !installedNames.has(p.name));

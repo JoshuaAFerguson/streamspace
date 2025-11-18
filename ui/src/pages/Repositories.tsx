@@ -19,6 +19,9 @@ import {
   TextField,
   CircularProgress,
   Alert,
+  Grid,
+  Card,
+  CardContent,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -33,6 +36,7 @@ import {
   useSyncRepository,
   useDeleteRepository,
   useSyncAllRepositories,
+  useInstalledPlugins,
 } from '../hooks/useApi';
 
 /**
@@ -74,10 +78,15 @@ import {
  */
 export default function Repositories() {
   const { data: repositories = [], isLoading, refetch } = useRepositories();
+  const { data: installedPlugins = [] } = useInstalledPlugins();
   const addRepository = useAddRepository();
   const syncRepository = useSyncRepository();
   const deleteRepository = useDeleteRepository();
   const syncAll = useSyncAllRepositories();
+
+  // Calculate stats
+  const totalTemplates = repositories.reduce((sum, repo) => sum + (repo.templateCount || 0), 0);
+  const totalPlugins = Array.isArray(installedPlugins) ? installedPlugins.length : 0;
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -165,6 +174,40 @@ export default function Repositories() {
             </Button>
           </Box>
         </Box>
+
+        {/* Stats Cards */}
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          <Grid item xs={12} sm={4}>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Total Repositories
+                </Typography>
+                <Typography variant="h4">{repositories.length}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Total Templates
+                </Typography>
+                <Typography variant="h4">{totalTemplates}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Total Plugins
+                </Typography>
+                <Typography variant="h4">{totalPlugins}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
 
         {repositories.length === 0 ? (
           <Alert severity="info">
