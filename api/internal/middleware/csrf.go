@@ -72,6 +72,10 @@ var (
 		tokens: make(map[string]time.Time),
 	}
 	csrfCleanupOnce sync.Once
+
+	// tokenGenerationMu protects against race conditions when multiple
+	// GET requests arrive simultaneously and try to generate new tokens
+	tokenGenerationMu sync.Mutex
 )
 
 // generateCSRFToken generates a cryptographically secure random CSRF token.
@@ -441,11 +445,17 @@ func CSRFProtection() gin.HandlerFunc {
 		// WHY EXEMPT: Safe methods are idempotent and read-only by HTTP specification.
 		// They should not have side effects, so CSRF is not a risk.
 		if c.Request.Method == "GET" || c.Request.Method == "HEAD" || c.Request.Method == "OPTIONS" {
+			// Use mutex to prevent race conditions with parallel GET requests
+			// Without this, multiple simultaneous GETs could each generate a new token,
+			// causing the cookie and JavaScript to have different tokens
+			tokenGenerationMu.Lock()
+
 			// Check if client already has a valid token
 			// Reuse existing token to prevent token churn that causes mismatches
 			existingToken, err := c.Cookie(CSRFCookieName)
 			if err == nil && existingToken != "" && globalCSRFStore.validateToken(existingToken) {
 				// Existing token is still valid, send it back in header
+				tokenGenerationMu.Unlock()
 				c.Header(CSRFTokenHeader, existingToken)
 				c.Next()
 				return
@@ -458,6 +468,7 @@ func CSRFProtection() gin.HandlerFunc {
 				// CRITICAL ERROR: Cannot generate secure random
 				// This indicates serious system issues (no entropy)
 				// Do NOT proceed without CSRF protection
+				tokenGenerationMu.Unlock()
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 					"error": "Failed to generate CSRF token",
 				})
@@ -497,6 +508,9 @@ func CSRFProtection() gin.HandlerFunc {
 				secureCookie, // Secure: HTTPS-only in production, HTTP allowed in debug
 				true,         // HttpOnly: JavaScript cannot access (XSS protection)
 			)
+
+			// Release lock after setting cookie so subsequent parallel requests use this token
+			tokenGenerationMu.Unlock()
 
 			// Continue to next handler
 			c.Next()
