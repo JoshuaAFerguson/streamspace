@@ -227,6 +227,56 @@ export interface PluginRating {
   updatedAt: string;
 }
 
+// Installed Application Types
+export interface InstalledApplication {
+  id: string;
+  catalogTemplateId: number;
+  name: string;
+  displayName: string;
+  folderPath: string;
+  enabled: boolean;
+  configuration?: Record<string, any>;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  templateName?: string;
+  templateDisplayName?: string;
+  description?: string;
+  category?: string;
+  appType?: string;
+  icon?: string;
+  manifest?: string;
+  groups?: ApplicationGroupAccess[];
+}
+
+export interface ApplicationGroupAccess {
+  id: string;
+  applicationId: string;
+  groupId: string;
+  accessLevel: 'view' | 'launch' | 'admin';
+  createdAt: string;
+  groupName?: string;
+  groupDisplayName?: string;
+}
+
+export interface InstallApplicationRequest {
+  catalogTemplateId: number;
+  displayName?: string;
+  configuration?: Record<string, any>;
+  groupIds?: string[];
+}
+
+export interface UpdateApplicationRequest {
+  displayName?: string;
+  enabled?: boolean;
+  configuration?: Record<string, any>;
+}
+
+export interface AddGroupAccessRequest {
+  groupId: string;
+  accessLevel?: 'view' | 'launch' | 'admin';
+}
+
 export interface CreateSessionRequest {
   user: string;
   template: string;
@@ -1074,6 +1124,67 @@ class APIClient {
 
   async installCatalogTemplate(id: number): Promise<void> {
     await this.client.post(`/catalog/templates/${id}/install`);
+  }
+
+  // ============================================================================
+  // Installed Applications Management
+  // ============================================================================
+
+  async listApplications(enabledOnly?: boolean): Promise<{ applications: InstalledApplication[]; total: number }> {
+    const params: Record<string, string> = {};
+    if (enabledOnly) params.enabled = 'true';
+    const response = await this.client.get<{ applications: InstalledApplication[]; total: number }>('/applications', { params });
+    return response.data;
+  }
+
+  async installApplication(request: InstallApplicationRequest): Promise<InstalledApplication> {
+    const response = await this.client.post<InstalledApplication>('/applications', request);
+    return response.data;
+  }
+
+  async getApplication(id: string): Promise<InstalledApplication> {
+    const response = await this.client.get<InstalledApplication>(`/applications/${id}`);
+    return response.data;
+  }
+
+  async updateApplication(id: string, request: UpdateApplicationRequest): Promise<InstalledApplication> {
+    const response = await this.client.put<InstalledApplication>(`/applications/${id}`, request);
+    return response.data;
+  }
+
+  async deleteApplication(id: string): Promise<void> {
+    await this.client.delete(`/applications/${id}`);
+  }
+
+  async setApplicationEnabled(id: string, enabled: boolean): Promise<void> {
+    await this.client.put(`/applications/${id}/enabled`, { enabled });
+  }
+
+  async getApplicationGroups(id: string): Promise<{ groups: ApplicationGroupAccess[]; total: number }> {
+    const response = await this.client.get<{ groups: ApplicationGroupAccess[]; total: number }>(`/applications/${id}/groups`);
+    return response.data;
+  }
+
+  async addApplicationGroupAccess(id: string, request: AddGroupAccessRequest): Promise<void> {
+    await this.client.post(`/applications/${id}/groups`, request);
+  }
+
+  async updateApplicationGroupAccess(id: string, groupId: string, accessLevel: string): Promise<void> {
+    await this.client.put(`/applications/${id}/groups/${groupId}`, { accessLevel });
+  }
+
+  async removeApplicationGroupAccess(id: string, groupId: string): Promise<void> {
+    await this.client.delete(`/applications/${id}/groups/${groupId}`);
+  }
+
+  async getApplicationTemplateConfig(id: string): Promise<{ config: any }> {
+    const response = await this.client.get<{ config: any }>(`/applications/${id}/config`);
+    return response.data;
+  }
+
+  async getUserApplications(): Promise<{ applications: InstalledApplication[]; total: number }> {
+    const response = await this.client.get<{ applications: InstalledApplication[]; total: number }>('/applications/user');
+    return response.data;
   }
 
   // ============================================================================
