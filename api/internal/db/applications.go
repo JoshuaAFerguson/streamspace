@@ -229,9 +229,10 @@ func (a *ApplicationDB) ListApplications(ctx context.Context, enabledOnly bool) 
 	for rows.Next() {
 		app := &models.InstalledApplication{}
 		var configJSON []byte
+		var catalogTemplateID sql.NullInt64
 
 		err := rows.Scan(
-			&app.ID, &app.CatalogTemplateID, &app.Name, &app.DisplayName, &app.FolderPath,
+			&app.ID, &catalogTemplateID, &app.Name, &app.DisplayName, &app.FolderPath,
 			&app.Enabled, &configJSON, &app.CreatedBy, &app.CreatedAt, &app.UpdatedAt,
 			&app.TemplateName, &app.TemplateDisplayName, &app.Description,
 			&app.Category, &app.AppType, &app.IconURL,
@@ -239,6 +240,11 @@ func (a *ApplicationDB) ListApplications(ctx context.Context, enabledOnly bool) 
 		if err != nil {
 			fmt.Printf("Error scanning application row: %v\n", err)
 			continue
+		}
+
+		// Handle NULL catalog_template_id
+		if catalogTemplateID.Valid {
+			app.CatalogTemplateID = int(catalogTemplateID.Int64)
 		}
 
 		// Unmarshal configuration
@@ -462,9 +468,10 @@ func (a *ApplicationDB) GetUserAccessibleApplications(ctx context.Context, userI
 	for rows.Next() {
 		app := &models.InstalledApplication{}
 		var configJSON []byte
+		var catalogTemplateID sql.NullInt64
 
 		err := rows.Scan(
-			&app.ID, &app.CatalogTemplateID, &app.Name, &app.DisplayName, &app.FolderPath,
+			&app.ID, &catalogTemplateID, &app.Name, &app.DisplayName, &app.FolderPath,
 			&app.Enabled, &configJSON, &app.CreatedBy, &app.CreatedAt, &app.UpdatedAt,
 			&app.TemplateName, &app.TemplateDisplayName, &app.Description,
 			&app.Category, &app.AppType, &app.IconURL,
@@ -472,6 +479,11 @@ func (a *ApplicationDB) GetUserAccessibleApplications(ctx context.Context, userI
 		if err != nil {
 			fmt.Printf("Error scanning application row: %v\n", err)
 			continue
+		}
+
+		// Handle NULL catalog_template_id
+		if catalogTemplateID.Valid {
+			app.CatalogTemplateID = int(catalogTemplateID.Int64)
 		}
 
 		// Unmarshal configuration
