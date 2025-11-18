@@ -1,16 +1,15 @@
 import { useState, useRef, useCallback } from 'react';
-import { Grid, Paper, Typography, Box, Card, CardContent, Chip } from '@mui/material';
+import { Grid, Paper, Typography, Box, Card, CardContent, Chip, Avatar, Button, CircularProgress } from '@mui/material';
 import {
   Computer as ComputerIcon,
   Apps as AppsIcon,
   Folder as FolderIcon,
   Timeline as TimelineIcon,
-  SignalWifiStatusbar4Bar as ConnectedIcon,
-  SignalWifiStatusbarConnectedNoInternet4 as DisconnectedIcon,
+  PlayArrow as PlayArrowIcon,
 } from '@mui/icons-material';
 import Layout from '../components/Layout';
 import QuotaCard from '../components/QuotaCard';
-import { useTemplates, useRepositories } from '../hooks/useApi';
+import { useTemplates, useRepositories, useUserApplications } from '../hooks/useApi';
 import { useMetricsWebSocket, useSessionsWebSocket } from '../hooks/useWebSocket';
 import { useUserStore } from '../store/userStore';
 import type { Session } from '../lib/api';
@@ -74,6 +73,7 @@ export default function Dashboard() {
 
   const { data: templates = [], isLoading: templatesLoading } = useTemplates();
   const { data: repositories = [], isLoading: reposLoading } = useRepositories();
+  const { data: applications = [], isLoading: applicationsLoading } = useUserApplications();
 
   // Real-time sessions updates via WebSocket with notifications
   // BUG FIX: Remove username from dependencies to prevent reconnection loop
@@ -123,11 +123,11 @@ export default function Dashboard() {
       loading: false,
     },
     {
-      title: 'Available Templates',
-      value: templates.length,
+      title: 'Available Apps',
+      value: applications.length,
       icon: <AppsIcon sx={{ fontSize: 40 }} />,
       color: '#f50057',
-      loading: templatesLoading,
+      loading: applicationsLoading,
     },
     {
       title: 'Repositories',
@@ -217,6 +217,82 @@ export default function Dashboard() {
                   <Chip label={sessions.length} color="primary" size="small" />
                 </Box>
               </Box>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                Available Applications
+              </Typography>
+              {applicationsLoading ? (
+                <Box display="flex" justifyContent="center" py={4}>
+                  <CircularProgress />
+                </Box>
+              ) : applications.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No applications available. Contact your administrator to get access.
+                </Typography>
+              ) : (
+                <Grid container spacing={2}>
+                  {applications.map((app) => (
+                    <Grid item xs={12} sm={6} md={4} lg={3} key={app.id}>
+                      <Card
+                        sx={{
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          '&:hover': { boxShadow: 4 },
+                        }}
+                      >
+                        <CardContent sx={{ flexGrow: 1 }}>
+                          <Box display="flex" alignItems="center" gap={2} mb={1}>
+                            <Avatar
+                              src={app.icon}
+                              sx={{ width: 40, height: 40 }}
+                            >
+                              {app.displayName?.charAt(0) || 'A'}
+                            </Avatar>
+                            <Box flex={1} minWidth={0}>
+                              <Typography variant="subtitle2" noWrap fontWeight={600}>
+                                {app.displayName}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" noWrap>
+                                {app.category}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              minHeight: 40,
+                            }}
+                          >
+                            {app.description || 'No description'}
+                          </Typography>
+                        </CardContent>
+                        <Box sx={{ p: 1, pt: 0 }}>
+                          <Button
+                            fullWidth
+                            variant="contained"
+                            size="small"
+                            startIcon={<PlayArrowIcon />}
+                            href={`/sessions/new?template=${app.templateName}`}
+                          >
+                            Launch
+                          </Button>
+                        </Box>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              )}
             </Paper>
           </Grid>
 
