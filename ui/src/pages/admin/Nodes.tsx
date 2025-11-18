@@ -397,7 +397,7 @@ export default function AdminNodes() {
   };
 
   const isNodeSchedulable = (node: NodeInfo) => {
-    return !node.taints.some(t => t.effect === 'NoSchedule' || t.effect === 'NoExecute');
+    return !node.taints?.some(t => t.effect === 'NoSchedule' || t.effect === 'NoExecute');
   };
 
   if (loading) {
@@ -537,6 +537,18 @@ export default function AdminNodes() {
           </Grid>
         )}
 
+        {nodes.length === 0 && !loading && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            No nodes found. This could mean:
+            <ul style={{ margin: '8px 0' }}>
+              <li>The Kubernetes cluster is not accessible</li>
+              <li>The API server cannot connect to the cluster</li>
+              <li>No nodes have been registered yet</li>
+            </ul>
+            Check that your kubeconfig is properly configured and the cluster is running.
+          </Alert>
+        )}
+
         <Grid container spacing={3}>
           {nodes.map((node) => (
             <Grid item xs={12} md={6} key={node.name}>
@@ -551,7 +563,7 @@ export default function AdminNodes() {
                         </Typography>
                       </Box>
                       <Typography variant="caption" color="text.secondary">
-                        {node.info.osImage} • {node.info.kubeletVersion}
+                        {node.info?.osImage ?? 'Unknown OS'} • {node.info?.kubeletVersion ?? 'Unknown version'}
                       </Typography>
                       {node.provider && (
                         <Typography variant="caption" color="text.secondary" display="block">
@@ -579,7 +591,7 @@ export default function AdminNodes() {
                         CPU
                       </Typography>
                       <Typography variant="body2">
-                        {node.allocatable.cpu} cores
+                        {node.allocatable?.cpu ?? 'N/A'} cores
                       </Typography>
                       {node.usage && (
                         <Typography variant="caption" color="text.secondary">
@@ -592,7 +604,7 @@ export default function AdminNodes() {
                         Memory
                       </Typography>
                       <Typography variant="body2">
-                        {node.allocatable.memory}
+                        {node.allocatable?.memory ?? 'N/A'}
                       </Typography>
                       {node.usage && (
                         <Typography variant="caption" color="text.secondary">
@@ -605,10 +617,10 @@ export default function AdminNodes() {
                         Pods
                       </Typography>
                       <Typography variant="body2">
-                        {node.pods} / {node.allocatable.pods}
+                        {node.pods ?? 0} / {node.allocatable?.pods ?? 'N/A'}
                       </Typography>
                     </Grid>
-                    {node.allocatable['nvidia.com/gpu'] && (
+                    {node.allocatable?.['nvidia.com/gpu'] && (
                       <Grid item xs={6}>
                         <Typography variant="caption" color="text.secondary">
                           GPUs
@@ -629,7 +641,7 @@ export default function AdminNodes() {
                         setLabelDialogOpen(true);
                       }}
                     >
-                      Labels ({Object.keys(node.labels).length})
+                      Labels ({Object.keys(node.labels ?? {}).length})
                     </Button>
                     <Button
                       size="small"
@@ -639,7 +651,7 @@ export default function AdminNodes() {
                         setTaintDialogOpen(true);
                       }}
                     >
-                      Taints ({node.taints.length})
+                      Taints ({node.taints?.length ?? 0})
                     </Button>
                   </Box>
 
@@ -690,7 +702,7 @@ export default function AdminNodes() {
                 Current Labels
               </Typography>
               <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                {selectedNode && Object.entries(selectedNode.labels).map(([key, value]) => (
+                {selectedNode && Object.entries(selectedNode.labels ?? {}).map(([key, value]) => (
                   <Chip
                     key={key}
                     label={`${key}=${value}`}
@@ -737,7 +749,7 @@ export default function AdminNodes() {
                 Current Taints
               </Typography>
               <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                {selectedNode?.taints.map((taint) => (
+                {selectedNode?.taints?.map((taint) => (
                   <Chip
                     key={taint.key}
                     label={`${taint.key}=${taint.value}:${taint.effect}`}
