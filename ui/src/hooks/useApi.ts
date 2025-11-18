@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api, { CreateSessionRequest, CatalogFilters } from '../lib/api';
+import api, { CreateSessionRequest, CatalogFilters, InstallApplicationRequest, UpdateApplicationRequest, AddGroupAccessRequest } from '../lib/api';
 
 // ============================================================================
 // Session Hooks
@@ -293,6 +293,116 @@ export function useBrowsePlugins(filters?: CatalogFilters) {
     queryKey: ['browse-plugins', filters],
     queryFn: () => api.browsePlugins(filters),
     // Polling disabled - catalog data is relatively static
+  });
+}
+
+// ============================================================================
+// Installed Applications Hooks
+// ============================================================================
+
+export function useApplications(enabledOnly?: boolean) {
+  return useQuery({
+    queryKey: ['applications', enabledOnly],
+    queryFn: () => api.listApplications(enabledOnly),
+    select: (data) => data.applications,
+  });
+}
+
+export function useApplication(id: string) {
+  return useQuery({
+    queryKey: ['application', id],
+    queryFn: () => api.getApplication(id),
+    enabled: !!id,
+  });
+}
+
+export function useUserApplications() {
+  return useQuery({
+    queryKey: ['user-applications'],
+    queryFn: () => api.getUserApplications(),
+    select: (data) => data.applications,
+  });
+}
+
+export function useInstallApplication() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: InstallApplicationRequest) => api.installApplication(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+    },
+  });
+}
+
+export function useUpdateApplication() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateApplicationRequest }) =>
+      api.updateApplication(id, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+      queryClient.invalidateQueries({ queryKey: ['application', variables.id] });
+    },
+  });
+}
+
+export function useDeleteApplication() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => api.deleteApplication(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+    },
+  });
+}
+
+export function useSetApplicationEnabled() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api.setApplicationEnabled(id, enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['applications'] });
+    },
+  });
+}
+
+export function useApplicationGroups(id: string) {
+  return useQuery({
+    queryKey: ['application-groups', id],
+    queryFn: () => api.getApplicationGroups(id),
+    select: (data) => data.groups,
+    enabled: !!id,
+  });
+}
+
+export function useAddApplicationGroupAccess() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: AddGroupAccessRequest }) =>
+      api.addApplicationGroupAccess(id, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['application-groups', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['application', variables.id] });
+    },
+  });
+}
+
+export function useRemoveApplicationGroupAccess() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, groupId }: { id: string; groupId: string }) =>
+      api.removeApplicationGroupAccess(id, groupId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['application-groups', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['application', variables.id] });
+    },
   });
 }
 

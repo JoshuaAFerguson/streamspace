@@ -34,7 +34,7 @@ const SessionViewer = lazy(() => import('./pages/SessionViewer'));
 const UserSettings = lazy(() => import('./pages/UserSettings'));
 
 // Admin Content Management Pages (moved from user pages)
-const EnhancedCatalog = lazy(() => import('./pages/EnhancedCatalog'));
+const Applications = lazy(() => import('./pages/Applications'));
 const Scheduling = lazy(() => import('./pages/Scheduling'));
 const SecuritySettings = lazy(() => import('./pages/SecuritySettings'));
 const EnhancedRepositories = lazy(() => import('./pages/EnhancedRepositories'));
@@ -337,10 +337,10 @@ function App() {
 
             {/* Admin Content Management Routes */}
             <Route
-              path="/admin/templates"
+              path="/admin/applications"
               element={
                 <AdminRoute>
-                  <EnhancedCatalog />
+                  <Applications />
                 </AdminRoute>
               }
             />
