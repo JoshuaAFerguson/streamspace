@@ -95,24 +95,22 @@ func Gzip(level int) gin.HandlerFunc {
 			return
 		}
 
-		// Get a gzip writer from the pool
-		gz := gzipWriterPool.Get().(*gzip.Writer)
-		defer gzipWriterPool.Put(gz)
+		var gz *gzip.Writer
+		var poolWriter *gzip.Writer
 
-		// Reset the writer for this response
-		gz.Reset(c.Writer)
-		defer gz.Close()
-
-		// Set compression level
-		if level != DefaultCompression {
-			gz.Close() // Close the default writer
+		if level == DefaultCompression {
+			// Use pooled writer for default compression level
+			poolWriter = gzipWriterPool.Get().(*gzip.Writer)
+			poolWriter.Reset(c.Writer)
+			gz = poolWriter
+		} else {
+			// Create new writer with specific compression level
 			var err error
 			gz, err = gzip.NewWriterLevel(c.Writer, level)
 			if err != nil {
 				c.Next()
 				return
 			}
-			defer gz.Close()
 		}
 
 		// Set response headers
@@ -128,8 +126,13 @@ func Gzip(level int) gin.HandlerFunc {
 		// Process the request
 		c.Next()
 
-		// Ensure all data is written
-		gz.Flush()
+		// Ensure all data is written and close the writer
+		gz.Close()
+
+		// Return pooled writer if used
+		if poolWriter != nil {
+			gzipWriterPool.Put(poolWriter)
+		}
 	}
 }
 
