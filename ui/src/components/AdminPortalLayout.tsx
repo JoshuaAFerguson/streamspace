@@ -123,7 +123,7 @@ function AdminPortalLayout({ children }: AdminPortalLayoutProps) {
       title: 'Content Management',
       items: [
         { text: 'Template Catalog', icon: <AppsIcon />, path: '/admin/templates' },
-        { text: 'Plugin Management', icon: <ExtensionIcon />, path: '/admin/plugins' },
+        { text: 'Plugins', icon: <ExtensionIcon />, path: '/admin/plugins' },
         { text: 'Repositories', icon: <FolderIcon />, path: '/admin/repositories' },
       ],
     },

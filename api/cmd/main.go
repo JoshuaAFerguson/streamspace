@@ -36,6 +36,7 @@ func main() {
 	dbPassword := getEnv("DB_PASSWORD", "streamspace")
 	dbName := getEnv("DB_NAME", "streamspace")
 	dbSSLMode := getEnv("DB_SSL_MODE", "disable") // SECURITY: Should be "require" in production
+	pluginDir := getEnv("PLUGIN_DIR", "./plugins")
 
 	log.Println("Starting StreamSpace API Server...")
 
@@ -241,7 +242,7 @@ func main() {
 	activityHandler := handlers.NewActivityHandler(k8sClient, activityTracker)
 	catalogHandler := handlers.NewCatalogHandler(database)
 	sharingHandler := handlers.NewSharingHandler(database)
-	pluginHandler := handlers.NewPluginHandler(database)
+	pluginHandler := handlers.NewPluginHandler(database, pluginDir)
 	dashboardHandler := handlers.NewDashboardHandler(database, k8sClient)
 	sessionActivityHandler := handlers.NewSessionActivityHandler(database)
 	apiKeyHandler := handlers.NewAPIKeyHandler(database)

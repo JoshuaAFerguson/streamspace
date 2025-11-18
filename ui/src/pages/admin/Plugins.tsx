@@ -31,9 +31,14 @@ import {
   Info as InfoIcon,
   Extension as ExtensionIcon,
   Refresh as RefreshIcon,
+  Add as AddIcon,
+  Search as SearchIcon,
+  Star as StarIcon,
+  Download as DownloadIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import AdminPortalLayout from '../../components/AdminPortalLayout';
-import { api, type InstalledPlugin } from '../../lib/api';
+import { api, type InstalledPlugin, type CatalogPlugin } from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { usePluginEvents } from '../../hooks/useEnterpriseWebSocket';
 import { useNotificationQueue } from '../../components/NotificationQueue';
@@ -117,6 +122,13 @@ export default function AdminPlugins() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [configJson, setConfigJson] = useState('');
+
+  // Add Plugin modal state
+  const [addPluginDialogOpen, setAddPluginDialogOpen] = useState(false);
+  const [catalogPlugins, setCatalogPlugins] = useState<CatalogPlugin[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [installingPluginId, setInstallingPluginId] = useState<number | null>(null);
 
   // WebSocket connection state
   const [wsConnected, setWsConnected] = useState(false);
@@ -262,6 +274,48 @@ export default function AdminPlugins() {
     }
   };
 
+  const handleOpenAddPlugin = async () => {
+    setAddPluginDialogOpen(true);
+    await loadCatalogPlugins();
+  };
+
+  const loadCatalogPlugins = async () => {
+    setCatalogLoading(true);
+    try {
+      const response = await api.browseCatalog({ search: catalogSearch, limit: 50 });
+      // Filter out already installed plugins
+      const installedNames = new Set(plugins.map(p => p.name));
+      const availablePlugins = response.plugins.filter(p => !installedNames.has(p.name));
+      setCatalogPlugins(availablePlugins);
+    } catch (error) {
+      console.error('Failed to load catalog:', error);
+      toast.error('Failed to load plugin catalog');
+      setCatalogPlugins([]);
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+
+  const handleInstallPlugin = async (plugin: CatalogPlugin) => {
+    setInstallingPluginId(plugin.id);
+    try {
+      await api.installPlugin(plugin.id);
+      toast.success(`${plugin.displayName || plugin.name} installed successfully`);
+      setAddPluginDialogOpen(false);
+      await loadPlugins();
+    } catch (error) {
+      console.error('Failed to install plugin:', error);
+      toast.error('Failed to install plugin');
+    } finally {
+      setInstallingPluginId(null);
+    }
+  };
+
+  const handleCatalogSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await loadCatalogPlugins();
+  };
+
   const stats = {
     total: plugins?.length ?? 0,
     enabled: plugins?.filter(p => p.enabled).length ?? 0,
@@ -283,7 +337,7 @@ export default function AdminPlugins() {
             <Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                  Plugin Management
+                  Plugins
                 </Typography>
 
                 {/* Enhanced WebSocket Connection Status */}
@@ -298,13 +352,22 @@ export default function AdminPlugins() {
                 Manage system-wide plugin installations
               </Typography>
             </Box>
-            <Button
-              startIcon={<RefreshIcon />}
-              onClick={loadPlugins}
-              disabled={loading}
-            >
-              Refresh
-            </Button>
+            <Box display="flex" gap={1}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleOpenAddPlugin}
+              >
+                Add Plugin
+              </Button>
+              <Button
+                startIcon={<RefreshIcon />}
+                onClick={loadPlugins}
+                disabled={loading}
+              >
+                Refresh
+              </Button>
+            </Box>
           </Box>
 
         {/* Stats Cards */}
@@ -557,6 +620,118 @@ export default function AdminPlugins() {
             <Button variant="contained" onClick={handleSaveConfig}>
               Save Configuration
             </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Add Plugin Dialog */}
+        <Dialog
+          open={addPluginDialogOpen}
+          onClose={() => setAddPluginDialogOpen(false)}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Typography variant="h6">Add Plugin</Typography>
+              <IconButton onClick={() => setAddPluginDialogOpen(false)} size="small">
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          </DialogTitle>
+          <DialogContent>
+            <Box mb={2}>
+              <form onSubmit={handleCatalogSearch}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Search plugins..."
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                  InputProps={{
+                    startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+                  }}
+                />
+              </form>
+            </Box>
+
+            {catalogLoading ? (
+              <Box display="flex" justifyContent="center" py={4}>
+                <Typography color="text.secondary">Loading plugins...</Typography>
+              </Box>
+            ) : catalogPlugins.length === 0 ? (
+              <Alert severity="info">
+                No available plugins found. All plugins may already be installed or the catalog is empty.
+              </Alert>
+            ) : (
+              <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                {catalogPlugins.map((plugin) => (
+                  <Paper
+                    key={plugin.id}
+                    sx={{
+                      p: 2,
+                      mb: 1,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      '&:hover': { bgcolor: 'action.hover' }
+                    }}
+                  >
+                    <Box flex={1}>
+                      <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                        <ExtensionIcon fontSize="small" color="primary" />
+                        <Typography variant="subtitle1" fontWeight={600}>
+                          {plugin.displayName || plugin.name}
+                        </Typography>
+                        <Chip
+                          label={plugin.pluginType || 'extension'}
+                          size="small"
+                          sx={{
+                            bgcolor: pluginTypeColors[plugin.pluginType || 'extension'] + '20',
+                            color: pluginTypeColors[plugin.pluginType || 'extension'],
+                          }}
+                        />
+                      </Box>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                        {plugin.description || 'No description available'}
+                      </Typography>
+                      <Box display="flex" alignItems="center" gap={2}>
+                        <Typography variant="caption" color="text.secondary">
+                          v{plugin.version}
+                        </Typography>
+                        {plugin.avgRating > 0 && (
+                          <Box display="flex" alignItems="center" gap={0.5}>
+                            <StarIcon fontSize="small" sx={{ color: '#FFB400', fontSize: 14 }} />
+                            <Typography variant="caption" color="text.secondary">
+                              {plugin.avgRating.toFixed(1)}
+                            </Typography>
+                          </Box>
+                        )}
+                        {plugin.installCount > 0 && (
+                          <Box display="flex" alignItems="center" gap={0.5}>
+                            <DownloadIcon fontSize="small" sx={{ fontSize: 14, color: 'text.secondary' }} />
+                            <Typography variant="caption" color="text.secondary">
+                              {plugin.installCount}
+                            </Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    </Box>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      startIcon={<AddIcon />}
+                      onClick={() => handleInstallPlugin(plugin)}
+                      disabled={installingPluginId === plugin.id}
+                    >
+                      {installingPluginId === plugin.id ? 'Installing...' : 'Install'}
+                    </Button>
+                  </Paper>
+                ))}
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setAddPluginDialogOpen(false)}>Close</Button>
           </DialogActions>
         </Dialog>
       </Box>

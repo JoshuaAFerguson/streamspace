@@ -66,10 +66,18 @@
 package handlers
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -89,22 +97,169 @@ import (
 type PluginHandler struct {
 	// db is the database connection for plugin queries and updates.
 	db *db.Database
+	// pluginDir is the directory where plugins are installed.
+	pluginDir string
 }
 
 // NewPluginHandler creates a new plugin handler.
 //
 // Parameters:
 //   - database: Database connection for plugin operations
+//   - pluginDir: Directory where plugins will be installed
 //
 // Returns:
 //   - Configured PluginHandler ready to register routes
 //
 // Example:
 //
-//	handler := NewPluginHandler(db)
+//	handler := NewPluginHandler(db, "/plugins")
 //	handler.RegisterRoutes(router.Group("/api"))
-func NewPluginHandler(database *db.Database) *PluginHandler {
-	return &PluginHandler{db: database}
+func NewPluginHandler(database *db.Database, pluginDir string) *PluginHandler {
+	// Create plugins directory if it doesn't exist
+	if pluginDir != "" {
+		if err := os.MkdirAll(pluginDir, 0755); err != nil {
+			log.Printf("[PluginHandler] Warning: Failed to create plugins directory: %v", err)
+		}
+	}
+	return &PluginHandler{
+		db:        database,
+		pluginDir: pluginDir,
+	}
+}
+
+// downloadPluginFromRepository downloads a plugin from its repository to the local plugins directory.
+// It attempts to download as a .tar.gz archive first, falling back to individual files.
+func (h *PluginHandler) downloadPluginFromRepository(pluginName string, repoURL string) error {
+	if h.pluginDir == "" {
+		log.Printf("[PluginHandler] No plugins directory configured, skipping download")
+		return nil
+	}
+
+	pluginPath := filepath.Join(h.pluginDir, pluginName)
+
+	// Create plugin directory
+	if err := os.MkdirAll(pluginPath, 0755); err != nil {
+		return fmt.Errorf("failed to create plugin directory: %w", err)
+	}
+
+	// Try to download as archive first
+	archiveURL := fmt.Sprintf("%s/%s/plugin.tar.gz", strings.TrimSuffix(repoURL, "/"), pluginName)
+	if err := h.downloadAndExtractArchive(archiveURL, pluginPath); err == nil {
+		log.Printf("[PluginHandler] Downloaded plugin %s as archive", pluginName)
+		return nil
+	}
+
+	// Fallback: download individual files
+	log.Printf("[PluginHandler] Archive not available, downloading individual files for %s", pluginName)
+	return h.downloadPluginFiles(pluginName, repoURL, pluginPath)
+}
+
+// downloadAndExtractArchive downloads a .tar.gz archive and extracts it to the target directory.
+func (h *PluginHandler) downloadAndExtractArchive(url string, targetDir string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download archive: status %d", resp.StatusCode)
+	}
+
+	gzr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return err
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		// Sanitize the path to prevent directory traversal
+		target := filepath.Join(targetDir, filepath.Clean(header.Name))
+		if !strings.HasPrefix(target, filepath.Clean(targetDir)+string(os.PathSeparator)) {
+			return fmt.Errorf("invalid file path in archive: %s", header.Name)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return err
+			}
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return err
+			}
+			f.Close()
+		}
+	}
+
+	return nil
+}
+
+// downloadPluginFiles downloads individual plugin files from the repository.
+func (h *PluginHandler) downloadPluginFiles(pluginName string, repoURL string, targetDir string) error {
+	// Files to download
+	files := []string{"plugin.json", "manifest.json", "README.md", "LICENSE"}
+
+	var downloadedAny bool
+	for _, file := range files {
+		fileURL := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(repoURL, "/"), pluginName, file)
+		targetPath := filepath.Join(targetDir, file)
+
+		if err := h.downloadFile(fileURL, targetPath); err != nil {
+			// Only log error for required files
+			if file == "plugin.json" || file == "manifest.json" {
+				log.Printf("[PluginHandler] Warning: Failed to download %s: %v", file, err)
+			}
+			continue
+		}
+		downloadedAny = true
+	}
+
+	if !downloadedAny {
+		return fmt.Errorf("failed to download any plugin files")
+	}
+
+	return nil
+}
+
+// downloadFile downloads a single file from URL to the target path.
+func (h *PluginHandler) downloadFile(url string, targetPath string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	out, err := os.Create(targetPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
 
 // RegisterRoutes registers plugin routes to the provided router group.
@@ -528,17 +683,19 @@ func (h *PluginHandler) InstallPlugin(c *gin.Context) {
 		req.Config = json.RawMessage("{}")
 	}
 
-	// Get catalog plugin details
+	// Get catalog plugin details with repository URL
 	var catalogPlugin models.CatalogPlugin
 	var manifestJSON []byte
+	var repoURL sql.NullString
 	err := h.db.DB().QueryRow(`
-		SELECT id, name, version, display_name, description, plugin_type, icon_url, manifest
-		FROM catalog_plugins
-		WHERE id = $1
+		SELECT cp.id, cp.name, cp.version, cp.display_name, cp.description, cp.plugin_type, cp.icon_url, cp.manifest, r.url
+		FROM catalog_plugins cp
+		LEFT JOIN repositories r ON cp.repository_id = r.id
+		WHERE cp.id = $1
 	`, catalogPluginID).Scan(
 		&catalogPlugin.ID, &catalogPlugin.Name, &catalogPlugin.Version,
 		&catalogPlugin.DisplayName, &catalogPlugin.Description,
-		&catalogPlugin.PluginType, &catalogPlugin.IconURL, &manifestJSON,
+		&catalogPlugin.PluginType, &catalogPlugin.IconURL, &manifestJSON, &repoURL,
 	)
 
 	if err == sql.ErrNoRows {
@@ -577,6 +734,17 @@ func (h *PluginHandler) InstallPlugin(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to install plugin", "details": err.Error()})
 		return
+	}
+
+	// Download plugin files to local plugins directory
+	if repoURL.Valid && h.pluginDir != "" {
+		go func() {
+			if err := h.downloadPluginFromRepository(catalogPlugin.Name, repoURL.String); err != nil {
+				log.Printf("[PluginHandler] Warning: Failed to download plugin files for %s: %v", catalogPlugin.Name, err)
+			} else {
+				log.Printf("[PluginHandler] Plugin files downloaded to %s/%s", h.pluginDir, catalogPlugin.Name)
+			}
+		}()
 	}
 
 	// Update install count
@@ -893,6 +1061,19 @@ func (h *PluginHandler) UpdateInstalledPlugin(c *gin.Context) {
 func (h *PluginHandler) UninstallPlugin(c *gin.Context) {
 	id := c.Param("id")
 
+	// Get plugin name before deleting (for file cleanup)
+	var pluginName string
+	err := h.db.DB().QueryRow(`SELECT name FROM installed_plugins WHERE id = $1`, id).Scan(&pluginName)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch plugin", "details": err.Error()})
+		return
+	}
+
+	// Delete from database
 	result, err := h.db.DB().Exec(`DELETE FROM installed_plugins WHERE id = $1`, id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to uninstall plugin", "details": err.Error()})
@@ -903,6 +1084,16 @@ func (h *PluginHandler) UninstallPlugin(c *gin.Context) {
 	if rows == 0 {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Plugin not found"})
 		return
+	}
+
+	// Remove plugin files from plugins directory
+	if h.pluginDir != "" && pluginName != "" {
+		pluginPath := filepath.Join(h.pluginDir, pluginName)
+		if err := os.RemoveAll(pluginPath); err != nil {
+			log.Printf("[PluginHandler] Warning: Failed to remove plugin files for %s: %v", pluginName, err)
+		} else {
+			log.Printf("[PluginHandler] Plugin files removed from %s", pluginPath)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Plugin uninstalled successfully"})
