@@ -137,7 +137,8 @@ func (g *GroupDB) CreateGroup(ctx context.Context, req *models.CreateGroupReques
 func (g *GroupDB) GetGroup(ctx context.Context, groupID string) (*models.Group, error) {
 	group := &models.Group{}
 	query := `
-		SELECT g.id, g.name, g.display_name, g.description, g.type, g.parent_id,
+		SELECT g.id, g.name, COALESCE(g.display_name, '') as display_name,
+		       COALESCE(g.description, '') as description, g.type, g.parent_id,
 		       g.created_at, g.updated_at, COUNT(gm.user_id) as member_count
 		FROM groups g
 		LEFT JOIN group_memberships gm ON g.id = gm.group_id
@@ -164,7 +165,8 @@ func (g *GroupDB) GetGroup(ctx context.Context, groupID string) (*models.Group, 
 func (g *GroupDB) GetGroupByName(ctx context.Context, name string) (*models.Group, error) {
 	group := &models.Group{}
 	query := `
-		SELECT g.id, g.name, g.display_name, g.description, g.type, g.parent_id,
+		SELECT g.id, g.name, COALESCE(g.display_name, '') as display_name,
+		       COALESCE(g.description, '') as description, g.type, g.parent_id,
 		       g.created_at, g.updated_at, COUNT(gm.user_id) as member_count
 		FROM groups g
 		LEFT JOIN group_memberships gm ON g.id = gm.group_id
@@ -190,7 +192,8 @@ func (g *GroupDB) GetGroupByName(ctx context.Context, name string) (*models.Grou
 // ListGroups retrieves all groups with optional filtering
 func (g *GroupDB) ListGroups(ctx context.Context, groupType string, parentID *string) ([]*models.Group, error) {
 	query := `
-		SELECT g.id, g.name, g.display_name, g.description, g.type, g.parent_id,
+		SELECT g.id, g.name, COALESCE(g.display_name, '') as display_name,
+		       COALESCE(g.description, '') as description, g.type, g.parent_id,
 		       g.created_at, g.updated_at, COUNT(gm.user_id) as member_count
 		FROM groups g
 		LEFT JOIN group_memberships gm ON g.id = gm.group_id
