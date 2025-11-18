@@ -237,6 +237,7 @@ func (a *ApplicationDB) ListApplications(ctx context.Context, enabledOnly bool) 
 			&app.Category, &app.AppType, &app.IconURL,
 		)
 		if err != nil {
+			fmt.Printf("Error scanning application row: %v\n", err)
 			continue
 		}
 
@@ -469,6 +470,7 @@ func (a *ApplicationDB) GetUserAccessibleApplications(ctx context.Context, userI
 			&app.Category, &app.AppType, &app.IconURL,
 		)
 		if err != nil {
+			fmt.Printf("Error scanning application row: %v\n", err)
 			continue
 		}
 
