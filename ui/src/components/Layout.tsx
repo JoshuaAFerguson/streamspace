@@ -18,23 +18,12 @@ import {
 } from '@mui/material';
 import {
   Menu as MenuIcon,
-  Dashboard as DashboardIcon,
   Computer as ComputerIcon,
   Share as ShareIcon,
   Apps as AppsIcon,
-  Folder as FolderIcon,
-  Extension as ExtensionIcon,
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   AdminPanelSettings as AdminIcon,
-  Storage as StorageIcon,
-  People as PeopleIcon,
-  Groups as GroupsIcon,
-  Schedule as ScheduleIcon,
-  Security as SecurityIcon,
-  Hub as IntegrationIcon,
-  TrendingUp as ScalingIcon,
-  Policy as ComplianceIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUserStore } from '../store/userStore';
@@ -105,8 +94,7 @@ function Layout({ children }: LayoutProps) {
     { text: 'My Applications', icon: <AppsIcon />, path: '/' },
     { text: 'My Sessions', icon: <ComputerIcon />, path: '/sessions' },
     { text: 'Shared with Me', icon: <ShareIcon />, path: '/shared-sessions' },
-    { text: 'Scheduling', icon: <ScheduleIcon />, path: '/scheduling' },
-    { text: 'Security', icon: <SecurityIcon />, path: '/security' },
+    { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
 
   const handleOpenAdminPortal = () => {

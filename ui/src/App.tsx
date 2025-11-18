@@ -17,11 +17,12 @@ const Sessions = lazy(() => import('./pages/Sessions'));
 const SharedSessions = lazy(() => import('./pages/SharedSessions'));
 const InvitationAccept = lazy(() => import('./pages/InvitationAccept'));
 const SessionViewer = lazy(() => import('./pages/SessionViewer'));
-const Scheduling = lazy(() => import('./pages/Scheduling'));
-const SecuritySettings = lazy(() => import('./pages/SecuritySettings'));
+const UserSettings = lazy(() => import('./pages/UserSettings'));
 
 // Admin Content Management Pages (moved from user pages)
 const EnhancedCatalog = lazy(() => import('./pages/EnhancedCatalog'));
+const Scheduling = lazy(() => import('./pages/Scheduling'));
+const SecuritySettings = lazy(() => import('./pages/SecuritySettings'));
 const EnhancedRepositories = lazy(() => import('./pages/EnhancedRepositories'));
 const PluginCatalog = lazy(() => import('./pages/PluginCatalog'));
 const InstalledPlugins = lazy(() => import('./pages/InstalledPlugins'));
@@ -180,18 +181,10 @@ function App() {
               }
             />
             <Route
-              path="/scheduling"
+              path="/settings"
               element={
                 <ProtectedRoute>
-                  <Scheduling />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/security"
-              element={
-                <ProtectedRoute>
-                  <SecuritySettings />
+                  <UserSettings />
                 </ProtectedRoute>
               }
             />
@@ -338,6 +331,22 @@ function App() {
               element={
                 <AdminRoute>
                   <InstalledPlugins />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/scheduling"
+              element={
+                <AdminRoute>
+                  <Scheduling />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/security"
+              element={
+                <AdminRoute>
+                  <SecuritySettings />
                 </AdminRoute>
               }
             />

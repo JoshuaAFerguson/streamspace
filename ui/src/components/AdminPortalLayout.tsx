@@ -31,6 +31,8 @@ import {
   Folder as FolderIcon,
   Logout as LogoutIcon,
   Dashboard as DashboardIcon,
+  Schedule as ScheduleIcon,
+  Security as SecurityIcon,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUserStore } from '../store/userStore';
@@ -139,6 +141,8 @@ function AdminPortalLayout({ children }: AdminPortalLayoutProps) {
         { text: 'Cluster Nodes', icon: <StorageIcon />, path: '/admin/nodes' },
         { text: 'Integrations', icon: <IntegrationIcon />, path: '/admin/integrations' },
         { text: 'Scaling', icon: <ScalingIcon />, path: '/admin/scaling' },
+        { text: 'Scheduling', icon: <ScheduleIcon />, path: '/admin/scheduling' },
+        { text: 'Security Settings', icon: <SecurityIcon />, path: '/admin/security' },
         { text: 'Compliance', icon: <ComplianceIcon />, path: '/admin/compliance' },
       ],
     },
