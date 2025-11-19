@@ -197,11 +197,15 @@ func CacheControl(maxAge time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// Never cache authentication/authorization endpoints
+		// Never cache authentication/authorization or user-specific endpoints
 		noCachePaths := []string{
-			"/api/v1/auth/",     // All auth endpoints (login, logout, setup, etc.)
-			"/api/v1/users/me",  // Current user info
-			"/api/v1/sessions/", // Session state (dynamic)
+			"/api/v1/auth/",             // All auth endpoints (login, logout, setup, etc.)
+			"/api/v1/users/me",          // Current user info
+			"/api/v1/sessions/",         // Session state (dynamic)
+			"/api/v1/applications/user", // User-specific installed applications
+			"/api/v1/dashboard/me",      // User dashboard
+			"/api/v1/notifications",     // User notifications
+			"/api/v1/preferences",       // User preferences
 		}
 
 		shouldCache := true
