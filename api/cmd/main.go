@@ -118,7 +118,7 @@ func main() {
 
 	// Initialize connection tracker
 	log.Println("Starting connection tracker...")
-	connTracker := tracker.NewConnectionTracker(database, k8sClient)
+	connTracker := tracker.NewConnectionTracker(database, k8sClient, eventPublisher, platform)
 	go connTracker.Start()
 	defer connTracker.Stop()
 
