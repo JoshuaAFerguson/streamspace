@@ -15,24 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// PluginResponse represents a plugin from the API
-type PluginResponse struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Version     string                 `json:"version"`
-	Description string                 `json:"description"`
-	Enabled     bool                   `json:"enabled"`
-	Installed   bool                   `json:"installed"`
-	Config      map[string]interface{} `json:"config"`
-	Status      string                 `json:"status"`
-}
-
-// PluginListResponse represents a list of plugins
-type PluginListResponse struct {
-	Plugins []PluginResponse `json:"plugins"`
-	Total   int              `json:"total"`
-}
-
 // TestPluginInstallation validates that plugins can be installed from marketplace (TC-001).
 //
 // Related Issue: Installation Status Never Updates

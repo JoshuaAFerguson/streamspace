@@ -7,9 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -17,38 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// SessionResponse represents the API response for a session
-type SessionResponse struct {
-	Name       string                 `json:"name"`
-	User       string                 `json:"user"`
-	Template   string                 `json:"template"`
-	Status     string                 `json:"status"`
-	URL        string                 `json:"url"`
-	Phase      string                 `json:"phase"`
-	Resources  map[string]interface{} `json:"resources"`
-	CreatedAt  string                 `json:"createdAt"`
-	ModifiedAt string                 `json:"modifiedAt"`
-}
-
-// SessionListResponse represents the API response for listing sessions
-type SessionListResponse struct {
-	Sessions []SessionResponse `json:"sessions"`
-	Total    int               `json:"total"`
-}
-
-// CreateSessionRequest represents the request body for creating a session
-type CreateSessionRequest struct {
-	User          string                 `json:"user,omitempty"`
-	Template      string                 `json:"template,omitempty"`
-	ApplicationID string                 `json:"applicationId,omitempty"`
-	Resources     map[string]interface{} `json:"resources,omitempty"`
-}
-
-// ConnectResponse represents the API response for session connection
-type ConnectResponse struct {
-	URL          string `json:"url"`
-	ConnectionID string `json:"connectionId"`
-}
+// Note: fmt was removed as it's not used in the simplified tests
 
 // TestSessionNameInAPIResponse validates that the API returns session name,
 // not database ID (TC-CORE-001).
@@ -67,10 +34,7 @@ func TestSessionNameInAPIResponse(t *testing.T) {
 	client := setupTestHTTPClient(t)
 	baseURL := getAPIBaseURL(t)
 
-	// Test data
-	sessionName := fmt.Sprintf("test-session-%d", time.Now().Unix())
-
-	// Step 1: Create a session with known name
+	// Step 1: Create a session
 	createReq := CreateSessionRequest{
 		User:     "testuser",
 		Template: "firefox-browser",
@@ -479,28 +443,4 @@ func TestHeartbeatValidatesConnection(t *testing.T) {
 	}
 
 	t.Log("Heartbeat validation test passed")
-}
-
-// Helper functions
-
-func setupTestHTTPClient(t *testing.T) *http.Client {
-	t.Helper()
-	return &http.Client{
-		Timeout: 30 * time.Second,
-	}
-}
-
-func getAPIBaseURL(t *testing.T) string {
-	t.Helper()
-	// Can be overridden by environment variable
-	baseURL := "http://localhost:8080"
-	// TODO: Read from environment or config
-	return baseURL
-}
-
-func addAuthHeader(t *testing.T, req *http.Request) {
-	t.Helper()
-	// TODO: Implement proper auth token retrieval
-	// For now, use a test token or basic auth
-	req.Header.Set("Authorization", "Bearer test-token")
 }
