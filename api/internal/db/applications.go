@@ -157,13 +157,13 @@ func (a *ApplicationDB) InstallApplication(ctx context.Context, req *models.Inst
 // GetApplication retrieves an installed application by ID
 func (a *ApplicationDB) GetApplication(ctx context.Context, appID string) (*models.InstalledApplication, error) {
 	app := &models.InstalledApplication{}
-	var configJSON sql.NullString
+	var configJSON string
 	var catalogTemplateID sql.NullInt64
 
 	query := `
 		SELECT
 			ia.id, ia.catalog_template_id, ia.name, ia.display_name, ia.folder_path,
-			ia.enabled, ia.configuration, ia.created_by, ia.created_at, ia.updated_at,
+			ia.enabled, COALESCE(ia.configuration::text, '{}'), ia.created_by, ia.created_at, ia.updated_at,
 			COALESCE(ct.name, '') as template_name, COALESCE(ct.display_name, ia.display_name) as template_display_name,
 			COALESCE(ct.description, '') as description, COALESCE(ct.category, '') as category,
 			COALESCE(ct.app_type, '') as app_type, COALESCE(ct.icon_url, '') as icon_url,
@@ -192,8 +192,8 @@ func (a *ApplicationDB) GetApplication(ctx context.Context, appID string) (*mode
 	}
 
 	// Unmarshal configuration from JSONB string
-	if configJSON.Valid && len(configJSON.String) > 0 {
-		json.Unmarshal([]byte(configJSON.String), &app.Configuration)
+	if len(configJSON) > 0 {
+		json.Unmarshal([]byte(configJSON), &app.Configuration)
 	}
 
 	return app, nil
