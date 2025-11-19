@@ -106,13 +106,15 @@ type AppStatusEvent struct {
 
 // TemplateCreateEvent is published when a template is created.
 type TemplateCreateEvent struct {
-	EventID      string    `json:"event_id"`
-	Timestamp    time.Time `json:"timestamp"`
-	TemplateName string    `json:"template_name"`
-	DisplayName  string    `json:"display_name"`
-	Manifest     string    `json:"manifest"`
-	Platform     string    `json:"platform"`
-	CreatedBy    string    `json:"created_by"`
+	EventID     string    `json:"event_id"`
+	Timestamp   time.Time `json:"timestamp"`
+	TemplateID  string    `json:"template_id"`
+	DisplayName string    `json:"display_name"`
+	Category    string    `json:"category,omitempty"`
+	BaseImage   string    `json:"base_image,omitempty"`
+	Manifest    string    `json:"manifest,omitempty"`
+	Platform    string    `json:"platform"`
+	CreatedBy   string    `json:"created_by,omitempty"`
 }
 
 // TemplateDeleteEvent is published when a template should be deleted.
@@ -125,6 +127,14 @@ type TemplateDeleteEvent struct {
 
 // NodeCordonEvent is published when a node should be cordoned.
 type NodeCordonEvent struct {
+	EventID   string    `json:"event_id"`
+	Timestamp time.Time `json:"timestamp"`
+	NodeName  string    `json:"node_name"`
+	Platform  string    `json:"platform"`
+}
+
+// NodeUncordonEvent is published when a node should be uncordoned.
+type NodeUncordonEvent struct {
 	EventID   string    `json:"event_id"`
 	Timestamp time.Time `json:"timestamp"`
 	NodeName  string    `json:"node_name"`

@@ -280,7 +280,7 @@ func main() {
 	batchHandler := handlers.NewBatchHandler(database)
 	monitoringHandler := handlers.NewMonitoringHandler(database)
 	quotasHandler := handlers.NewQuotasHandler(database)
-	nodeHandler := handlers.NewNodeHandler(database, k8sClient)
+	nodeHandler := handlers.NewNodeHandler(database, k8sClient, eventPublisher, platform)
 	// NOTE: WebSocket routes now use wsManager directly (see ws.GET routes below)
 	consoleHandler := handlers.NewConsoleHandler(database)
 	collaborationHandler := handlers.NewCollaborationHandler(database)

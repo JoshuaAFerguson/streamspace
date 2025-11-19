@@ -257,6 +257,17 @@ func (p *Publisher) PublishNodeCordon(ctx context.Context, event *NodeCordonEven
 	return p.PublishWithPlatform(SubjectNodeCordon, event.Platform, event)
 }
 
+// PublishNodeUncordon publishes a node uncordon event.
+func (p *Publisher) PublishNodeUncordon(ctx context.Context, event *NodeUncordonEvent) error {
+	if event.EventID == "" {
+		event.EventID = uuid.New().String()
+	}
+	if event.Timestamp.IsZero() {
+		event.Timestamp = time.Now()
+	}
+	return p.PublishWithPlatform(SubjectNodeUncordon, event.Platform, event)
+}
+
 // PublishNodeDrain publishes a node drain event.
 func (p *Publisher) PublishNodeDrain(ctx context.Context, event *NodeDrainEvent) error {
 	if event.EventID == "" {
