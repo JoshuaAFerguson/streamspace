@@ -181,9 +181,9 @@ func (a *ApplicationDB) GetApplication(ctx context.Context, appID string) (*mode
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("application not found")
+			return nil, fmt.Errorf("application not found: %s", appID)
 		}
-		return nil, err
+		return nil, fmt.Errorf("database error scanning application %s: %w", appID, err)
 	}
 
 	// Handle NULL catalog_template_id
