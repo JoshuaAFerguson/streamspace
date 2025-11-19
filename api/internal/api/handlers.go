@@ -597,12 +597,34 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	createEvent := &events.SessionCreateEvent{
 		SessionID:      sessionName,
 		UserID:         req.User,
-		TemplateID:     req.Template,
+		TemplateID:     templateName,
 		Platform:       h.platform,
 		Resources:      events.ResourceSpec{Memory: memory, CPU: cpu},
 		PersistentHome: session.PersistentHome,
 		IdleTimeout:    session.IdleTimeout,
 	}
+
+	// Add template configuration for Docker controller
+	if template != nil {
+		vncPort := 3000 // Default VNC port
+		if template.VNC != nil && template.VNC.Port > 0 {
+			vncPort = int(template.VNC.Port)
+		}
+
+		// Convert env vars to map
+		envMap := make(map[string]string)
+		for _, env := range template.Env {
+			envMap[env.Name] = env.Value
+		}
+
+		createEvent.TemplateConfig = &events.TemplateConfig{
+			Image:       template.BaseImage,
+			VNCPort:     vncPort,
+			DisplayName: template.DisplayName,
+			Env:         envMap,
+		}
+	}
+
 	if err := h.publisher.PublishSessionCreate(ctx, createEvent); err != nil {
 		log.Printf("Warning: Failed to publish session create event: %v", err)
 	}

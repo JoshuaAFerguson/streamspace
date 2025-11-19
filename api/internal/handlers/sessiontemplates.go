@@ -537,8 +537,8 @@ func (h *SessionTemplatesHandler) UseSessionTemplate(c *gin.Context) {
 		}
 	}
 
-	// Verify the base Kubernetes template exists
-	_, err = h.k8sClient.GetTemplate(ctx, h.namespace, baseTemplate)
+	// Verify the base Kubernetes template exists and get its configuration
+	k8sTemplate, err := h.k8sClient.GetTemplate(ctx, h.namespace, baseTemplate)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Base template not found",
@@ -578,11 +578,35 @@ func (h *SessionTemplatesHandler) UseSessionTemplate(c *gin.Context) {
 
 	// Publish session create event for controllers
 	createEvent := &events.SessionCreateEvent{
-		SessionID:  sessionName,
-		UserID:     userIDStr,
-		TemplateID: baseTemplate,
-		Platform:   h.platform,
+		SessionID:      sessionName,
+		UserID:         userIDStr,
+		TemplateID:     baseTemplate,
+		Platform:       h.platform,
+		Resources:      events.ResourceSpec{Memory: memory, CPU: cpu},
+		PersistentHome: true,
 	}
+
+	// Add template configuration for Docker controller
+	if k8sTemplate != nil {
+		vncPort := 3000 // Default VNC port
+		if k8sTemplate.VNC != nil && k8sTemplate.VNC.Port > 0 {
+			vncPort = int(k8sTemplate.VNC.Port)
+		}
+
+		// Convert env vars to map
+		envMap := make(map[string]string)
+		for _, env := range k8sTemplate.Env {
+			envMap[env.Name] = env.Value
+		}
+
+		createEvent.TemplateConfig = &events.TemplateConfig{
+			Image:       k8sTemplate.BaseImage,
+			VNCPort:     vncPort,
+			DisplayName: k8sTemplate.DisplayName,
+			Env:         envMap,
+		}
+	}
+
 	if err := h.publisher.PublishSessionCreate(ctx, createEvent); err != nil {
 		log.Printf("Warning: Failed to publish session create event: %v", err)
 	}
