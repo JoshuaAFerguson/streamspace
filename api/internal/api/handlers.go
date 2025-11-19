@@ -499,14 +499,74 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	// Without a valid template, the session cannot be created
 	template, err := h.k8sClient.GetTemplate(ctx, h.namespace, templateName)
 	if err != nil {
-		// Provide a more helpful error message
-		errorMsg := fmt.Sprintf("Template not found: %s.", templateName)
+		// Template is missing - trigger reinstallation if applicationId was provided
 		if req.ApplicationId != "" {
-			errorMsg += " The application may still be installing or the Kubernetes controller may not be running."
-		} else {
-			errorMsg += " Please ensure the application is properly installed."
+			// Query application details for reinstall
+			var (
+				installID         string
+				catalogTemplateID int
+				displayName       string
+				description       string
+				category          string
+				iconURL           string
+				manifest          string
+				installedBy       string
+			)
+			reinstallErr := h.db.DB().QueryRowContext(ctx, `
+				SELECT
+					ia.id,
+					ia.catalog_template_id,
+					ia.display_name,
+					COALESCE(ct.description, ''),
+					COALESCE(ct.category, ''),
+					COALESCE(ct.icon_url, ''),
+					COALESCE(ct.manifest, '{}'),
+					ia.created_by
+				FROM installed_applications ia
+				LEFT JOIN catalog_templates ct ON ia.catalog_template_id = ct.id
+				WHERE ia.id = $1
+			`, req.ApplicationId).Scan(
+				&installID, &catalogTemplateID, &displayName, &description,
+				&category, &iconURL, &manifest, &installedBy,
+			)
+
+			if reinstallErr == nil {
+				// Publish AppInstallEvent to trigger controller to create template
+				if err := h.publisher.PublishAppInstall(ctx, &events.AppInstallEvent{
+					InstallID:         installID,
+					CatalogTemplateID: catalogTemplateID,
+					TemplateName:      templateName,
+					DisplayName:       displayName,
+					Description:       description,
+					Category:          category,
+					IconURL:           iconURL,
+					Manifest:          manifest,
+					InstalledBy:       installedBy,
+					Platform:          h.platform,
+				}); err != nil {
+					log.Printf("Failed to publish app reinstall event for %s: %v", templateName, err)
+				} else {
+					log.Printf("Triggered reinstall for missing template %s (app: %s)", templateName, installID)
+					// Update status to creating
+					h.db.DB().ExecContext(ctx, `
+						UPDATE installed_applications
+						SET install_status = 'creating', install_message = 'Reinstalling missing template', updated_at = NOW()
+						WHERE id = $1
+					`, installID)
+				}
+			}
+
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "Template reinstalling",
+				"message": fmt.Sprintf("The template for '%s' was missing and is being reinstalled. Please try again in a few seconds.", displayName),
+			})
+			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": errorMsg})
+
+		// No applicationId provided - provide generic error
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Template not found: %s. Please ensure the application is properly installed.", templateName),
+		})
 		return
 	}
 
