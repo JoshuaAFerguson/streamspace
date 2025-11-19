@@ -22,10 +22,44 @@ NAMESPACE="${NAMESPACE:-streamspace}"
 VERSION="${VERSION:-local}"
 
 # Image configuration
-CONTROLLER_IMAGE="${CONTROLLER_IMAGE:-streamspace/streamspace-controller:${VERSION}}"
+CONTROLLER_IMAGE="${CONTROLLER_IMAGE:-streamspace/streamspace-kubernetes-controller:${VERSION}}"
 API_IMAGE="${API_IMAGE:-streamspace/streamspace-api:${VERSION}}"
 UI_IMAGE="${UI_IMAGE:-streamspace/streamspace-ui:${VERSION}}"
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:15-alpine}"
+REDIS_IMAGE="${REDIS_IMAGE:-redis:7-alpine}"
+
+# Optional services (can be set via environment or command line)
+ENABLE_REDIS="${ENABLE_REDIS:-false}"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --with-redis)
+            ENABLE_REDIS=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Deploy StreamSpace using kubectl (Helm-free)"
+            echo ""
+            echo "Options:"
+            echo "  --with-redis    Enable Redis cache for improved performance"
+            echo "  --help, -h      Show this help message"
+            echo ""
+            echo "Environment variables:"
+            echo "  NAMESPACE       Kubernetes namespace (default: streamspace)"
+            echo "  VERSION         Image version tag (default: local)"
+            echo "  ENABLE_REDIS    Enable Redis (default: false)"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
 
 # Helper functions
 log() {
@@ -73,7 +107,7 @@ check_images() {
 
     local missing_images=0
 
-    for image in "streamspace/streamspace-controller" "streamspace/streamspace-api" "streamspace/streamspace-ui"; do
+    for image in "streamspace/streamspace-kubernetes-controller" "streamspace/streamspace-api" "streamspace/streamspace-ui"; do
         if docker images "${image}:${VERSION}" --format "{{.Repository}}:{{.Tag}}" | grep -q "${image}:${VERSION}"; then
             log_success "Found ${image}:${VERSION}"
         else
@@ -244,6 +278,185 @@ EOF
     log_success "PostgreSQL deployed"
 }
 
+# Deploy NATS message broker
+deploy_nats() {
+    log "Deploying NATS..."
+
+    cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamspace-nats
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: nats
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4222
+      targetPort: 4222
+      protocol: TCP
+      name: client
+    - port: 8222
+      targetPort: 8222
+      protocol: TCP
+      name: monitoring
+  selector:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: nats
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamspace-nats
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: nats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: streamspace
+      app.kubernetes.io/component: nats
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: streamspace
+        app.kubernetes.io/component: nats
+    spec:
+      containers:
+      - name: nats
+        image: nats:2.10-alpine
+        imagePullPolicy: IfNotPresent
+        args:
+          - "--jetstream"
+          - "--store_dir=/data"
+          - "--http_port=8222"
+        ports:
+        - containerPort: 4222
+          name: client
+        - containerPort: 8222
+          name: monitoring
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 50m
+          limits:
+            memory: 256Mi
+            cpu: 200m
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: monitoring
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: monitoring
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        emptyDir: {}
+EOF
+
+    log_success "NATS deployed"
+}
+
+# Deploy Redis (optional)
+deploy_redis() {
+    if [ "${ENABLE_REDIS}" != "true" ]; then
+        log_info "Redis disabled (use --with-redis to enable)"
+        return 0
+    fi
+
+    log "Deploying Redis..."
+
+    cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: streamspace-redis
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+      protocol: TCP
+      name: redis
+  selector:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamspace-redis
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: streamspace
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: streamspace
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: streamspace
+        app.kubernetes.io/component: redis
+    spec:
+      containers:
+      - name: redis
+        image: ${REDIS_IMAGE}
+        imagePullPolicy: IfNotPresent
+        args:
+          - redis-server
+          - --maxmemory
+          - 200mb
+          - --maxmemory-policy
+          - allkeys-lru
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 50m
+          limits:
+            memory: 256Mi
+            cpu: 200m
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+EOF
+
+    log_success "Redis deployed"
+}
+
 # Deploy Controller
 deploy_controller() {
     log "Deploying Controller..."
@@ -287,6 +500,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: NATS_URL
+          value: nats://streamspace-nats:4222
+        - name: CONTROLLER_ID
+          value: streamspace-kubernetes-controller-1
         resources:
           requests:
             memory: 128Mi
@@ -404,6 +621,16 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: NATS_URL
+          value: nats://streamspace-nats:4222
+        - name: PLATFORM
+          value: kubernetes
+        - name: CACHE_ENABLED
+          value: "${ENABLE_REDIS}"
+        - name: REDIS_HOST
+          value: streamspace-redis
+        - name: REDIS_PORT
+          value: "6379"
         resources:
           requests:
             memory: 256Mi
@@ -600,6 +827,19 @@ show_access_info() {
     log_info "Or manually port-forward (in separate terminals):"
     echo "  kubectl port-forward -n ${NAMESPACE} svc/streamspace-ui 3000:80"
     echo "  kubectl port-forward -n ${NAMESPACE} svc/streamspace-api 8000:8000"
+    echo "  kubectl port-forward -n ${NAMESPACE} svc/streamspace-nats 4222:4222"
+    if [ "${ENABLE_REDIS}" = "true" ]; then
+        echo "  kubectl port-forward -n ${NAMESPACE} svc/streamspace-redis 6379:6379"
+    fi
+    echo ""
+
+    log_info "Service URLs (after port-forward):"
+    echo "  UI:   http://localhost:3000"
+    echo "  API:  http://localhost:8000"
+    echo "  NATS: nats://localhost:4222 (monitor: http://localhost:8222)"
+    if [ "${ENABLE_REDIS}" = "true" ]; then
+        echo "  Redis: localhost:6379"
+    fi
     echo ""
 
     log_info "View logs:"
@@ -607,6 +847,7 @@ show_access_info() {
     echo "  API:        kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/component=api -f"
     echo "  UI:         kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/component=ui -f"
     echo "  Database:   kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/component=database -f"
+    echo "  NATS:       kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/component=nats -f"
     echo ""
 
     log_info "When finished testing:"
@@ -624,6 +865,7 @@ main() {
     echo ""
     echo -e "${COLOR_BLUE}Namespace:${COLOR_RESET}     ${NAMESPACE}"
     echo -e "${COLOR_BLUE}Version:${COLOR_RESET}       ${VERSION}"
+    echo -e "${COLOR_BLUE}Redis:${COLOR_RESET}         ${ENABLE_REDIS}"
     echo ""
 
     check_prerequisites
@@ -632,6 +874,8 @@ main() {
     apply_crds
     create_secrets
     deploy_postgresql
+    deploy_nats
+    deploy_redis
     deploy_controller
     deploy_api
     deploy_ui

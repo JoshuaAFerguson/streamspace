@@ -39,10 +39,24 @@ rules:
   # Template resources
   - apiGroups: ["stream.space"]
     resources: ["templates"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["stream.space"]
     resources: ["templates/status"]
-    verbs: ["get"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["stream.space"]
+    resources: ["templates/finalizers"]
+    verbs: ["update"]
+
+  # ApplicationInstall resources
+  - apiGroups: ["stream.space"]
+    resources: ["applicationinstalls"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stream.space"]
+    resources: ["applicationinstalls/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["stream.space"]
+    resources: ["applicationinstalls/finalizers"]
+    verbs: ["update"]
 
   # TemplateRepository resources
   - apiGroups: ["stream.space"]
@@ -159,12 +173,20 @@ metadata:
     app.kubernetes.io/name: streamspace
     app.kubernetes.io/component: api
 rules:
-  # Read-only access to CRDs
+  # Session management (API creates sessions when users launch apps)
   - apiGroups: ["stream.space"]
-    resources: ["sessions", "templates", "templaterepositories", "connections"]
+    resources: ["sessions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["stream.space"]
+    resources: ["sessions/status"]
+    verbs: ["get", "update", "patch"]
+
+  # Read-only access to other CRDs
+  - apiGroups: ["stream.space"]
+    resources: ["templates", "templaterepositories", "connections"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["stream.space"]
-    resources: ["sessions/status", "templates/status", "connections/status"]
+    resources: ["templates/status", "connections/status"]
     verbs: ["get"]
 
   # Access to pods for session management

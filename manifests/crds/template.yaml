@@ -70,7 +70,7 @@ spec:
                         type: string
                       mountPath:
                         type: string
-                kasmvnc:
+                vnc:
                   type: object
                   properties:
                     enabled:
@@ -88,6 +88,17 @@ spec:
                   type: array
                   items:
                     type: string
+            status:
+              type: object
+              properties:
+                valid:
+                  type: boolean
+                  description: Whether the template has passed validation
+                message:
+                  type: string
+                  description: Validation result message
+      subresources:
+        status: {}
       additionalPrinterColumns:
         - name: Display Name
           type: string
@@ -101,6 +112,9 @@ spec:
         - name: Memory
           type: string
           jsonPath: .spec.defaultResources.memory
+        - name: Valid
+          type: boolean
+          jsonPath: .status.valid
   scope: Namespaced
   names:
     plural: templates

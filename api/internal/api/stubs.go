@@ -60,7 +60,7 @@ import (
 
 var (
 	templateGVR = schema.GroupVersionResource{
-		Group:    "stream.streamspace.io",
+		Group:    "stream.space",
 		Version:  "v1alpha1",
 		Resource: "templates",
 	}

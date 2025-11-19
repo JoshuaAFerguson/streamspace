@@ -45,7 +45,7 @@ func NewSubscriber(cfg Config, k8sClient client.Client, namespace, controllerID 
 		cfg.URL = nats.DefaultURL
 	}
 
-	// Connect to NATS
+	// Connect to NATS with retry logic
 	opts := []nats.Option{
 		nats.Name("streamspace-kubernetes-controller"),
 		nats.ReconnectWait(2 * time.Second),
@@ -56,10 +56,31 @@ func NewSubscriber(cfg Config, k8sClient client.Client, namespace, controllerID 
 		opts = append(opts, nats.UserInfo(cfg.User, cfg.Password))
 	}
 
-	conn, err := nats.Connect(cfg.URL, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
+	// Retry connection with exponential backoff
+	var conn *nats.Conn
+	var err error
+	maxRetries := 5
+	backoff := 2 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		conn, err = nats.Connect(cfg.URL, opts...)
+		if err == nil {
+			break
+		}
+
+		if i < maxRetries-1 {
+			log.Printf("Failed to connect to NATS (attempt %d/%d): %v, retrying in %v",
+				i+1, maxRetries, err, backoff)
+			time.Sleep(backoff)
+			backoff *= 2 // Exponential backoff
+		}
 	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to NATS after %d attempts: %w", maxRetries, err)
+	}
+
+	log.Printf("Connected to NATS at %s", conn.ConnectedUrl())
 
 	// Create JetStream context for durable subscriptions
 	js, err := conn.JetStream()
@@ -109,11 +130,15 @@ func (s *Subscriber) registerHandlers() {
 // Start starts the subscriber and begins processing events.
 func (s *Subscriber) Start(ctx context.Context) error {
 	// Subscribe to all registered subjects with platform filter
+	// Use queue group so multiple controllers of the same platform share the load
+	// This ensures only ONE controller in the group handles each message
+	queueGroup := fmt.Sprintf("streamspace-%s-controllers", s.platform)
+
 	for subject := range s.handlers {
-		// Subscribe to platform-specific subject
+		// Subscribe to platform-specific subject with queue group
 		platformSubject := fmt.Sprintf("%s.%s", subject, s.platform)
 
-		_, err := s.conn.Subscribe(platformSubject, func(msg *nats.Msg) {
+		_, err := s.conn.QueueSubscribe(platformSubject, queueGroup, func(msg *nats.Msg) {
 			// Extract base subject from the platform-specific subject
 			baseSubject := subject
 
@@ -131,12 +156,38 @@ func (s *Subscriber) Start(ctx context.Context) error {
 			return fmt.Errorf("failed to subscribe to %s: %w", platformSubject, err)
 		}
 
-		log.Printf("Subscribed to NATS subject: %s", platformSubject)
+		log.Printf("Subscribed to NATS subject: %s (queue: %s)", platformSubject, queueGroup)
+	}
+
+	// Request sync from API to get all installed applications
+	if err := s.requestSync(); err != nil {
+		log.Printf("Warning: failed to request sync from API: %v", err)
+		// Don't fail startup - applications can still be installed via events
+	} else {
+		log.Printf("Sent sync request to API for platform: %s", s.platform)
 	}
 
 	// Block until context is cancelled
 	<-ctx.Done()
 	return nil
+}
+
+// requestSync publishes a sync request to the API to get all installed applications.
+func (s *Subscriber) requestSync() error {
+	event := ControllerSyncRequestEvent{
+		EventID:      fmt.Sprintf("sync-%s-%d", s.controllerID, time.Now().UnixNano()),
+		Timestamp:    time.Now(),
+		ControllerID: s.controllerID,
+		Platform:     s.platform,
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	// Publish to generic subject (not platform-specific) so API receives it
+	return s.conn.Publish(SubjectControllerSyncRequest, data)
 }
 
 // Close closes the NATS connection.
