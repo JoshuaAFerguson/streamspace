@@ -122,6 +122,23 @@ create_secrets() {
             --from-literal=api-key=$(openssl rand -hex 32)
         log_success "Secrets created"
     fi
+
+    # Create admin credentials secret
+    if kubectl get secret streamspace-admin-credentials -n "${NAMESPACE}" &> /dev/null; then
+        log_warning "Secret streamspace-admin-credentials already exists"
+    else
+        kubectl create secret generic streamspace-admin-credentials \
+            -n "${NAMESPACE}" \
+            --from-literal=username=admin \
+            --from-literal=password=Password12345 \
+            --from-literal=email=admin@streamspace.local
+        kubectl label secret streamspace-admin-credentials \
+            -n "${NAMESPACE}" \
+            app.kubernetes.io/name=streamspace \
+            app.kubernetes.io/component=admin \
+            app.kubernetes.io/managed-by=kubectl
+        log_success "Admin credentials secret created"
+    fi
 }
 
 # Deploy PostgreSQL
@@ -377,6 +394,12 @@ spec:
             secretKeyRef:
               name: streamspace-secrets
               key: jwt-secret
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: streamspace-admin-credentials
+              key: password
+              optional: true
         - name: NAMESPACE
           valueFrom:
             fieldRef:
