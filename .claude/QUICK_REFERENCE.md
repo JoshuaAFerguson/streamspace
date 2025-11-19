@@ -18,7 +18,8 @@ Open 4 terminals, run `claude` in each, then paste:
 Act as Agent 1 (Architect) for StreamSpace.
 Read: .claude/multi-agent/agent1-architect-instructions.md
 Read: .claude/multi-agent/MULTI_AGENT_PLAN.md
-Begin Phase 6 VNC Independence research.
+CRITICAL: Documentation is aspirational. Audit actual code vs claims.
+Begin comprehensive codebase audit.
 ```
 
 **Terminal 2 (Builder):**
@@ -138,15 +139,22 @@ git status
 ✅ Use descriptive commit messages
 ✅ Let Architect coordinate merges
 
-## Phase 6 Focus
+## Current Priority: Implementation Gap Analysis
 
-**Objective:** Migrate to TigerVNC + noVNC (fully open-source)
+**Reality:** Documentation describes ambitious vision, but many features aren't actually implemented yet.
+
+**First Mission:** 
+1. Audit codebase vs documentation
+2. Identify what actually works
+3. Create honest feature matrix
+4. Prioritize core functionality
+5. Build working foundation before adding enterprise features
 
 **Success Criteria:**
-- Zero proprietary VNC dependencies
-- Performance parity or better
-- Smooth migration path
-- Full documentation
+- Honest documentation
+- Working core features (sessions, templates, basic auth)
+- Clear roadmap based on reality
+- Solid foundation to build on
 
 ## Need Help?
 

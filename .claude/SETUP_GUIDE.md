@@ -78,7 +78,9 @@ Act as Agent 1 (The Architect) for StreamSpace.
 Read your instructions: .claude/multi-agent/agent1-architect-instructions.md
 Read the plan: .claude/multi-agent/MULTI_AGENT_PLAN.md
 
-After reading, begin Phase 6 (VNC Independence) research.
+CRITICAL: The documentation is aspirational. Many claimed features are not actually implemented.
+
+Your first task: Conduct a comprehensive audit of actual code vs documented features. We need brutal honesty about what works, what's partial, and what's missing before we build anything new.
 ```
 
 ### Terminal 2: Builder
@@ -168,53 +170,54 @@ All agents:
 - Leave messages for other agents
 - Document decisions and blockers
 
-## Example Workflow: VNC Migration
+## Example Workflow: Finding and Fixing Implementation Gaps
 
 ### Step 1: Architect Plans
 
 ```markdown
-### Task: Research VNC Migration
+### Task: Audit Actual Implementation
 - Assigned To: Architect
 - Status: In Progress
-- Notes: Researching TigerVNC integration
+- Notes: Checking what's real vs aspirational
 
-### Task: Implement VNC Sidecar
-- Assigned To: Builder
-- Status: Not Started
-- Dependencies: Architect spec
+**Findings So Far:**
+- Sessions: 60% implemented (create works, delete broken)
+- Templates: 10% implemented (just CRD definition)
+- Auth: 15% implemented (basic only, no SAML/OIDC/MFA)
+- Database: 12 tables not 82
 ```
 
 ### Step 2: Builder Implements
 
 ```markdown
-### Task: Implement VNC Sidecar
+### Task: Fix Session Deletion
 - Status: Complete
-- Notes: Code in agent2/vnc-sidecar branch
+- Notes: Fixed pod cleanup in session_controller.go
 
 ## Builder → Validator - 15:30
-Ready for testing. Branch: agent2/vnc-sidecar
+Session deletion fixed. Ready for testing. Branch: agent2/fix-session-delete
 ```
 
 ### Step 3: Validator Tests
 
 ```markdown
-### Task: Test VNC Implementation
+### Task: Test Session Lifecycle
 - Status: Complete
-- Notes: 38/40 tests passing, 2 bugs found
+- Notes: All basic operations working
 
 ## Validator → Builder - 16:45
-Found 2 bugs (details below). Please fix.
+Tests passing! Session CRUD now works end-to-end.
 ```
 
 ### Step 4: Scribe Documents
 
 ```markdown
-### Task: Document VNC Migration
+### Task: Update Honest Documentation
 - Status: Complete
-- Notes: Created migration guide and examples
+- Notes: Created CURRENT_STATUS.md showing what actually works
 
 ## Scribe → Architect - 17:15
-Docs ready for review: docs/VNC_MIGRATION.md
+Docs updated to reflect reality. See docs/CURRENT_STATUS.md
 ```
 
 ## Best Practices
