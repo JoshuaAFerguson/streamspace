@@ -83,7 +83,7 @@ StreamSpace uses separate repositories for templates and plugins:
 | Dashboard Favorites | Not Started | Builder | 0% |
 | Demo Mode Security | Not Started | Builder | 0% |
 | Delete Obsolete Pages | Not Started | Builder | 0% |
-| **Testing** | In Progress | Validator | 25% |
+| **Testing** | In Progress | Validator | 50% |
 | **Documentation** | Not Started | Scribe | 0% |
 
 **Note:** Multi-Monitor and Calendar plugins removed - intentional stubs for plugin-based features.
@@ -417,6 +417,35 @@ Received assignments from Architect and created comprehensive test plans:
 **Dependencies:**
 - Builder must complete fixes before tests can validate them
 - Will prioritize tests for fixes as they are completed
+
+#### Validator - Integration Tests Implemented (13:00)
+
+Implemented integration tests for Core Platform and Security areas:
+
+**Core Platform Tests** (`tests/integration/core_platform_test.go`):
+- `TestSessionNameInAPIResponse` - Validates session name vs ID (TC-CORE-001)
+- `TestTemplateNameUsedInSessionCreation` - Validates template resolution (TC-CORE-002)
+- `TestVNCURLAvailableOnConnection` - Validates VNC URL availability (TC-CORE-004)
+- `TestHeartbeatValidatesConnection` - Validates heartbeat ownership (TC-CORE-005)
+
+**Security Tests** (`tests/integration/security_test.go`):
+- `TestSAMLReturnURLValidation` - Tests open redirect prevention (TC-SEC-001)
+- `TestCSRFTokenValidation` - Tests CSRF protection (TC-SEC-002)
+- `TestDemoModeDisabledByDefault` - Tests demo mode security (TC-SEC-004)
+- `TestWebhookSecretGeneration` - Tests no panic on secret generation (TC-SEC-011)
+- `TestSQLInjectionPrevention` - Tests SQL injection protection
+- `TestXSSPrevention` - Tests XSS protection
+
+**Test Status:**
+- Tests written and committed
+- Ready to execute when Builder fixes are complete
+- Will report results with pass/fail and any bugs found
+
+**Next Steps:**
+1. Implement Plugin System tests
+2. Wait for Builder's first fixes (Session Name/ID, Template Name)
+3. Execute tests and report results
+4. Continue implementing remaining tests as fixes progress
 
 ---
 
