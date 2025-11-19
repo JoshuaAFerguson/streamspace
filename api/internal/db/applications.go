@@ -133,7 +133,7 @@ func (a *ApplicationDB) InstallApplication(ctx context.Context, req *models.Inst
 
 	_, err = a.db.ExecContext(ctx, query,
 		app.ID, app.CatalogTemplateID, app.Name, app.DisplayName, app.FolderPath,
-		app.Enabled, configJSON, app.CreatedBy, app.CreatedAt, app.UpdatedAt,
+		app.Enabled, string(configJSON), app.CreatedBy, app.CreatedAt, app.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install application: %w", err)
@@ -297,7 +297,7 @@ func (a *ApplicationDB) UpdateApplication(ctx context.Context, appID string, req
 			return fmt.Errorf("failed to marshal configuration: %w", err)
 		}
 		updates = append(updates, fmt.Sprintf("configuration = $%d", argIdx))
-		args = append(args, configJSON)
+		args = append(args, string(configJSON)) // Convert to string for JSONB
 		argIdx++
 	}
 
