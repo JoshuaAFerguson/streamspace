@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +20,29 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// sanitizeLabelValue converts a string to a valid Kubernetes label value.
+// Labels must consist of alphanumeric characters, '-', '_' or '.', and must
+// start and end with an alphanumeric character.
+func sanitizeLabelValue(value string) string {
+	// Convert to lowercase and replace spaces with hyphens
+	result := strings.ToLower(value)
+	result = strings.ReplaceAll(result, " ", "-")
+
+	// Remove any characters that aren't alphanumeric, hyphen, underscore, or dot
+	reg := regexp.MustCompile(`[^a-z0-9\-_.]`)
+	result = reg.ReplaceAllString(result, "")
+
+	// Ensure it starts and ends with alphanumeric
+	result = strings.Trim(result, "-_.")
+
+	// Truncate to 63 characters (K8s label value limit)
+	if len(result) > 63 {
+		result = result[:63]
+	}
+
+	return result
+}
 
 // handleSessionCreate handles session creation events.
 func (s *Subscriber) handleSessionCreate(ctx context.Context, data []byte) error {
@@ -208,8 +233,8 @@ func (s *Subscriber) handleAppInstall(ctx context.Context, data []byte) error {
 			Name:      event.InstallID,
 			Namespace: s.namespace,
 			Labels: map[string]string{
-				"streamspace.io/template":    event.TemplateName,
-				"streamspace.io/category":    event.Category,
+				"streamspace.io/template":     event.TemplateName,
+				"streamspace.io/category":     sanitizeLabelValue(event.Category),
 				"streamspace.io/installed-by": event.InstalledBy,
 			},
 		},
