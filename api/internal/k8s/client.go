@@ -19,7 +19,7 @@
 //
 // Custom Resource Definitions:
 //
-//   - Sessions (stream.streamspace.io/v1alpha1)
+//   - Sessions (stream.space/v1alpha1)
 //
 //   - Represents a user's containerized workspace session
 //
@@ -27,7 +27,7 @@
 //
 //   - Includes resource limits, idle timeout, persistence settings
 //
-//   - Templates (stream.streamspace.io/v1alpha1)
+//   - Templates (stream.space/v1alpha1)
 //
 //   - Defines application templates (Firefox, VS Code, etc.)
 //
@@ -302,7 +302,7 @@ func (c *Client) GetDynamicClient() dynamic.Interface {
 func (c *Client) CreateSession(ctx context.Context, session *Session) (*Session, error) {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "stream.streamspace.io/v1alpha1",
+			"apiVersion": "stream.space/v1alpha1",
 			"kind":       "Session",
 			"metadata": map[string]interface{}{
 				"name":      session.Name,
@@ -634,7 +634,7 @@ func parseSession(obj *unstructured.Unstructured) (*Session, error) {
 func (c *Client) CreateTemplate(ctx context.Context, template *Template) (*Template, error) {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "stream.streamspace.io/v1alpha1",
+			"apiVersion": "stream.space/v1alpha1",
 			"kind":       "Template",
 			"metadata": map[string]interface{}{
 				"name":      template.Name,

@@ -124,10 +124,10 @@ import (
 // when the strongly-typed client is not sufficient (e.g., updating tags field).
 //
 // Format: {group}/{version}/namespaces/{namespace}/{resource}
-// Example: stream.streamspace.io/v1alpha1/namespaces/streamspace/sessions
+// Example: stream.space/v1alpha1/namespaces/streamspace/sessions
 var (
 	sessionGVR = schema.GroupVersionResource{
-		Group:    "stream.streamspace.io",
+		Group:    "stream.space",
 		Version:  "v1alpha1",
 		Resource: "sessions",
 	}
