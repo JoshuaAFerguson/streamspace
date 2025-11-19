@@ -14,6 +14,7 @@ StreamSpace is a Kubernetes-native platform that delivers browser-based access t
 
 ### Core Features
 - 🌐 **Browser-Based Access** - Access any application via web browser using open source VNC
+- 🖥️ **Multi-Platform Support** - Deploy on Kubernetes, Docker, or hybrid environments
 - 👥 **Multi-User Support** - Isolated sessions with SSO (Authentik/Keycloak)
 - 💾 **Persistent Home Directories** - User files persist across sessions (NFS)
 - ⚡ **On-Demand Auto-Hibernation** - Idle workspaces automatically scale to zero
@@ -103,6 +104,8 @@ StreamSpace has completed **Phase 5 (Production-Ready)** with all core and enter
 
 ## 🏗️ Architecture
 
+StreamSpace uses a **multi-platform event-driven architecture** that supports Kubernetes, Docker, and future platforms through NATS messaging.
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Web UI (React)                        │
@@ -111,30 +114,41 @@ StreamSpace has completed **Phase 5 (Production-Ready)** with all core and enter
                          │ REST API + WebSocket
                          ↓
 ┌─────────────────────────────────────────────────────────┐
-│              StreamSpace Controller (Go)                 │
-│  Session Lifecycle • Auto-Hibernation • User Management │
+│                 API Backend (Go/Gin)                     │
+│  Session CRUD • Auth • Plugins • Repository Sync        │
 └────────────────────────┬────────────────────────────────┘
-                         │ Kubernetes API
+                         │ NATS Events
                          ↓
 ┌─────────────────────────────────────────────────────────┐
-│                   Kubernetes Cluster                     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │ Session  │  │ Session  │  │ Session  │              │
-│  │ Pod      │  │ Pod      │  │ Pod      │              │
-│  │(VNC)     │  │(VNC)     │  │(VNC)     │              │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘              │
-│       │             │             │                      │
-│  /home/user1   /home/user2   /home/user3               │
-│  (NFS PVC)     (NFS PVC)     (NFS PVC)                 │
-└─────────────────────────────────────────────────────────┘
+│              NATS JetStream Message Queue                │
+│  Durable Events • Platform Routing • Event Sourcing     │
+└────────────┬─────────────────────────────┬──────────────┘
+             │                             │
+             ↓                             ↓
+┌────────────────────────┐    ┌────────────────────────┐
+│ Kubernetes Controller   │    │   Docker Controller    │
+│ (k8s-controller/)       │    │  (docker-controller/)  │
+│ Session Lifecycle       │    │  Docker Compose        │
+│ Auto-Hibernation        │    │  Container Lifecycle   │
+│ CRD Reconciliation      │    │  Volume Management     │
+└────────────┬────────────┘    └────────────┬───────────┘
+             │                              │
+             ↓                              ↓
+┌────────────────────────┐    ┌────────────────────────┐
+│  Kubernetes Cluster     │    │    Docker Host         │
+│  Sessions (Pods/CRDs)   │    │  Sessions (Containers) │
+│  NFS PVC Storage        │    │  Local Volume Storage  │
+└─────────────────────────┘    └────────────────────────┘
 ```
 
 **Key Components**:
-- **Controller**: Manages session lifecycle, hibernation, and provisioning
-- **API Backend**: REST/WebSocket API for UI and integrations
+- **API Backend**: REST/WebSocket API, publishes events to NATS for platform controllers
+- **NATS JetStream**: Event-driven messaging for multi-platform coordination
+- **Kubernetes Controller**: Manages sessions on Kubernetes clusters via CRDs
+- **Docker Controller**: Manages sessions on standalone Docker hosts
 - **Web UI**: User-facing dashboard and workspace catalog
 - **Sessions**: Containerized applications with VNC streaming to your browser
-- **User Storage**: Persistent NFS volumes mounted across all sessions
+- **User Storage**: Persistent volumes (NFS for K8s, local for Docker)
 
 ## 📦 Prerequisites
 
@@ -620,10 +634,10 @@ Access Grafana: `kubectl port-forward -n observability svc/grafana 3000:80`
 
 ## 🛠️ Development
 
-### Build Controller
+### Build Kubernetes Controller
 
 ```bash
-cd controller
+cd k8s-controller
 
 # Initialize Go project
 go mod init github.com/yourusername/streamspace
@@ -640,10 +654,22 @@ kubebuilder create api --group stream --version v1alpha1 --kind Session
 kubebuilder create api --group stream --version v1alpha1 --kind Template
 
 # Build
-make docker-build docker-push IMG=yourregistry/streamspace-controller:latest
+make docker-build docker-push IMG=yourregistry/streamspace-kubernetes-controller:latest
 ```
 
 See full guide: [docs/CONTROLLER_GUIDE.md](docs/CONTROLLER_GUIDE.md)
+
+### Build Docker Controller
+
+```bash
+cd docker-controller
+
+# Build the Docker controller
+go build -o streamspace-docker-controller
+
+# Or use Docker Compose for development
+./scripts/docker-dev.sh
+```
 
 ### Build API Backend
 
@@ -676,9 +702,13 @@ npm run build
 ## 🧪 Testing
 
 ```bash
-# Run controller tests
-cd controller
+# Run Kubernetes controller tests
+cd k8s-controller
 make test
+
+# Run Docker controller tests
+cd docker-controller
+go test ./... -v
 
 # Run API tests
 cd api
@@ -691,6 +721,11 @@ npm test
 # Integration tests
 cd tests
 ./run-integration-tests.sh
+
+# Docker development environment
+./scripts/docker-dev.sh        # Start NATS + controllers
+./scripts/test-nats.sh         # Test NATS connectivity
+./scripts/docker-dev-stop.sh   # Stop development environment
 ```
 
 ## 🤝 Contributing
@@ -747,8 +782,8 @@ Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 ### Sessions not starting
 
 ```bash
-# Check controller logs
-kubectl logs -n streamspace deploy/streamspace-controller
+# Check Kubernetes controller logs
+kubectl logs -n streamspace deploy/streamspace-kubernetes-controller
 
 # Check session events
 kubectl describe session -n streamspace <session-name>

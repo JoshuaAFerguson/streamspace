@@ -143,12 +143,14 @@ clean_docker_images() {
 
     # Remove StreamSpace images
     local images=(
-        "streamspace/streamspace-controller:${VERSION}"
-        "streamspace/streamspace-controller:latest"
+        "streamspace/streamspace-kubernetes-controller:${VERSION}"
+        "streamspace/streamspace-kubernetes-controller:latest"
         "streamspace/streamspace-api:${VERSION}"
         "streamspace/streamspace-api:latest"
         "streamspace/streamspace-ui:${VERSION}"
         "streamspace/streamspace-ui:latest"
+        "streamspace/streamspace-docker-controller:${VERSION}"
+        "streamspace/streamspace-docker-controller:latest"
     )
 
     local removed=0
@@ -229,6 +231,13 @@ show_remaining() {
         docker images | grep "streamspace/streamspace-" || true
     else
         log_success "No remaining Docker images"
+    fi
+
+    # Check for Docker Compose development containers
+    local compose_containers=$(docker ps -a --filter "name=streamspace" --format "{{.Names}}" | wc -l)
+    if [ "$compose_containers" -gt 0 ]; then
+        log_warning "Found ${compose_containers} Docker Compose container(s)"
+        log_info "Stop with: ./scripts/docker-dev-stop.sh"
     fi
 }
 

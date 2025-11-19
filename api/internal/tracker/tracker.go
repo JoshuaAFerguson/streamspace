@@ -48,6 +48,7 @@ import (
 	"time"
 
 	"github.com/streamspace/streamspace/api/internal/db"
+	"github.com/streamspace/streamspace/api/internal/events"
 	"github.com/streamspace/streamspace/api/internal/k8s"
 )
 
@@ -73,6 +74,12 @@ type ConnectionTracker struct {
 
 	// k8sClient interacts with Kubernetes to manage session state.
 	k8sClient *k8s.Client
+
+	// publisher publishes NATS events for platform-agnostic operations.
+	publisher *events.Publisher
+
+	// platform identifies the target platform (kubernetes, docker, etc.)
+	platform string
 
 	// connections is the in-memory map of active connections.
 	// Key: connection ID, Value: Connection struct
@@ -156,12 +163,17 @@ type Connection struct {
 //
 // Example:
 //
-//	tracker := NewConnectionTracker(database, k8sClient)
+//	tracker := NewConnectionTracker(database, k8sClient, publisher, "kubernetes")
 //	go tracker.Start()  // Run in background
-func NewConnectionTracker(database *db.Database, k8sClient *k8s.Client) *ConnectionTracker {
+func NewConnectionTracker(database *db.Database, k8sClient *k8s.Client, publisher *events.Publisher, platform string) *ConnectionTracker {
+	if platform == "" {
+		platform = events.PlatformKubernetes
+	}
 	return &ConnectionTracker{
 		db:              database,
 		k8sClient:       k8sClient,
+		publisher:       publisher,
+		platform:        platform,
 		connections:     make(map[string]*Connection),
 		checkInterval:   30 * time.Second,  // Check every 30 seconds
 		heartbeatWindow: 60 * time.Second,  // Disconnect if no heartbeat for 60s
@@ -466,6 +478,16 @@ func (ct *ConnectionTracker) autoStartSession(ctx context.Context, sessionID str
 		return
 	}
 
+	// Publish wake event for controllers
+	event := &events.SessionWakeEvent{
+		SessionID: sessionID,
+		UserID:    session.User,
+		Platform:  ct.platform,
+	}
+	if err := ct.publisher.PublishSessionWake(ctx, event); err != nil {
+		log.Printf("Warning: Failed to publish session wake event: %v", err)
+	}
+
 	log.Printf("Session auto-started: %s", sessionID)
 }
 
@@ -513,6 +535,16 @@ func (ct *ConnectionTracker) autoHibernateSession(ctx context.Context, sessionID
 	if err != nil {
 		log.Printf("Failed to auto-hibernate session %s: %v", sessionID, err)
 		return
+	}
+
+	// Publish hibernate event for controllers
+	event := &events.SessionHibernateEvent{
+		SessionID: sessionID,
+		UserID:    session.User,
+		Platform:  ct.platform,
+	}
+	if err := ct.publisher.PublishSessionHibernate(ctx, event); err != nil {
+		log.Printf("Warning: Failed to publish session hibernate event: %v", err)
 	}
 
 	log.Printf("Session auto-hibernated: %s", sessionID)

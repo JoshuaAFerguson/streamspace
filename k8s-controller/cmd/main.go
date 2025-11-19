@@ -42,6 +42,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -55,6 +56,7 @@ import (
 
 	streamv1alpha1 "github.com/streamspace/streamspace/api/v1alpha1"
 	"github.com/streamspace/streamspace/controllers"
+	"github.com/streamspace/streamspace/pkg/events"
 	_ "github.com/streamspace/streamspace/pkg/metrics" // Initialize custom metrics
 )
 
@@ -92,6 +94,11 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var natsURL string
+	var natsUser string
+	var natsPassword string
+	var namespace string
+	var controllerID string
 
 	// Parse command-line flags
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -99,6 +106,11 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(&natsURL, "nats-url", getEnv("NATS_URL", "nats://localhost:4222"), "NATS server URL")
+	flag.StringVar(&natsUser, "nats-user", getEnv("NATS_USER", ""), "NATS username")
+	flag.StringVar(&natsPassword, "nats-password", getEnv("NATS_PASSWORD", ""), "NATS password")
+	flag.StringVar(&namespace, "namespace", getEnv("NAMESPACE", "streamspace"), "Kubernetes namespace")
+	flag.StringVar(&controllerID, "controller-id", getEnv("CONTROLLER_ID", "streamspace-kubernetes-controller-1"), "Unique controller ID")
 
 	// Setup logging options (can be configured via flags like --zap-log-level=debug)
 	opts := zap.Options{
@@ -202,6 +214,31 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize NATS event subscriber for platform-agnostic event handling
+	setupLog.Info("initializing NATS event subscriber", "url", natsURL)
+	subscriber, err := events.NewSubscriber(events.Config{
+		URL:      natsURL,
+		User:     natsUser,
+		Password: natsPassword,
+	}, mgr.GetClient(), namespace, controllerID)
+
+	if err != nil {
+		setupLog.Error(err, "unable to create NATS subscriber")
+		setupLog.Info("continuing without NATS - controller will only watch CRDs directly")
+	} else {
+		// Start subscriber in background
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		defer subscriber.Close()
+
+		go func() {
+			if err := subscriber.Start(ctx); err != nil {
+				setupLog.Error(err, "NATS subscriber error")
+			}
+		}()
+		setupLog.Info("NATS event subscriber started", "controller_id", controllerID)
+	}
+
 	// Start the manager and begin reconciliation loops
 	// SetupSignalHandler() ensures graceful shutdown on SIGTERM/SIGINT
 	setupLog.Info("starting manager")
@@ -209,4 +246,12 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// getEnv gets an environment variable with a default fallback
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }

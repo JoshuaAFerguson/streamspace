@@ -32,7 +32,7 @@ kubectl create namespace streamspace
 ### 2. Deploy CRDs
 
 ```bash
-kubectl apply -f controller/config/crd/bases/
+kubectl apply -f k8s-controller/config/crd/bases/
 ```
 
 Verify:
@@ -93,7 +93,7 @@ Edit the deployment manifests to use your registry:
 ```bash
 # Update controller image
 sed -i 's|your-registry/streamspace-controller:v0.2.0|ghcr.io/yourname/streamspace-controller:v0.2.0|' \
-  controller/config/manager/controller-deployment.yaml
+  k8s-controller/config/manager/controller-deployment.yaml
 
 # Update API image
 sed -i 's|your-registry/streamspace-api:v0.2.0|ghcr.io/yourname/streamspace-api:v0.2.0|' \
@@ -225,7 +225,7 @@ The controller watches Session and Template CRDs and manages their lifecycle.
 
 **Configuration via Environment Variables:**
 
-Edit `controller/config/manager/controller-deployment.yaml`:
+Edit `k8s-controller/config/manager/controller-deployment.yaml`:
 
 ```yaml
 env:
@@ -526,7 +526,7 @@ When updating CRDs:
 kubectl get sessions -n streamspace -o yaml > sessions-backup.yaml
 
 # Update CRDs
-kubectl apply -f controller/config/crd/bases/
+kubectl apply -f k8s-controller/config/crd/bases/
 
 # Verify no resources were lost
 kubectl get sessions -n streamspace

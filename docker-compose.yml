@@ -21,6 +21,29 @@ services:
     networks:
       - streamspace
 
+  # NATS message broker for event-driven architecture
+  nats:
+    image: nats:2.10-alpine
+    container_name: streamspace-nats
+    command:
+      - "--jetstream"
+      - "--store_dir=/data"
+      - "--http_port=8222"
+    ports:
+      - "4222:4222"   # Client connections
+      - "8222:8222"   # HTTP monitoring
+      - "6222:6222"   # Cluster routing
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - streamspace
+    restart: unless-stopped
+
   # StreamSpace API Backend
   api:
     build:
@@ -33,6 +56,8 @@ services:
     container_name: streamspace-api
     depends_on:
       postgres:
+        condition: service_healthy
+      nats:
         condition: service_healthy
     environment:
       # Database configuration
@@ -48,6 +73,12 @@ services:
 
       # JWT configuration
       JWT_SECRET: dev-secret-change-in-production
+
+      # NATS configuration
+      NATS_URL: nats://nats:4222
+      NATS_USER: ""
+      NATS_PASSWORD: ""
+      PLATFORM: kubernetes
 
       # Sync configuration
       SYNC_INTERVAL: 1h
@@ -67,6 +98,29 @@ services:
       retries: 3
     networks:
       - streamspace
+    restart: unless-stopped
+
+  # StreamSpace Docker Controller (for Docker platform support)
+  docker-controller:
+    build:
+      context: ./docker-controller
+      dockerfile: Dockerfile
+    container_name: streamspace-docker-controller
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      NATS_URL: nats://nats:4222
+      NATS_USER: ""
+      NATS_PASSWORD: ""
+      CONTROLLER_ID: streamspace-docker-controller-1
+      DOCKER_NETWORK: streamspace
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - streamspace
+    profiles:
+      - docker
     restart: unless-stopped
 
   # pgAdmin for database management (optional, for development)
@@ -134,6 +188,8 @@ networks:
 volumes:
   postgres-data:
     name: streamspace-postgres-data
+  nats-data:
+    name: streamspace-nats-data
   pgadmin-data:
     name: streamspace-pgadmin-data
   prometheus-data:

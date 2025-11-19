@@ -35,19 +35,18 @@
 //
 // Example Usage:
 //
-//	handler := NewApplicationHandler(database, k8sClient, "streamspace")
+//	handler := NewApplicationHandler(database, publisher, "kubernetes")
 //	handler.RegisterRoutes(router.Group("/api/v1"))
 package handlers
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/streamspace/streamspace/api/internal/db"
-	"github.com/streamspace/streamspace/api/internal/k8s"
+	"github.com/streamspace/streamspace/api/internal/events"
 	"github.com/streamspace/streamspace/api/internal/models"
 )
 
@@ -55,17 +54,20 @@ import (
 type ApplicationHandler struct {
 	db        *db.Database
 	appDB     *db.ApplicationDB
-	k8sClient *k8s.Client
-	namespace string
+	publisher *events.Publisher
+	platform  string
 }
 
 // NewApplicationHandler creates a new application handler
-func NewApplicationHandler(database *db.Database, k8sClient *k8s.Client, namespace string) *ApplicationHandler {
+func NewApplicationHandler(database *db.Database, publisher *events.Publisher, platform string) *ApplicationHandler {
+	if platform == "" {
+		platform = events.PlatformKubernetes
+	}
 	return &ApplicationHandler{
 		db:        database,
 		appDB:     db.NewApplicationDB(database.DB()),
-		k8sClient: k8sClient,
-		namespace: namespace,
+		publisher: publisher,
+		platform:  platform,
 	}
 }
 
@@ -85,6 +87,18 @@ func (h *ApplicationHandler) RegisterRoutes(router *gin.RouterGroup) {
 		apps.PUT("/:id/groups/:groupId", h.UpdateGroupAccess)
 		apps.DELETE("/:id/groups/:groupId", h.RemoveGroupAccess)
 		apps.GET("/:id/config", h.GetTemplateConfig)
+	}
+}
+
+// updateInstallStatus updates the installation status of an application in the database
+func (h *ApplicationHandler) updateInstallStatus(ctx context.Context, appID, status, message string) {
+	_, err := h.db.DB().ExecContext(ctx, `
+		UPDATE installed_applications
+		SET install_status = $1, install_message = $2, updated_at = NOW()
+		WHERE id = $3
+	`, status, message, appID)
+	if err != nil {
+		log.Printf("Failed to update install status for %s: %v", appID, err)
 	}
 }
 
@@ -141,13 +155,14 @@ func (h *ApplicationHandler) ListApplications(c *gin.Context) {
 // Installation Flow:
 // 1. Validate request and authenticate user
 // 2. Fetch template manifest from catalog_templates database
-// 3. Create ApplicationInstall CRD (controller will create Template)
-// 4. Create installed_applications database record
-// 5. Grant group access permissions if specified
+// 3. Create installed_applications database record (status: pending)
+// 4. Grant group access permissions if specified
+// 5. Publish NATS event for controller to process
 // 6. Return the created application with full details
 //
-// The controller watches ApplicationInstall resources and creates the corresponding
-// Template CRD. This pattern provides automatic retry and proper separation of concerns.
+// The controller subscribes to NATS events and creates platform-specific resources
+// (Kubernetes Template CRD, Docker container, Hyper-V VM, etc.). This pattern
+// decouples the API from platform-specific operations.
 func (h *ApplicationHandler) InstallApplication(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -198,52 +213,8 @@ func (h *ApplicationHandler) InstallApplication(c *gin.Context) {
 		return
 	}
 
-	// Step 3: Create ApplicationInstall CRD
-	// The controller will watch this and create the corresponding Template CRD
-	if h.k8sClient == nil {
-		log.Printf("Error: k8sClient is nil, cannot create ApplicationInstall for %s", name)
-		c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Error:   "Kubernetes client not configured",
-			Message: "Cannot install application: Kubernetes client is not available. Please check API server configuration.",
-		})
-		return
-	}
-
-	// Generate unique name for ApplicationInstall
-	appInstallName := fmt.Sprintf("%s-%d", name, req.CatalogTemplateID)
-
-	appInstall := &k8s.ApplicationInstall{
-		Name:              appInstallName,
-		Namespace:         h.namespace,
-		CatalogTemplateID: req.CatalogTemplateID,
-		TemplateName:      name,
-		DisplayName:       displayName,
-		Description:       description,
-		Category:          category,
-		Icon:              iconURL,
-		Manifest:          manifest,
-		InstalledBy:       userID.(string),
-	}
-
-	_, err = h.k8sClient.CreateApplicationInstall(ctx, appInstall)
-	if err != nil {
-		// "already exists" is OK - application may have been installed before
-		errStr := err.Error()
-		if strings.Contains(errStr, "already exists") {
-			log.Printf("ApplicationInstall %s already exists, continuing with database record", appInstallName)
-		} else {
-			log.Printf("Failed to create ApplicationInstall %s: %v", appInstallName, err)
-			c.JSON(http.StatusInternalServerError, ErrorResponse{
-				Error:   "Failed to create application install request",
-				Message: fmt.Sprintf("Could not create ApplicationInstall '%s': %v", appInstallName, err),
-			})
-			return
-		}
-	} else {
-		log.Printf("Successfully created ApplicationInstall %s (controller will create Template)", appInstallName)
-	}
-
-	// Step 4: Create database record in installed_applications table
+	// Step 3: Create database record in installed_applications table
+	// The record is created with install_status = 'pending'
 	app, err := h.appDB.InstallApplication(ctx, &req, userID.(string))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
@@ -253,9 +224,33 @@ func (h *ApplicationHandler) InstallApplication(c *gin.Context) {
 		return
 	}
 
-	// Step 5: Grant initial group access permissions if specified in request
+	// Step 4: Grant initial group access permissions if specified in request
 	for _, groupID := range req.GroupIDs {
 		h.appDB.AddGroupAccess(ctx, app.ID, groupID, "launch")
+	}
+
+	// Step 5: Publish NATS event for controller to process
+	// The controller will create the platform-specific resources (Template CRD, Docker container, etc.)
+	installEvent := &events.AppInstallEvent{
+		InstallID:         app.ID,
+		CatalogTemplateID: req.CatalogTemplateID,
+		TemplateName:      name,
+		DisplayName:       displayName,
+		Description:       description,
+		Category:          category,
+		IconURL:           iconURL,
+		Manifest:          manifest,
+		InstalledBy:       userID.(string),
+		Platform:          h.platform,
+	}
+
+	if err := h.publisher.PublishAppInstall(ctx, installEvent); err != nil {
+		// Log error but don't fail - the database record exists and controller can retry
+		log.Printf("Warning: Failed to publish app install event for %s: %v", app.ID, err)
+		// Update install status to indicate event publishing failed
+		h.updateInstallStatus(ctx, app.ID, events.InstallStatusPending, "Event publish failed, waiting for retry")
+	} else {
+		log.Printf("Published app install event for %s (controller will create resources)", app.ID)
 	}
 
 	// Step 7: Fetch complete application record with template info and group access
@@ -373,15 +368,41 @@ func (h *ApplicationHandler) UpdateApplication(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/applications/{id} [delete]
 func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
+	ctx := c.Request.Context()
 	appID := c.Param("id")
 
-	err := h.appDB.DeleteApplication(c.Request.Context(), appID)
+	// Get application info before deleting (for the uninstall event)
+	app, err := h.appDB.GetApplication(ctx, appID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{
+			Error:   "Application not found",
+			Message: err.Error(),
+		})
+		return
+	}
+
+	// Delete from database
+	err = h.appDB.DeleteApplication(ctx, appID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Error:   "Delete failed",
 			Message: err.Error(),
 		})
 		return
+	}
+
+	// Publish uninstall event for controller to clean up platform resources
+	uninstallEvent := &events.AppUninstallEvent{
+		InstallID:    appID,
+		TemplateName: app.TemplateName,
+		Platform:     h.platform,
+	}
+
+	if err := h.publisher.PublishAppUninstall(ctx, uninstallEvent); err != nil {
+		// Log error but don't fail - database record is already deleted
+		log.Printf("Warning: Failed to publish app uninstall event for %s: %v", appID, err)
+	} else {
+		log.Printf("Published app uninstall event for %s", appID)
 	}
 
 	c.JSON(http.StatusOK, gin.H{

@@ -363,7 +363,7 @@ streamspace/
 │
 ├── PLUGIN_DEVELOPMENT.md  # Plugin development guide
 │
-├── controller/            # Go controller using Kubebuilder
+├── k8s-controller/        # Go Kubernetes controller using Kubebuilder
 │   ├── cmd/              # Main entry point
 │   ├── internal/         # Controller logic, reconcilers
 │   ├── api/              # CRD type definitions
@@ -408,7 +408,7 @@ streamspace/
 
 - **`scripts/`**: Automation scripts for template generation and utilities
 
-- **`controller/`**: Go-based Kubernetes controller (Kubebuilder)
+- **`k8s-controller/`**: Go-based Kubernetes controller (Kubebuilder)
   - Manages Session lifecycle and hibernation
   - Reconciles CRD resources with Kubernetes state
 

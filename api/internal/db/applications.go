@@ -133,7 +133,7 @@ func (a *ApplicationDB) InstallApplication(ctx context.Context, req *models.Inst
 
 	_, err = a.db.ExecContext(ctx, query,
 		app.ID, app.CatalogTemplateID, app.Name, app.DisplayName, app.FolderPath,
-		app.Enabled, configJSON, app.CreatedBy, app.CreatedAt, app.UpdatedAt,
+		app.Enabled, string(configJSON), app.CreatedBy, app.CreatedAt, app.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install application: %w", err)
@@ -157,7 +157,8 @@ func (a *ApplicationDB) InstallApplication(ctx context.Context, req *models.Inst
 // GetApplication retrieves an installed application by ID
 func (a *ApplicationDB) GetApplication(ctx context.Context, appID string) (*models.InstalledApplication, error) {
 	app := &models.InstalledApplication{}
-	var configJSON []byte
+	var configJSON sql.NullString
+	var catalogTemplateID sql.NullInt64
 
 	query := `
 		SELECT
@@ -173,21 +174,26 @@ func (a *ApplicationDB) GetApplication(ctx context.Context, appID string) (*mode
 	`
 
 	err := a.db.QueryRowContext(ctx, query, appID).Scan(
-		&app.ID, &app.CatalogTemplateID, &app.Name, &app.DisplayName, &app.FolderPath,
+		&app.ID, &catalogTemplateID, &app.Name, &app.DisplayName, &app.FolderPath,
 		&app.Enabled, &configJSON, &app.CreatedBy, &app.CreatedAt, &app.UpdatedAt,
 		&app.TemplateName, &app.TemplateDisplayName, &app.Description,
 		&app.Category, &app.AppType, &app.IconURL, &app.Manifest,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("application not found")
+			return nil, fmt.Errorf("application not found: %s", appID)
 		}
-		return nil, err
+		return nil, fmt.Errorf("database error scanning application %s: %w", appID, err)
 	}
 
-	// Unmarshal configuration
-	if len(configJSON) > 0 {
-		json.Unmarshal(configJSON, &app.Configuration)
+	// Handle NULL catalog_template_id
+	if catalogTemplateID.Valid {
+		app.CatalogTemplateID = int(catalogTemplateID.Int64)
+	}
+
+	// Unmarshal configuration from JSONB string
+	if configJSON.Valid && len(configJSON.String) > 0 {
+		json.Unmarshal([]byte(configJSON.String), &app.Configuration)
 	}
 
 	return app, nil
@@ -297,7 +303,7 @@ func (a *ApplicationDB) UpdateApplication(ctx context.Context, appID string, req
 			return fmt.Errorf("failed to marshal configuration: %w", err)
 		}
 		updates = append(updates, fmt.Sprintf("configuration = $%d", argIdx))
-		args = append(args, configJSON)
+		args = append(args, string(configJSON)) // Convert to string for JSONB
 		argIdx++
 	}
 

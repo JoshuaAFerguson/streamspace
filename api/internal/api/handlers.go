@@ -106,6 +106,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/streamspace/streamspace/api/internal/db"
+	"github.com/streamspace/streamspace/api/internal/events"
 	"github.com/streamspace/streamspace/api/internal/k8s"
 	"github.com/streamspace/streamspace/api/internal/quota"
 	"github.com/streamspace/streamspace/api/internal/sync"
@@ -154,12 +155,15 @@ var (
 // Each request gets its own Gin context with isolated state.
 type Handler struct {
 	db             *db.Database                 // Database for caching and metadata
+	sessionDB      *db.SessionDB                // Session database operations
 	k8sClient      *k8s.Client                  // Kubernetes client for CRD operations
+	publisher      *events.Publisher            // NATS event publisher
 	connTracker    *tracker.ConnectionTracker   // Active connection tracking
 	syncService    *sync.SyncService            // Repository synchronization
 	wsManager      *websocket.Manager           // WebSocket connection manager
 	quotaEnforcer  *quota.Enforcer              // Resource quota enforcement
 	namespace      string                       // Kubernetes namespace for resources
+	platform       string                       // Target platform (kubernetes, docker, etc.)
 }
 
 // NewHandler creates a new API handler with injected dependencies.
@@ -168,10 +172,12 @@ type Handler struct {
 //
 // - database: PostgreSQL database connection for caching and metadata
 // - k8sClient: Kubernetes client for Session/Template CRD operations
+// - publisher: NATS event publisher for platform-agnostic operations
 // - connTracker: Connection tracker for active session monitoring
 // - syncService: Service for syncing external template repositories
 // - wsManager: Manager for WebSocket connections and real-time updates
 // - quotaEnforcer: Enforcer for validating resource quotas
+// - platform: Target platform (kubernetes, docker, hyperv, vcenter)
 //
 // NAMESPACE RESOLUTION:
 //
@@ -180,24 +186,30 @@ type Handler struct {
 //
 // EXAMPLE USAGE:
 //
-//   handler := NewHandler(db, k8sClient, connTracker, syncService, wsManager, quotaEnforcer)
+//   handler := NewHandler(db, k8sClient, publisher, connTracker, syncService, wsManager, quotaEnforcer, "kubernetes")
 //   router := gin.Default()
 //   router.GET("/api/sessions", handler.ListSessions)
 //   router.POST("/api/sessions", handler.CreateSession)
-func NewHandler(database *db.Database, k8sClient *k8s.Client, connTracker *tracker.ConnectionTracker, syncService *sync.SyncService, wsManager *websocket.Manager, quotaEnforcer *quota.Enforcer) *Handler {
+func NewHandler(database *db.Database, k8sClient *k8s.Client, publisher *events.Publisher, connTracker *tracker.ConnectionTracker, syncService *sync.SyncService, wsManager *websocket.Manager, quotaEnforcer *quota.Enforcer, platform string) *Handler {
 	// Read namespace from environment variable for deployment flexibility
 	namespace := os.Getenv("NAMESPACE")
 	if namespace == "" {
 		namespace = "streamspace" // Default namespace
 	}
+	if platform == "" {
+		platform = events.PlatformKubernetes // Default platform
+	}
 	return &Handler{
 		db:            database,
+		sessionDB:     db.NewSessionDB(database.DB()),
 		k8sClient:     k8sClient,
+		publisher:     publisher,
 		connTracker:   connTracker,
 		syncService:   syncService,
 		wsManager:     wsManager,
 		quotaEnforcer: quotaEnforcer,
 		namespace:     namespace,
+		platform:      platform,
 	}
 }
 
@@ -252,26 +264,43 @@ func (h *Handler) ListSessions(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID := c.Query("user")
 
-	var sessions []*k8s.Session
+	// Use database as source of truth for multi-platform support
+	var dbSessions []*db.Session
 	var err error
 
 	if userID != "" {
-		sessions, err = h.k8sClient.ListSessionsByUser(ctx, h.namespace, userID)
+		dbSessions, err = h.sessionDB.ListSessionsByUser(ctx, userID)
 	} else {
-		sessions, err = h.k8sClient.ListSessions(ctx, h.namespace)
+		dbSessions, err = h.sessionDB.ListSessions(ctx)
 	}
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		// Fall back to Kubernetes for backward compatibility
+		log.Printf("Database session query failed, falling back to k8s: %v", err)
+		var k8sSessions []*k8s.Session
+		if userID != "" {
+			k8sSessions, err = h.k8sClient.ListSessionsByUser(ctx, h.namespace, userID)
+		} else {
+			k8sSessions, err = h.k8sClient.ListSessions(ctx, h.namespace)
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		enriched := h.enrichSessionsWithDBInfo(ctx, k8sSessions)
+		c.JSON(http.StatusOK, gin.H{
+			"sessions": enriched,
+			"total":    len(enriched),
+		})
 		return
 	}
 
-	// Enrich with database info (active connections)
-	enriched := h.enrichSessionsWithDBInfo(ctx, sessions)
+	// Convert database sessions to API response format
+	sessions := h.convertDBSessionsToResponse(dbSessions)
 
 	c.JSON(http.StatusOK, gin.H{
-		"sessions": enriched,
-		"total":    len(enriched),
+		"sessions": sessions,
+		"total":    len(sessions),
 	})
 }
 
@@ -281,16 +310,24 @@ func (h *Handler) GetSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := c.Param("id")
 
-	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
+	// Use database as source of truth for multi-platform support
+	dbSession, err := h.sessionDB.GetSession(ctx, sessionID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+		// Fall back to Kubernetes for backward compatibility
+		log.Printf("Database session query failed, falling back to k8s: %v", err)
+		k8sSession, k8sErr := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
+		if k8sErr != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+			return
+		}
+		enriched := h.enrichSessionWithDBInfo(ctx, k8sSession)
+		c.JSON(http.StatusOK, enriched)
 		return
 	}
 
-	// Enrich with database info
-	enriched := h.enrichSessionWithDBInfo(ctx, session)
-
-	c.JSON(http.StatusOK, enriched)
+	// Convert to API response format
+	session := h.convertDBSessionToResponse(dbSession)
+	c.JSON(http.StatusOK, session)
 }
 
 // CreateSession creates a new container session for a user.
@@ -472,6 +509,21 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		log.Printf("Failed to cache session in database: %v", err)
 	}
 
+	// Publish session create event for controllers
+	// This enables platform-agnostic session management
+	createEvent := &events.SessionCreateEvent{
+		SessionID:      sessionName,
+		UserID:         req.User,
+		TemplateID:     req.Template,
+		Platform:       h.platform,
+		Resources:      events.ResourceSpec{Memory: memory, CPU: cpu},
+		PersistentHome: session.PersistentHome,
+		IdleTimeout:    session.IdleTimeout,
+	}
+	if err := h.publisher.PublishSessionCreate(ctx, createEvent); err != nil {
+		log.Printf("Warning: Failed to publish session create event: %v", err)
+	}
+
 	c.JSON(http.StatusCreated, created)
 }
 
@@ -508,6 +560,28 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 		log.Printf("Failed to update session in database: %v", err)
 	}
 
+	// Publish state change event for controllers
+	switch req.State {
+	case "hibernated":
+		event := &events.SessionHibernateEvent{
+			SessionID: sessionID,
+			UserID:    updated.User,
+			Platform:  h.platform,
+		}
+		if err := h.publisher.PublishSessionHibernate(ctx, event); err != nil {
+			log.Printf("Warning: Failed to publish session hibernate event: %v", err)
+		}
+	case "running":
+		event := &events.SessionWakeEvent{
+			SessionID: sessionID,
+			UserID:    updated.User,
+			Platform:  h.platform,
+		}
+		if err := h.publisher.PublishSessionWake(ctx, event); err != nil {
+			log.Printf("Warning: Failed to publish session wake event: %v", err)
+		}
+	}
+
 	c.JSON(http.StatusOK, updated)
 }
 
@@ -517,8 +591,8 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := c.Param("id")
 
-	// Verify session exists before deletion
-	_, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
+	// Verify session exists before deletion and get user info for event
+	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
@@ -533,6 +607,16 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	// Delete from database cache
 	if err := h.deleteSessionFromDB(ctx, sessionID); err != nil {
 		log.Printf("Failed to delete session from database: %v", err)
+	}
+
+	// Publish session delete event for controllers
+	deleteEvent := &events.SessionDeleteEvent{
+		SessionID: sessionID,
+		UserID:    session.User,
+		Platform:  h.platform,
+	}
+	if err := h.publisher.PublishSessionDelete(ctx, deleteEvent); err != nil {
+		log.Printf("Warning: Failed to publish session delete event: %v", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Session deleted"})
@@ -909,6 +993,18 @@ func (h *Handler) CreateTemplate(c *gin.Context) {
 		return
 	}
 
+	// Publish template create event for controllers
+	createEvent := &events.TemplateCreateEvent{
+		TemplateID:  created.Name,
+		DisplayName: created.DisplayName,
+		Category:    created.Category,
+		BaseImage:   created.BaseImage,
+		Platform:    h.platform,
+	}
+	if err := h.publisher.PublishTemplateCreate(ctx, createEvent); err != nil {
+		log.Printf("Warning: Failed to publish template create event: %v", err)
+	}
+
 	c.JSON(http.StatusCreated, created)
 }
 
@@ -921,6 +1017,15 @@ func (h *Handler) DeleteTemplate(c *gin.Context) {
 	if err := h.k8sClient.DeleteTemplate(ctx, h.namespace, templateID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Publish template delete event for controllers
+	deleteEvent := &events.TemplateDeleteEvent{
+		TemplateName: templateID,
+		Platform:     h.platform,
+	}
+	if err := h.publisher.PublishTemplateDelete(ctx, deleteEvent); err != nil {
+		log.Printf("Warning: Failed to publish template delete event: %v", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Template deleted"})
@@ -1636,6 +1741,50 @@ func (h *Handler) enrichSessionWithDBInfo(ctx context.Context, session *k8s.Sess
 	return result
 }
 
+// convertDBSessionsToResponse converts database sessions to API response format.
+func (h *Handler) convertDBSessionsToResponse(sessions []*db.Session) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(sessions))
+	for _, session := range sessions {
+		result = append(result, h.convertDBSessionToResponse(session))
+	}
+	return result
+}
+
+// convertDBSessionToResponse converts a database session to API response format.
+func (h *Handler) convertDBSessionToResponse(session *db.Session) map[string]interface{} {
+	result := map[string]interface{}{
+		"name":               session.ID,
+		"namespace":          session.Namespace,
+		"user":               session.UserID,
+		"template":           session.TemplateName,
+		"state":              session.State,
+		"persistentHome":     session.PersistentHome,
+		"idleTimeout":        session.IdleTimeout,
+		"maxSessionDuration": session.MaxSessionDuration,
+		"createdAt":          session.CreatedAt,
+		"platform":           session.Platform,
+		"activeConnections":  session.ActiveConnections,
+		"status": map[string]interface{}{
+			"phase":   session.State,
+			"url":     session.URL,
+			"podName": session.PodName,
+		},
+	}
+
+	if session.Memory != "" || session.CPU != "" {
+		result["resources"] = map[string]string{
+			"memory": session.Memory,
+			"cpu":    session.CPU,
+		}
+	}
+
+	if session.LastActivity != nil {
+		result["status"].(map[string]interface{})["lastActivity"] = session.LastActivity
+	}
+
+	return result
+}
+
 // cacheSessionInDB caches a session in the PostgreSQL database.
 //
 // DATABASE TRANSACTION BOUNDARY:
@@ -1669,14 +1818,26 @@ func (h *Handler) enrichSessionWithDBInfo(ctx context.Context, session *k8s.Sess
 //       log.Printf("Cache update failed (non-fatal): %v", err)
 //   }
 func (h *Handler) cacheSessionInDB(ctx context.Context, session *k8s.Session) error {
-	_, err := h.db.DB().ExecContext(ctx, `
-		INSERT INTO sessions (id, user_id, template_name, state, app_type, namespace, url, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (id) DO UPDATE
-		SET user_id = $2, template_name = $3, state = $4, updated_at = $9
-	`, session.Name, session.User, session.Template, session.State, "desktop", session.Namespace, session.Status.URL, session.CreatedAt, time.Now())
+	dbSession := &db.Session{
+		ID:                 session.Name,
+		UserID:             session.User,
+		TemplateName:       session.Template,
+		State:              session.State,
+		AppType:            "desktop",
+		Namespace:          session.Namespace,
+		Platform:           h.platform,
+		URL:                session.Status.URL,
+		PodName:            session.Status.PodName,
+		Memory:             session.Resources.Memory,
+		CPU:                session.Resources.CPU,
+		PersistentHome:     session.PersistentHome,
+		IdleTimeout:        session.IdleTimeout,
+		MaxSessionDuration: session.MaxSessionDuration,
+		CreatedAt:          session.CreatedAt,
+		LastActivity:       session.Status.LastActivity,
+	}
 
-	return err
+	return h.sessionDB.CreateSession(ctx, dbSession)
 }
 
 // updateSessionInDB updates a cached session in the database.

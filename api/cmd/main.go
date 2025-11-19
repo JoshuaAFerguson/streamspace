@@ -18,6 +18,7 @@ import (
 	"github.com/streamspace/streamspace/api/internal/auth"
 	"github.com/streamspace/streamspace/api/internal/cache"
 	"github.com/streamspace/streamspace/api/internal/db"
+	"github.com/streamspace/streamspace/api/internal/events"
 	"github.com/streamspace/streamspace/api/internal/handlers"
 	"github.com/streamspace/streamspace/api/internal/k8s"
 	"github.com/streamspace/streamspace/api/internal/middleware"
@@ -92,9 +93,54 @@ func main() {
 		log.Fatalf("Failed to initialize Kubernetes client: %v", err)
 	}
 
+	// Initialize NATS event publisher
+	// This enables event-driven communication with platform controllers
+	log.Println("Initializing NATS event publisher...")
+	natsURL := getEnv("NATS_URL", "")
+	natsUser := getEnv("NATS_USER", "")
+	natsPassword := getEnv("NATS_PASSWORD", "")
+	eventPublisher, err := events.NewPublisher(events.Config{
+		URL:      natsURL,
+		User:     natsUser,
+		Password: natsPassword,
+	})
+	if err != nil {
+		log.Printf("Warning: Failed to initialize NATS publisher: %v", err)
+		log.Println("Event publishing will be disabled - controllers will not receive events")
+	}
+	defer eventPublisher.Close()
+
+	// Get platform from environment (for multi-platform support)
+	platform := os.Getenv("PLATFORM")
+	if platform == "" {
+		platform = events.PlatformKubernetes // Default platform
+	}
+
+	// Initialize NATS event subscriber for receiving status updates from controllers
+	log.Println("Initializing NATS event subscriber...")
+	eventSubscriber, err := events.NewSubscriber(events.Config{
+		URL:      natsURL,
+		User:     natsUser,
+		Password: natsPassword,
+	}, database.DB())
+	if err != nil {
+		log.Printf("Warning: Failed to initialize NATS subscriber: %v", err)
+		log.Println("Status feedback from controllers will be disabled")
+	}
+	defer eventSubscriber.Close()
+
+	// Start subscriber in background to receive controller status events
+	subscriberCtx, cancelSubscriber := context.WithCancel(context.Background())
+	defer cancelSubscriber()
+	go func() {
+		if err := eventSubscriber.Start(subscriberCtx); err != nil {
+			log.Printf("NATS subscriber error: %v", err)
+		}
+	}()
+
 	// Initialize connection tracker
 	log.Println("Starting connection tracker...")
-	connTracker := tracker.NewConnectionTracker(database, k8sClient)
+	connTracker := tracker.NewConnectionTracker(database, k8sClient, eventPublisher, platform)
 	go connTracker.Start()
 	defer connTracker.Stop()
 
@@ -125,7 +171,7 @@ func main() {
 
 	// Initialize activity tracker
 	log.Println("Initializing activity tracker...")
-	activityTracker := activity.NewTracker(k8sClient)
+	activityTracker := activity.NewTracker(k8sClient, eventPublisher, platform)
 
 	// Start idle session monitor (check every 1 minute)
 	idleCheckInterval := getEnv("IDLE_CHECK_INTERVAL", "1m")
@@ -216,7 +262,22 @@ func main() {
 		Issuer:        "streamspace-api",
 		TokenDuration: 24 * time.Hour,
 	}
-	jwtManager := auth.NewJWTManager(jwtConfig)
+	// Use session-aware JWT manager for server-side session tracking
+	// This enables proper logout, session invalidation, and forced re-login on restart
+	jwtManager := auth.NewJWTManagerWithSessions(jwtConfig, redisCache)
+
+	// Clear all sessions on startup to force users to re-login
+	// This is a security feature that ensures tokens from previous server runs are invalid
+	if redisCache.IsEnabled() {
+		log.Println("Clearing existing sessions (forcing re-login)...")
+		clearCtx, clearCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := jwtManager.ClearAllSessions(clearCtx); err != nil {
+			log.Printf("Warning: Failed to clear sessions: %v", err)
+		} else {
+			log.Println("Sessions cleared - users will need to re-login")
+		}
+		clearCancel()
+	}
 
 	// Initialize SAML authentication (optional)
 	var samlAuth *auth.SAMLAuthenticator
@@ -235,7 +296,7 @@ func main() {
 	}
 
 	// Initialize API handlers
-	apiHandler := api.NewHandler(database, k8sClient, connTracker, syncService, wsManager, quotaEnforcer)
+	apiHandler := api.NewHandler(database, k8sClient, eventPublisher, connTracker, syncService, wsManager, quotaEnforcer, platform)
 	userHandler := handlers.NewUserHandler(userDB, groupDB)
 	groupHandler := handlers.NewGroupHandler(groupDB, userDB)
 	authHandler := auth.NewAuthHandler(userDB, jwtManager, samlAuth)
@@ -256,7 +317,7 @@ func main() {
 	batchHandler := handlers.NewBatchHandler(database)
 	monitoringHandler := handlers.NewMonitoringHandler(database)
 	quotasHandler := handlers.NewQuotasHandler(database)
-	nodeHandler := handlers.NewNodeHandler(database, k8sClient)
+	nodeHandler := handlers.NewNodeHandler(database, k8sClient, eventPublisher, platform)
 	// NOTE: WebSocket routes now use wsManager directly (see ws.GET routes below)
 	consoleHandler := handlers.NewConsoleHandler(database)
 	collaborationHandler := handlers.NewCollaborationHandler(database)
@@ -266,12 +327,7 @@ func main() {
 	securityHandler := handlers.NewSecurityHandler(database)
 	templateVersioningHandler := handlers.NewTemplateVersioningHandler(database)
 	setupHandler := handlers.NewSetupHandler(database)
-	// Get namespace from environment (same as api.NewHandler)
-	appNamespace := os.Getenv("NAMESPACE")
-	if appNamespace == "" {
-		appNamespace = "streamspace" // Default namespace
-	}
-	applicationHandler := handlers.NewApplicationHandler(database, k8sClient, appNamespace)
+	applicationHandler := handlers.NewApplicationHandler(database, eventPublisher, platform)
 	// NOTE: Billing is now handled by the streamspace-billing plugin
 
 	// SECURITY: Initialize webhook authentication

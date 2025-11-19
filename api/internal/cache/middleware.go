@@ -96,8 +96,15 @@ func CacheMiddleware(cache *Cache, ttl time.Duration) gin.HandlerFunc {
 			return
 		}
 
-		// Generate cache key from request path and query params
-		cacheKey := generateCacheKey(c.Request.URL.RequestURI())
+		// Generate cache key from request path, query params, and userID for user-specific endpoints
+		// This ensures each user gets their own cached response for endpoints like /applications/user
+		userID := ""
+		if uid, exists := c.Get("userID"); exists {
+			if id, ok := uid.(string); ok {
+				userID = id
+			}
+		}
+		cacheKey := generateCacheKey(c.Request.URL.RequestURI(), userID)
 
 		// Try to get cached response
 		var cachedResp CachedResponse
@@ -123,10 +130,19 @@ func CacheMiddleware(cache *Cache, ttl time.Duration) gin.HandlerFunc {
 
 		// Only cache successful responses
 		if c.Writer.Status() >= 200 && c.Writer.Status() < 300 {
-			// Capture headers
+			// Capture headers, excluding security-sensitive ones that shouldn't be cached
 			headers := make(map[string]string)
+			excludeHeaders := map[string]bool{
+				"X-Csrf-Token":  true, // CSRF tokens must be fresh per-request
+				"X-CSRF-Token":  true, // CSRF tokens (alternate case)
+				"Set-Cookie":    true, // Cookies are user-specific
+				"Authorization": true, // Auth headers shouldn't be cached
+				"X-Request-Id":  true, // Request IDs are unique per request
+			}
 			for key := range c.Writer.Header() {
-				headers[key] = c.Writer.Header().Get(key)
+				if !excludeHeaders[key] {
+					headers[key] = c.Writer.Header().Get(key)
+				}
 			}
 
 			// Store in cache
@@ -146,9 +162,16 @@ func CacheMiddleware(cache *Cache, ttl time.Duration) gin.HandlerFunc {
 	}
 }
 
-// generateCacheKey creates a consistent cache key from the request URI
-func generateCacheKey(uri string) string {
-	hash := sha256.Sum256([]byte(uri))
+// generateCacheKey creates a consistent cache key from the request URI and optional userID
+// Including userID ensures user-specific responses are cached separately
+func generateCacheKey(uri string, userID string) string {
+	// Combine URI and userID for the hash
+	// This ensures each user gets their own cache entry for user-specific endpoints
+	keyInput := uri
+	if userID != "" {
+		keyInput = fmt.Sprintf("%s:user:%s", uri, userID)
+	}
+	hash := sha256.Sum256([]byte(keyInput))
 	return fmt.Sprintf("response:%s", hex.EncodeToString(hash[:]))
 }
 
@@ -174,11 +197,15 @@ func CacheControl(maxAge time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 
-		// Never cache authentication/authorization endpoints
+		// Never cache authentication/authorization or user-specific endpoints
 		noCachePaths := []string{
-			"/api/v1/auth/",     // All auth endpoints (login, logout, setup, etc.)
-			"/api/v1/users/me",  // Current user info
-			"/api/v1/sessions/", // Session state (dynamic)
+			"/api/v1/auth/",             // All auth endpoints (login, logout, setup, etc.)
+			"/api/v1/users/me",          // Current user info
+			"/api/v1/sessions/",         // Session state (dynamic)
+			"/api/v1/applications/user", // User-specific installed applications
+			"/api/v1/dashboard/me",      // User dashboard
+			"/api/v1/notifications",     // User notifications
+			"/api/v1/preferences",       // User preferences
 		}
 
 		shouldCache := true

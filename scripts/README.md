@@ -41,6 +41,90 @@ helm version --short
 - **v3.19.0 or later**: Use `local-deploy-kubectl.sh`
 - **v3.18.0 or earlier**: Use `local-deploy.sh`
 
+## Docker Compose Development (NATS-based Architecture)
+
+For the new event-driven multi-platform architecture, use these scripts:
+
+### Quick Start (Docker Compose)
+
+```bash
+# Start development environment (PostgreSQL, NATS)
+./scripts/docker-dev.sh
+
+# Start with Docker controller
+./scripts/docker-dev.sh --with-docker
+
+# Start with all services (including monitoring)
+./scripts/docker-dev.sh --all --logs
+
+# Stop environment
+./scripts/docker-dev-stop.sh
+
+# Test NATS connectivity
+./scripts/test-nats.sh
+```
+
+### docker-dev.sh
+
+Starts the complete development environment using Docker Compose with NATS and PostgreSQL.
+
+**Usage:**
+```bash
+./scripts/docker-dev.sh              # Core services only
+./scripts/docker-dev.sh --with-api   # Include API service
+./scripts/docker-dev.sh --with-docker # Include Docker controller
+./scripts/docker-dev.sh --all        # All services and profiles
+./scripts/docker-dev.sh --logs       # Start and follow logs
+```
+
+**Services Started:**
+- PostgreSQL (localhost:5432)
+- NATS with JetStream (localhost:4222, monitor: localhost:8222)
+
+**Optional Services:**
+- API backend (--with-api)
+- Docker controller (--with-docker)
+- pgAdmin (--with-dev)
+- Prometheus/Grafana (--with-monitor)
+
+### docker-dev-stop.sh
+
+Stops the Docker Compose development environment.
+
+**Usage:**
+```bash
+./scripts/docker-dev-stop.sh           # Stop services, keep data
+./scripts/docker-dev-stop.sh --clean   # Stop and remove volumes
+```
+
+### build-docker-controller.sh
+
+Builds the Docker platform controller for the event-driven architecture.
+
+**Usage:**
+```bash
+./scripts/build-docker-controller.sh           # Build Docker image
+./scripts/build-docker-controller.sh --binary  # Build Go binary only
+```
+
+### test-nats.sh
+
+Tests NATS connectivity and can publish/subscribe to test events.
+
+**Usage:**
+```bash
+./scripts/test-nats.sh                    # Test connectivity
+./scripts/test-nats.sh --publish          # Publish test events
+./scripts/test-nats.sh --subscribe        # Subscribe to all events
+./scripts/test-nats.sh --streams          # List JetStream streams
+```
+
+---
+
+## Kubernetes Deployment Scripts
+
+For traditional Kubernetes deployment, use these scripts:
+
 ## Script Descriptions
 
 ### local-build.sh

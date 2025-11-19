@@ -2009,6 +2009,76 @@ func (d *Database) Migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_compliance_violations_severity ON compliance_violations(severity)`,
 		`CREATE INDEX IF NOT EXISTS idx_compliance_reports_framework_id ON compliance_reports(framework_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_compliance_reports_generated_at ON compliance_reports(generated_at DESC)`,
+
+		// ========== NATS Event-Driven Architecture ==========
+
+		// Platform controllers (registered platform controllers - K8s, Docker, Hyper-V, etc.)
+		`CREATE TABLE IF NOT EXISTS platform_controllers (
+			id VARCHAR(255) PRIMARY KEY,
+			controller_id VARCHAR(255) UNIQUE NOT NULL,
+			platform VARCHAR(50) NOT NULL,
+			display_name VARCHAR(255),
+			status VARCHAR(50) DEFAULT 'unknown',
+			version VARCHAR(50),
+			capabilities JSONB DEFAULT '[]',
+			cluster_info JSONB DEFAULT '{}',
+			last_heartbeat TIMESTAMP,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		// Create indexes for platform controllers
+		`CREATE INDEX IF NOT EXISTS idx_platform_controllers_platform ON platform_controllers(platform)`,
+		`CREATE INDEX IF NOT EXISTS idx_platform_controllers_status ON platform_controllers(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_platform_controllers_heartbeat ON platform_controllers(last_heartbeat)`,
+
+		// Event log (audit log of all NATS events for debugging and replay)
+		`CREATE TABLE IF NOT EXISTS event_log (
+			id BIGSERIAL PRIMARY KEY,
+			event_id VARCHAR(255) NOT NULL,
+			subject VARCHAR(255) NOT NULL,
+			payload JSONB NOT NULL,
+			published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			processed_at TIMESTAMP,
+			processed_by VARCHAR(255),
+			status VARCHAR(50) DEFAULT 'published',
+			error_message TEXT
+		)`,
+
+		// Create indexes for event log
+		`CREATE INDEX IF NOT EXISTS idx_event_log_event_id ON event_log(event_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_log_subject ON event_log(subject)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_log_status ON event_log(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_event_log_published_at ON event_log(published_at)`,
+
+		// Add platform fields to installed_applications for async installation tracking
+		`ALTER TABLE installed_applications ADD COLUMN IF NOT EXISTS install_status VARCHAR(50) DEFAULT 'pending'`,
+		`ALTER TABLE installed_applications ADD COLUMN IF NOT EXISTS install_message TEXT`,
+		`ALTER TABLE installed_applications ADD COLUMN IF NOT EXISTS platform VARCHAR(50) DEFAULT 'kubernetes'`,
+
+		// Create index for install status
+		`CREATE INDEX IF NOT EXISTS idx_installed_applications_status ON installed_applications(install_status)`,
+		`CREATE INDEX IF NOT EXISTS idx_installed_applications_platform ON installed_applications(platform)`,
+
+		// Add platform fields to sessions for multi-platform support
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS platform VARCHAR(50) DEFAULT 'kubernetes'`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS controller_id VARCHAR(255)`,
+
+		// Create indexes for session platform tracking
+		`CREATE INDEX IF NOT EXISTS idx_sessions_platform ON sessions(platform)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_controller_id ON sessions(controller_id)`,
+
+		// Add additional session fields for multi-platform support
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pod_name VARCHAR(255)`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS memory VARCHAR(50)`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cpu VARCHAR(50)`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS persistent_home BOOLEAN DEFAULT false`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS idle_timeout VARCHAR(50)`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS max_session_duration VARCHAR(50)`,
+		`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_activity TIMESTAMP`,
+
+		// Create index for idle session queries
+		`CREATE INDEX IF NOT EXISTS idx_sessions_last_activity ON sessions(last_activity)`,
 	}
 
 	// Execute migrations

@@ -63,11 +63,13 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/streamspace/streamspace/api/internal/db"
+	"github.com/streamspace/streamspace/api/internal/events"
 	"github.com/streamspace/streamspace/api/internal/k8s"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -77,13 +79,20 @@ import (
 type NodeHandler struct {
 	db        *db.Database
 	k8sClient *k8s.Client
+	publisher *events.Publisher
+	platform  string
 }
 
 // NewNodeHandler creates a new node management handler
-func NewNodeHandler(database *db.Database, k8sClient *k8s.Client) *NodeHandler {
+func NewNodeHandler(database *db.Database, k8sClient *k8s.Client, publisher *events.Publisher, platform string) *NodeHandler {
+	if platform == "" {
+		platform = events.PlatformKubernetes
+	}
 	return &NodeHandler{
 		db:        database,
 		k8sClient: k8sClient,
+		publisher: publisher,
+		platform:  platform,
 	}
 }
 
@@ -387,6 +396,15 @@ func (h *NodeHandler) CordonNode(c *gin.Context) {
 		return
 	}
 
+	// Publish node cordon event for controllers
+	event := &events.NodeCordonEvent{
+		NodeName: nodeName,
+		Platform: h.platform,
+	}
+	if err := h.publisher.PublishNodeCordon(ctx, event); err != nil {
+		log.Printf("Warning: Failed to publish node cordon event: %v", err)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Node cordoned successfully"})
 }
 
@@ -407,6 +425,15 @@ func (h *NodeHandler) UncordonNode(c *gin.Context) {
 			"error": fmt.Sprintf("Failed to uncordon node: %v", err),
 		})
 		return
+	}
+
+	// Publish node uncordon event for controllers
+	event := &events.NodeUncordonEvent{
+		NodeName: nodeName,
+		Platform: h.platform,
+	}
+	if err := h.publisher.PublishNodeUncordon(ctx, event); err != nil {
+		log.Printf("Warning: Failed to publish node uncordon event: %v", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Node uncordoned successfully"})
@@ -437,6 +464,16 @@ func (h *NodeHandler) DrainNode(c *gin.Context) {
 			"error": fmt.Sprintf("Failed to drain node: %v", err),
 		})
 		return
+	}
+
+	// Publish node drain event for controllers
+	event := &events.NodeDrainEvent{
+		NodeName:           nodeName,
+		Platform:           h.platform,
+		GracePeriodSeconds: req.GracePeriodSeconds,
+	}
+	if err := h.publisher.PublishNodeDrain(ctx, event); err != nil {
+		log.Printf("Warning: Failed to publish node drain event: %v", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Node drained successfully"})

@@ -34,6 +34,10 @@ UI_LOCAL_PORT=3000
 UI_REMOTE_PORT=80
 API_LOCAL_PORT=8000
 API_REMOTE_PORT=8000
+NATS_LOCAL_PORT=4222
+NATS_REMOTE_PORT=4222
+NATS_MONITOR_LOCAL_PORT=8222
+NATS_MONITOR_REMOTE_PORT=8222
 
 # Helper functions
 log() {
@@ -196,6 +200,14 @@ show_access_urls() {
     echo "  Health: ${COLOR_BLUE}http://localhost:${API_LOCAL_PORT}/health${COLOR_RESET}"
     echo ""
 
+    # Show NATS info if available
+    if [ -f "${PID_DIR}/nats.pid" ] || kubectl get svc "streamspace-nats" -n "${NAMESPACE}" &> /dev/null 2>&1; then
+        log_info "NATS Message Queue:"
+        echo "  Client:  ${COLOR_GREEN}nats://localhost:${NATS_LOCAL_PORT}${COLOR_RESET}"
+        echo "  Monitor: ${COLOR_BLUE}http://localhost:${NATS_MONITOR_LOCAL_PORT}${COLOR_RESET}"
+        echo ""
+    fi
+
     log_info "Logs:"
     echo "  UI:  tail -f ${LOG_DIR}/ui.log"
     echo "  API: tail -f ${LOG_DIR}/api.log"
@@ -247,6 +259,16 @@ main() {
 
     if start_port_forward "streamspace-api" "${API_LOCAL_PORT}" "${API_REMOTE_PORT}" "api"; then
         success=$((success + 1))
+    fi
+
+    # Optional NATS port forwards (if NATS is deployed)
+    if kubectl get svc "streamspace-nats" -n "${NAMESPACE}" &> /dev/null; then
+        if start_port_forward "streamspace-nats" "${NATS_LOCAL_PORT}" "${NATS_REMOTE_PORT}" "nats"; then
+            success=$((success + 1))
+        fi
+        if start_port_forward "streamspace-nats" "${NATS_MONITOR_LOCAL_PORT}" "${NATS_MONITOR_REMOTE_PORT}" "nats-monitor"; then
+            success=$((success + 1))
+        fi
     fi
 
     echo ""

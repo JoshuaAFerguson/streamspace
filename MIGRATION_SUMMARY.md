@@ -29,7 +29,7 @@ streamspace/
 │   ├── config/        # Deployment manifests
 │   ├── templates/     # 22 application templates
 │   └── monitoring/    # Grafana, Prometheus, Alerts
-├── controller/        # Go workspace controller
+├── k8s-controller/    # Go Kubernetes controller
 ├── api/              # API backend (to be built)
 ├── ui/               # React frontend (to be built)
 ├── chart/            # Helm chart
