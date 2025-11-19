@@ -2044,6 +2044,12 @@ func (h *Handler) convertDBSessionToResponse(session *db.Session) map[string]int
 		}
 	}
 
+	// Capitalize phase for status.phase (UI expects "Running" not "running")
+	capitalizedPhase := phase
+	if len(phase) > 0 {
+		capitalizedPhase = strings.ToUpper(phase[:1]) + phase[1:]
+	}
+
 	result := map[string]interface{}{
 		"name":               session.ID,
 		"namespace":          session.Namespace,
@@ -2057,7 +2063,7 @@ func (h *Handler) convertDBSessionToResponse(session *db.Session) map[string]int
 		"platform":           session.Platform,
 		"activeConnections":  session.ActiveConnections,
 		"status": map[string]interface{}{
-			"phase":   phase,
+			"phase":   capitalizedPhase,
 			"url":     url,
 			"podName": podName,
 		},
