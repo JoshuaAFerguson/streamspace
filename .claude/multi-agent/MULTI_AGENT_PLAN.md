@@ -809,6 +809,523 @@ saml:
 
 ---
 
+#### Decision 10: MFA SMS/Email Strategy
+**Date:** 2025-11-19
+**Decided By:** Architect
+**Issue:** #12 - MFA SMS/Email Implementation
+
+**Problem:** SMS and Email MFA return 501 Not Implemented. Should we implement or remove from UI?
+
+**Decision:** Remove from UI for v1.0, implement in v1.1
+- Current 501 response is secure (rejects the attempt)
+- Proper implementation requires SMS gateway and email service integration
+- TOTP (authenticator app) is more secure and available now
+
+**Implementation:**
+```typescript
+// ui/src/pages/MFASetup.tsx - Remove SMS/Email options
+const mfaTypes = [
+  { value: 'totp', label: 'Authenticator App (Recommended)', icon: <Key /> },
+  // SMS and Email removed until v1.1
+  // { value: 'sms', label: 'SMS Text Message', icon: <Phone /> },
+  // { value: 'email', label: 'Email Code', icon: <Email /> },
+];
+```
+
+**v1.1 Roadmap (Future):**
+- Integrate Twilio or AWS SNS for SMS
+- Use existing SMTP configuration for email
+- Add rate limiting to prevent abuse
+- Implement proper OTP storage and validation
+
+**Rationale:**
+- TOTP is more secure (no SIM swapping attacks)
+- Reduces infrastructure dependencies
+- Can be added later without breaking changes
+
+---
+
+#### Decision 11: Session Status Conditions
+**Date:** 2025-11-19
+**Decided By:** Architect
+**Issue:** #13 - Session Status Conditions
+
+**Problem:** TODOs in controller for setting Status.Conditions on errors. Users can't track failure reasons.
+
+**Decision:** Implement standard Kubernetes conditions pattern
+```go
+// In session_controller.go, add helper function:
+func (r *SessionReconciler) setCondition(session *streamspacev1.Session, conditionType string, status metav1.ConditionStatus, reason, message string) {
+    condition := metav1.Condition{
+        Type:               conditionType,
+        Status:             status,
+        LastTransitionTime: metav1.Now(),
+        Reason:             reason,
+        Message:            message,
+        ObservedGeneration: session.Generation,
+    }
+    meta.SetStatusCondition(&session.Status.Conditions, condition)
+}
+
+// Usage in Reconcile for template not found:
+if err != nil {
+    log.Error(err, "Failed to get Template")
+    r.setCondition(session, "Ready", metav1.ConditionFalse,
+        "TemplateNotFound",
+        fmt.Sprintf("Template %s not found in namespace %s", session.Spec.Template, session.Namespace))
+    if err := r.Status().Update(ctx, session); err != nil {
+        return ctrl.Result{}, err
+    }
+    return ctrl.Result{RequeueAfter: time.Minute}, nil
+}
+
+// Usage for deployment creation failure:
+if err := r.Create(ctx, deployment); err != nil {
+    log.Error(err, "Failed to create Deployment")
+    r.setCondition(session, "Ready", metav1.ConditionFalse,
+        "DeploymentCreationFailed",
+        fmt.Sprintf("Failed to create deployment: %v", err))
+    r.Status().Update(ctx, session)
+    return ctrl.Result{}, err
+}
+```
+
+**Condition Types:**
+- `Ready`: Overall session readiness
+- `PodScheduled`: Pod created and scheduled
+- `VNCReady`: VNC server accessible
+
+**Rationale:**
+- Standard Kubernetes pattern
+- Enables kubectl describe to show failure reasons
+- API can expose conditions to UI
+
+---
+
+#### Decision 12: Batch Operations Error Collection
+**Date:** 2025-11-19
+**Decided By:** Architect
+**Issue:** #14 - Batch Operations Error Collection
+
+**Problem:** Batch operations count successes but don't collect error details.
+
+**Decision:** Add errors array to batch_operations table and collect per-item errors
+```go
+func (h *BatchHandler) executeBatchTerminate(jobID, userID string, sessionIDs []string) {
+    ctx := context.Background()
+
+    successCount := 0
+    var errors []map[string]string
+
+    for _, sessionID := range sessionIDs {
+        result, err := h.db.DB().ExecContext(ctx, `
+            UPDATE sessions SET state = 'terminated' WHERE id = $1 AND user_id = $2
+        `, sessionID, userID)
+
+        if err != nil {
+            errors = append(errors, map[string]string{
+                "sessionId": sessionID,
+                "error":     err.Error(),
+            })
+        } else {
+            rowsAffected, _ := result.RowsAffected()
+            if rowsAffected == 0 {
+                errors = append(errors, map[string]string{
+                    "sessionId": sessionID,
+                    "error":     "Session not found or not owned by user",
+                })
+            } else {
+                successCount++
+            }
+        }
+
+        // Update progress
+        errorsJSON, _ := json.Marshal(errors)
+        h.db.DB().ExecContext(ctx, `
+            UPDATE batch_operations
+            SET processed_items = processed_items + 1,
+                success_count = $1,
+                errors = $2
+            WHERE id = $3
+        `, successCount, errorsJSON, jobID)
+    }
+
+    // Mark as completed
+    status := "completed"
+    if len(errors) > 0 && successCount == 0 {
+        status = "failed"
+    } else if len(errors) > 0 {
+        status = "completed_with_errors"
+    }
+
+    h.db.DB().ExecContext(ctx, `
+        UPDATE batch_operations
+        SET status = $1, completed_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+    `, status, jobID)
+}
+```
+
+**Database Migration:**
+```sql
+ALTER TABLE batch_operations ADD COLUMN errors JSONB DEFAULT '[]';
+```
+
+**Rationale:**
+- Users can see exactly what failed
+- Enables partial success reporting
+- Helps with debugging and support
+
+---
+
+#### Decision 13: Docker Controller Template Lookup
+**Date:** 2025-11-19
+**Decided By:** Architect
+**Issue:** #15 - Docker Controller Template Lookup
+
+**Problem:** Docker controller hardcodes Firefox image instead of looking up template settings.
+
+**Decision:** Fetch template from database using event.TemplateID
+```go
+func (s *Subscriber) handleSessionCreate(event *SessionEvent) error {
+    ctx := context.Background()
+
+    // Ensure home volume exists (existing code)
+    // ...
+
+    // Look up template from database
+    var template struct {
+        Image       string
+        Memory      int64
+        CPUShares   int64
+        VNCPort     int
+        Env         map[string]string
+    }
+
+    err := s.db.QueryRowContext(ctx, `
+        SELECT base_image, default_memory, default_cpu, vnc_port, env
+        FROM templates WHERE name = $1
+    `, event.TemplateID).Scan(
+        &template.Image,
+        &template.Memory,
+        &template.CPUShares,
+        &template.VNCPort,
+        &template.Env,
+    )
+
+    if err != nil {
+        // Fallback to defaults if template not in DB (Kubernetes-only mode)
+        template = struct{
+            Image       string
+            Memory      int64
+            CPUShares   int64
+            VNCPort     int
+            Env         map[string]string
+        }{
+            Image:     "lscr.io/linuxserver/firefox:latest",
+            Memory:    2 * 1024 * 1024 * 1024, // 2GB
+            CPUShares: 1024,
+            VNCPort:   3000,
+            Env:       map[string]string{"PUID": "1000", "PGID": "1000"},
+        }
+        log.Printf("Template %s not found in DB, using defaults", event.TemplateID)
+    }
+
+    // Create container with template settings
+    config := docker.SessionConfig{
+        SessionID:      event.SessionID,
+        UserID:         event.UserID,
+        TemplateID:     event.TemplateID,
+        Image:          template.Image,
+        Memory:         template.Memory,
+        CPUShares:      template.CPUShares,
+        VNCPort:        template.VNCPort,
+        PersistentHome: event.PersistentHome,
+        HomeVolume:     homeVolume,
+        Env:            template.Env,
+    }
+
+    // ... rest of existing code
+}
+```
+
+**Rationale:**
+- Docker sessions use same template settings as Kubernetes
+- Graceful fallback for migration
+- Consistent behavior across deployment modes
+
+---
+
+#### Decision 14: Dashboard Favorites API
+**Date:** 2025-11-19
+**Decided By:** Architect
+**Issue:** #16 - Dashboard Favorites API
+
+**Problem:** Favorites use localStorage which doesn't sync across devices. Need backend persistence.
+
+**Decision:** Add user_favorites table and API endpoints
+
+**Database Migration:**
+```sql
+CREATE TABLE user_favorites (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    template_name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, template_name)
+);
+
+CREATE INDEX idx_user_favorites_user_id ON user_favorites(user_id);
+```
+
+**API Endpoints:**
+```go
+// GET /api/user/favorites - Get user's favorites
+func (h *Handler) GetFavorites(c *gin.Context) {
+    userID := c.GetString("user_id")
+
+    rows, err := h.db.DB().QueryContext(c.Request.Context(), `
+        SELECT template_name FROM user_favorites WHERE user_id = $1
+    `, userID)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch favorites"})
+        return
+    }
+    defer rows.Close()
+
+    var favorites []string
+    for rows.Next() {
+        var name string
+        rows.Scan(&name)
+        favorites = append(favorites, name)
+    }
+
+    c.JSON(http.StatusOK, gin.H{"favorites": favorites})
+}
+
+// POST /api/user/favorites/:templateName - Add favorite
+func (h *Handler) AddFavorite(c *gin.Context) {
+    userID := c.GetString("user_id")
+    templateName := c.Param("templateName")
+
+    _, err := h.db.DB().ExecContext(c.Request.Context(), `
+        INSERT INTO user_favorites (user_id, template_name)
+        VALUES ($1, $2) ON CONFLICT DO NOTHING
+    `, userID, templateName)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add favorite"})
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{"message": "Favorite added"})
+}
+
+// DELETE /api/user/favorites/:templateName - Remove favorite
+func (h *Handler) RemoveFavorite(c *gin.Context) {
+    userID := c.GetString("user_id")
+    templateName := c.Param("templateName")
+
+    _, err := h.db.DB().ExecContext(c.Request.Context(), `
+        DELETE FROM user_favorites WHERE user_id = $1 AND template_name = $2
+    `, userID, templateName)
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove favorite"})
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{"message": "Favorite removed"})
+}
+```
+
+**UI Implementation:**
+```typescript
+// ui/src/pages/Dashboard.tsx
+const { data: favoritesData } = useQuery(['favorites'], () =>
+    api.get('/user/favorites').then(res => res.data.favorites)
+);
+
+const toggleFavorite = async (templateName: string) => {
+    if (favorites.has(templateName)) {
+        await api.delete(`/user/favorites/${templateName}`);
+    } else {
+        await api.post(`/user/favorites/${templateName}`);
+    }
+    queryClient.invalidateQueries(['favorites']);
+};
+
+useEffect(() => {
+    if (favoritesData) {
+        setFavorites(new Set(favoritesData));
+    }
+}, [favoritesData]);
+```
+
+**Rationale:**
+- Syncs across devices and sessions
+- Survives browser clear
+- Can be used for analytics
+
+---
+
+#### Decision 15: Demo Mode Security
+**Date:** 2025-11-19
+**Decided By:** Architect
+**Issue:** #17 - Demo Mode Security
+
+**Problem:** Demo mode bypasses authentication and allows ANY username. Risk if enabled in production.
+
+**Decision:** Guard with explicit environment variable check
+
+**Implementation:**
+```typescript
+// ui/src/pages/Login.tsx
+const DEMO_MODE_ENABLED = import.meta.env.VITE_DEMO_MODE === 'true';
+
+const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+        const loginResponse = await login(username, password);
+        setAuth(loginResponse);
+        localStorage.setItem('streamspace_token', loginResponse.token);
+        navigate('/');
+    } catch (err: any) {
+        // Only allow demo mode if explicitly enabled
+        if (DEMO_MODE_ENABLED && err.response?.status === 401) {
+            console.warn('Demo mode active - bypassing authentication');
+            const demoResponse = {
+                token: 'demo-token',
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                user: {
+                    id: 'demo-id',
+                    username: username,
+                    email: `${username}@demo.local`,
+                    fullName: username,
+                    role: (username === 'admin' ? 'admin' : 'user') as 'user' | 'operator' | 'admin',
+                    provider: 'local' as const,
+                    active: true,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                },
+            };
+            setAuth(demoResponse);
+            localStorage.setItem('streamspace_token', demoResponse.token);
+            navigate('/');
+        } else {
+            console.error('Login failed:', err);
+            setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+        }
+    } finally {
+        setLoading(false);
+    }
+};
+```
+
+**Environment Configuration:**
+```bash
+# Development only - NEVER set in production
+VITE_DEMO_MODE=true
+```
+
+**Production Safeguards:**
+- Default is `false` (demo mode disabled)
+- CI/CD should verify this is not set in production builds
+- Add warning banner when demo mode is active
+
+**Optional Warning Banner:**
+```typescript
+{DEMO_MODE_ENABLED && (
+    <Alert severity="warning" sx={{ mb: 2 }}>
+        Demo mode active. Authentication is bypassed.
+    </Alert>
+)}
+```
+
+**Rationale:**
+- Explicit opt-in required
+- Safe by default
+- Clear indication when active
+
+---
+
+#### Decision 16: Remove Debug Console.log
+**Date:** 2025-11-19
+**Decided By:** Architect
+**Issue:** #18 - Remove Debug Console.log
+
+**Problem:** Debug console.log statement left in production code at Scheduling.tsx:157
+
+**Decision:** Remove the debug statement
+
+**Implementation:**
+```typescript
+// BEFORE (ui/src/pages/Scheduling.tsx:156-158)
+useScheduleEvents((data: any) => {
+    console.log('Schedule event:', data);  // DELETE THIS LINE
+    setWsConnected(true);
+
+// AFTER
+useScheduleEvents((data: any) => {
+    setWsConnected(true);
+```
+
+**Additional Cleanup:**
+- Search for other debug console.log statements in production code
+- Consider adding ESLint rule: `no-console: ["error", { allow: ["warn", "error"] }]`
+- Use proper logging utility for development
+
+**Rationale:**
+- Keeps browser console clean
+- Prevents accidental data exposure
+- Professional appearance
+
+---
+
+#### Decision 17: Delete Obsolete UI Pages
+**Date:** 2025-11-19
+**Decided By:** Architect
+**Issue:** #19 - Delete Obsolete UI Pages
+
+**Problem:** Obsolete pages from UI redesign still exist in codebase. Not routed but cause confusion.
+
+**Decision:** Delete the following files:
+1. `/home/user/streamspace/ui/src/pages/Repositories.tsx` - Replaced by EnhancedRepositories
+2. `/home/user/streamspace/ui/src/pages/Catalog.tsx` - Obsolete, not routed
+3. `/home/user/streamspace/ui/src/pages/EnhancedCatalog.tsx` - Experimental, never integrated
+
+**Pre-deletion Checklist:**
+```bash
+# Verify files are not imported anywhere
+grep -r "from.*Repositories" ui/src/ --include="*.tsx" --include="*.ts"
+grep -r "from.*Catalog" ui/src/ --include="*.tsx" --include="*.ts"
+grep -r "from.*EnhancedCatalog" ui/src/ --include="*.tsx" --include="*.ts"
+
+# Verify not in routes
+grep -r "Repositories\|Catalog\|EnhancedCatalog" ui/src/App.tsx
+```
+
+**Deletion Commands:**
+```bash
+rm ui/src/pages/Repositories.tsx
+rm ui/src/pages/Catalog.tsx
+rm ui/src/pages/EnhancedCatalog.tsx
+```
+
+**Verification:**
+- Build should succeed: `npm run build`
+- No TypeScript errors
+- Routes still work
+- EnhancedRepositories.tsx remains (this is the active version)
+
+**Rationale:**
+- Reduces codebase confusion
+- Prevents false bug reports
+- Cleaner project structure
+
+---
+
 ## Agent Communication Log
 
 ### 2025-11-19
