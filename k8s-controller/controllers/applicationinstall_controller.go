@@ -145,10 +145,12 @@ func (r *ApplicationInstallReconciler) parseManifest(manifest string) (*streamsp
 
 	spec := &streamspacev1alpha1.TemplateSpec{}
 
-	// Extract spec from manifest
+	// Extract spec from manifest - support both wrapped and unwrapped formats
+	// Try to get 'spec' field first, otherwise use root level as spec
 	specData, ok := manifestData["spec"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("manifest missing 'spec' field")
+		// No 'spec' wrapper, use root level as spec data
+		specData = manifestData
 	}
 
 	// Map fields from manifest to TemplateSpec
