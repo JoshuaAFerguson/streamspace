@@ -265,6 +265,7 @@ export interface ApplicationGroupAccess {
 export interface InstallApplicationRequest {
   catalogTemplateId: number;
   displayName?: string;
+  platform?: string;
   configuration?: Record<string, any>;
   groupIds?: string[];
 }

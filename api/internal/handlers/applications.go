@@ -194,12 +194,12 @@ func (h *ApplicationHandler) InstallApplication(c *gin.Context) {
 
 	// Step 2: Fetch template manifest from catalog database
 	// The manifest will be included in the ApplicationInstall for the controller to process
-	var manifest, name, displayName, description, category, iconURL string
+	var manifest, name, displayName, description, category, iconURL, templatePlatform string
 	err := h.db.DB().QueryRowContext(ctx, `
-		SELECT manifest, name, display_name, description, category, COALESCE(icon_url, '')
+		SELECT manifest, name, display_name, description, category, COALESCE(icon_url, ''), COALESCE(platform, 'kubernetes')
 		FROM catalog_templates
 		WHERE id = $1
-	`, req.CatalogTemplateID).Scan(&manifest, &name, &displayName, &description, &category, &iconURL)
+	`, req.CatalogTemplateID).Scan(&manifest, &name, &displayName, &description, &category, &iconURL, &templatePlatform)
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{
@@ -237,6 +237,12 @@ func (h *ApplicationHandler) InstallApplication(c *gin.Context) {
 
 	// Step 5: Publish NATS event for controller to process
 	// The controller will create the platform-specific resources (Template CRD, Docker container, etc.)
+	// Use platform from request if specified, otherwise use template's platform
+	targetPlatform := req.Platform
+	if targetPlatform == "" {
+		targetPlatform = templatePlatform
+	}
+
 	installEvent := &events.AppInstallEvent{
 		InstallID:         app.ID,
 		CatalogTemplateID: req.CatalogTemplateID,
@@ -247,7 +253,7 @@ func (h *ApplicationHandler) InstallApplication(c *gin.Context) {
 		IconURL:           iconURL,
 		Manifest:          manifest,
 		InstalledBy:       userID.(string),
-		Platform:          h.platform,
+		Platform:          targetPlatform,
 	}
 
 	if err := h.publisher.PublishAppInstall(ctx, installEvent); err != nil {

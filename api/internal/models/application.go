@@ -124,6 +124,11 @@ type InstallApplicationRequest struct {
 	// If not provided, uses the template's default display name.
 	DisplayName string `json:"displayName"`
 
+	// Platform specifies which platform to install on (optional).
+	// Valid values: kubernetes, docker, hyperv, vcenter
+	// If not provided, defaults to the template's platform or 'kubernetes'.
+	Platform string `json:"platform"`
+
 	// Configuration is the initial application settings (optional).
 	Configuration map[string]interface{} `json:"configuration"`
 

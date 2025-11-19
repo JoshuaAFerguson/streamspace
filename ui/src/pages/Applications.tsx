@@ -81,6 +81,7 @@ function ApplicationsContent() {
   const [selectedTemplate, setSelectedTemplate] = useState<number | ''>('');
   const [newDisplayName, setNewDisplayName] = useState('');
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('kubernetes');
 
   // Edit dialog state
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -139,6 +140,7 @@ function ApplicationsContent() {
       const request: InstallApplicationRequest = {
         catalogTemplateId: selectedTemplate,
         displayName: newDisplayName || undefined,
+        platform: selectedPlatform,
         groupIds: selectedGroups.length > 0 ? selectedGroups : undefined,
       };
 
@@ -307,6 +309,7 @@ function ApplicationsContent() {
     setSelectedTemplate('');
     setNewDisplayName('');
     setSelectedGroups([]);
+    setSelectedPlatform('kubernetes');
   };
 
   const getSelectedTemplateName = () => {
@@ -492,6 +495,20 @@ function ApplicationsContent() {
                       {group.displayName}
                     </MenuItem>
                   ))}
+                </Select>
+              </FormControl>
+
+              <FormControl fullWidth>
+                <InputLabel>Target Platform</InputLabel>
+                <Select
+                  value={selectedPlatform}
+                  onChange={(e) => setSelectedPlatform(e.target.value)}
+                  label="Target Platform"
+                >
+                  <MenuItem value="kubernetes">Kubernetes</MenuItem>
+                  <MenuItem value="docker">Docker</MenuItem>
+                  <MenuItem value="hyperv">Hyper-V</MenuItem>
+                  <MenuItem value="vcenter">vCenter</MenuItem>
                 </Select>
               </FormControl>
             </Box>
