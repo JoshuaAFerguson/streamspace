@@ -191,6 +191,8 @@ function ApplicationsContent() {
 
     try {
       await api.deleteApplication(selectedApp.id);
+      // Optimistically remove from state immediately for instant UI feedback
+      setApplications(prev => prev.filter(app => app.id !== selectedApp.id));
       addNotification({
         message: 'Application deleted successfully',
         severity: 'success',
@@ -198,6 +200,7 @@ function ApplicationsContent() {
       });
       setDeleteDialogOpen(false);
       setSelectedApp(null);
+      // Still refresh to ensure consistency with server
       await loadApplications();
     } catch (error) {
       console.error('Failed to delete application:', error);
