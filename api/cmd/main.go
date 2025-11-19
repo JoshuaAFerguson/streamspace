@@ -116,6 +116,28 @@ func main() {
 		platform = events.PlatformKubernetes // Default platform
 	}
 
+	// Initialize NATS event subscriber for receiving status updates from controllers
+	log.Println("Initializing NATS event subscriber...")
+	eventSubscriber, err := events.NewSubscriber(events.Config{
+		URL:      natsURL,
+		User:     natsUser,
+		Password: natsPassword,
+	}, database.DB())
+	if err != nil {
+		log.Printf("Warning: Failed to initialize NATS subscriber: %v", err)
+		log.Println("Status feedback from controllers will be disabled")
+	}
+	defer eventSubscriber.Close()
+
+	// Start subscriber in background to receive controller status events
+	subscriberCtx, cancelSubscriber := context.WithCancel(context.Background())
+	defer cancelSubscriber()
+	go func() {
+		if err := eventSubscriber.Start(subscriberCtx); err != nil {
+			log.Printf("NATS subscriber error: %v", err)
+		}
+	}()
+
 	// Initialize connection tracker
 	log.Println("Starting connection tracker...")
 	connTracker := tracker.NewConnectionTracker(database, k8sClient, eventPublisher, platform)
