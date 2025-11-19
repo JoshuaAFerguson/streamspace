@@ -604,20 +604,8 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		session.Tags = req.Tags
 	}
 
-	// Create in Kubernetes
-	created, err := h.k8sClient.CreateSession(ctx, session)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Cache in database
-	if err := h.cacheSessionInDB(ctx, created); err != nil {
-		log.Printf("Failed to cache session in database: %v", err)
-	}
-
-	// Publish session create event for controllers
-	// This enables platform-agnostic session management
+	// Publish session create event for controller to handle
+	// The controller will create the Session CRD in Kubernetes
 	createEvent := &events.SessionCreateEvent{
 		SessionID:      sessionName,
 		UserID:         req.User,
@@ -628,7 +616,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		IdleTimeout:    session.IdleTimeout,
 	}
 
-	// Add template configuration for Docker controller
+	// Add template configuration for controller
 	if template != nil {
 		vncPort := 3000 // Default VNC port
 		if template.VNC != nil && template.VNC.Port > 0 {
@@ -650,10 +638,36 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	}
 
 	if err := h.publisher.PublishSessionCreate(ctx, createEvent); err != nil {
-		log.Printf("Warning: Failed to publish session create event: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to create session",
+			"message": fmt.Sprintf("Failed to publish session create event: %v", err),
+		})
+		return
 	}
 
-	c.JSON(http.StatusCreated, created)
+	// Return the session info immediately
+	// The controller will create the actual Kubernetes resources
+	response := map[string]interface{}{
+		"name":               sessionName,
+		"namespace":          h.namespace,
+		"user":               req.User,
+		"template":           templateName,
+		"state":              "pending",
+		"persistentHome":     session.PersistentHome,
+		"idleTimeout":        session.IdleTimeout,
+		"maxSessionDuration": session.MaxSessionDuration,
+		"resources": map[string]string{
+			"memory": memory,
+			"cpu":    cpu,
+		},
+		"status": map[string]string{
+			"phase":   "Pending",
+			"message": "Session creation requested, waiting for controller",
+		},
+	}
+
+	log.Printf("Published session create event for %s (controller will create resources)", sessionName)
+	c.JSON(http.StatusAccepted, response)
 }
 
 // UpdateSession updates a session (typically state changes)
@@ -677,41 +691,53 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 		return
 	}
 
-	// Update in Kubernetes
-	updated, err := h.k8sClient.UpdateSessionState(ctx, h.namespace, sessionID, req.State)
+	// Get current session info for the event
+	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
 	}
 
-	// Update cache in database
-	if err := h.updateSessionInDB(ctx, updated); err != nil {
-		log.Printf("Failed to update session in database: %v", err)
-	}
-
-	// Publish state change event for controllers
+	// Publish state change event for controller to handle
+	var publishErr error
 	switch req.State {
 	case "hibernated":
 		event := &events.SessionHibernateEvent{
 			SessionID: sessionID,
-			UserID:    updated.User,
+			UserID:    session.User,
 			Platform:  h.platform,
 		}
-		if err := h.publisher.PublishSessionHibernate(ctx, event); err != nil {
-			log.Printf("Warning: Failed to publish session hibernate event: %v", err)
-		}
+		publishErr = h.publisher.PublishSessionHibernate(ctx, event)
 	case "running":
 		event := &events.SessionWakeEvent{
 			SessionID: sessionID,
-			UserID:    updated.User,
+			UserID:    session.User,
 			Platform:  h.platform,
 		}
-		if err := h.publisher.PublishSessionWake(ctx, event); err != nil {
-			log.Printf("Warning: Failed to publish session wake event: %v", err)
+		publishErr = h.publisher.PublishSessionWake(ctx, event)
+	case "terminated":
+		event := &events.SessionDeleteEvent{
+			SessionID: sessionID,
+			UserID:    session.User,
+			Platform:  h.platform,
 		}
+		publishErr = h.publisher.PublishSessionDelete(ctx, event)
 	}
 
-	c.JSON(http.StatusOK, updated)
+	if publishErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to update session",
+			"message": fmt.Sprintf("Failed to publish state change event: %v", publishErr),
+		})
+		return
+	}
+
+	log.Printf("Published session %s event for %s (controller will update resources)", req.State, sessionID)
+	c.JSON(http.StatusAccepted, gin.H{
+		"name":    sessionID,
+		"state":   req.State,
+		"message": "State change requested, waiting for controller",
+	})
 }
 
 // DeleteSession deletes a session
@@ -727,28 +753,25 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 		return
 	}
 
-	// Delete from Kubernetes
-	if err := h.k8sClient.DeleteSession(ctx, h.namespace, sessionID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Delete from database cache
-	if err := h.deleteSessionFromDB(ctx, sessionID); err != nil {
-		log.Printf("Failed to delete session from database: %v", err)
-	}
-
-	// Publish session delete event for controllers
+	// Publish session delete event for controller to handle
 	deleteEvent := &events.SessionDeleteEvent{
 		SessionID: sessionID,
 		UserID:    session.User,
 		Platform:  h.platform,
 	}
 	if err := h.publisher.PublishSessionDelete(ctx, deleteEvent); err != nil {
-		log.Printf("Warning: Failed to publish session delete event: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to delete session",
+			"message": fmt.Sprintf("Failed to publish delete event: %v", err),
+		})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Session deleted"})
+	log.Printf("Published session delete event for %s (controller will delete resources)", sessionID)
+	c.JSON(http.StatusAccepted, gin.H{
+		"name":    sessionID,
+		"message": "Session deletion requested, waiting for controller",
+	})
 }
 
 // ConnectSession handles a user connecting to a session
