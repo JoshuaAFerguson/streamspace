@@ -1,6 +1,6 @@
 # Phase 5.5 Release Notes
 
-> **Status**: OUTLINE - Pending implementation completion
+> **Status**: Design Complete - Awaiting implementation
 > **Version**: v1.1.0
 > **Release Date**: TBD
 
@@ -55,6 +55,51 @@ Phase 5.5 focuses on completing all partially implemented features and fixing br
 
 **Before**: Returned success without persisting
 **After**: Configuration validated against schema and stored in database
+
+---
+
+## Architectural Decisions
+
+Key design decisions made during Phase 5.5 development:
+
+### Plugin Runtime Loading
+
+**Decision**: Use Go's native plugin system with `.so` files
+
+- Plugins compiled as shared objects
+- Loaded using `plugin.Open()` and symbol lookup
+- Type-safe interfaces with `PluginHandler`
+
+**Rationale**: Native performance, compile-time type checking, standard Go mechanism
+
+### Installation Status Updates
+
+**Decision**: Polling-based status check instead of callbacks
+
+- API polls Kubernetes for Template CRD existence
+- Updates status to 'installed' when found
+- Times out after 5 minutes
+
+**Rationale**: Simpler than webhooks, works with NATS architecture, self-healing
+
+### VNC Connection Strategy
+
+**Decision**: Non-blocking connection with polling endpoint
+
+- Return immediately with `ready: false` if URL empty
+- Client polls `/sessions/{id}/status` every 2 seconds
+- Connect when URL becomes available
+
+**Rationale**: Better UX, handles slow pod startup gracefully
+
+### Session Name/ID Mapping
+
+**Decision**: Return both `id` (UUID) and `name` (human-readable)
+
+- `name` for display and URL routing
+- `id` for internal API operations
+
+**Rationale**: Backward compatible, clear separation of concerns
 
 ---
 

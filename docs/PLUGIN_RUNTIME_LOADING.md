@@ -1,6 +1,6 @@
 # Plugin Runtime Loading Guide
 
-> **Status**: OUTLINE - Waiting for Builder implementation
+> **Status**: Design Complete - Awaiting Builder implementation
 > **Version**: 1.1.0
 > **Last Updated**: 2025-11-19
 
@@ -47,23 +47,60 @@ This guide documents the plugin runtime loading system that allows plugins to be
 │                                                 │
 │  ├── plugin-a/                                  │
 │  │   ├── manifest.json                          │
-│  │   └── index.js                               │
+│  │   └── plugin-a.so                            │
 │  ├── plugin-b/                                  │
 │  │   ├── manifest.json                          │
-│  │   └── index.js                               │
+│  │   └── plugin-b.so                            │
 │  └── ...                                        │
 └─────────────────────────────────────────────────┘
 ```
 
 ### Loading Process
 
-<!-- TODO: Document after Builder implements LoadHandler() -->
+StreamSpace uses Go's native plugin system for runtime loading:
 
-1. **Discovery**: Scanner detects new plugin in directory
-2. **Validation**: Manifest and entry point validated
-3. **Isolation**: Plugin loaded in sandboxed context
-4. **Registration**: Handlers and hooks registered
-5. **Initialization**: Plugin's `onLoad()` called
+1. **Discovery**: Scanner detects new plugin directory with `.so` file
+2. **Validation**: Manifest and shared object validated
+3. **Loading**: Plugin opened using `plugin.Open()`
+4. **Symbol Lookup**: `Handler` symbol located and type-checked
+5. **Initialization**: Plugin's `OnLoad()` method called
+
+### Implementation
+
+The `LoadHandler()` function uses Go's plugin package:
+
+```go
+func (r *Runtime) LoadHandler(name string) (PluginHandler, error) {
+    pluginPath := filepath.Join(r.pluginDir, name, name+".so")
+
+    // Open the plugin
+    p, err := plugin.Open(pluginPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open plugin %s: %w", name, err)
+    }
+
+    // Look up the Handler symbol
+    sym, err := p.Lookup("Handler")
+    if err != nil {
+        return nil, fmt.Errorf("plugin %s missing Handler: %w", name, err)
+    }
+
+    // Assert to PluginHandler interface
+    handler, ok := sym.(PluginHandler)
+    if !ok {
+        return nil, fmt.Errorf("plugin %s Handler has wrong type", name)
+    }
+
+    return handler, nil
+}
+```
+
+### Design Rationale
+
+- **Native Go performance**: No interpreter overhead
+- **Type-safe interfaces**: Compile-time checking of plugin contracts
+- **Standard mechanism**: Uses Go's built-in plugin package
+- **Alternative rejected**: Yaegi interpreter was considered but rejected due to performance and security concerns
 
 ---
 
