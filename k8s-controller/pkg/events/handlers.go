@@ -13,6 +13,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,9 +44,15 @@ func (s *Subscriber) handleSessionCreate(ctx context.Context, data []byte) error
 			State:          "running",
 			PersistentHome: event.PersistentHome,
 			IdleTimeout:    event.IdleTimeout,
-			Resources: streamv1alpha1.ResourceSpec{
-				Memory: event.Resources.Memory,
-				CPU:    event.Resources.CPU,
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse(event.Resources.Memory),
+					corev1.ResourceCPU:    resource.MustParse(event.Resources.CPU),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse(event.Resources.Memory),
+					corev1.ResourceCPU:    resource.MustParse(event.Resources.CPU),
+				},
 			},
 		},
 	}
@@ -211,7 +218,7 @@ func (s *Subscriber) handleAppInstall(ctx context.Context, data []byte) error {
 			DisplayName:       event.DisplayName,
 			Description:       event.Description,
 			Category:          event.Category,
-			IconURL:           event.IconURL,
+			Icon:              event.IconURL,
 			Manifest:          event.Manifest,
 			CatalogTemplateID: event.CatalogTemplateID,
 		},
