@@ -147,14 +147,35 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create NATS connection for SessionReconciler to publish status events
+	var sessionNATSConn *nats.Conn
+	if natsURL != "" {
+		opts := []nats.Option{
+			nats.Name("streamspace-session-reconciler"),
+			nats.ReconnectWait(2 * time.Second),
+			nats.MaxReconnects(10),
+		}
+		if natsUser != "" {
+			opts = append(opts, nats.UserInfo(natsUser, natsPassword))
+		}
+		sessionNATSConn, err = nats.Connect(natsURL, opts...)
+		if err != nil {
+			setupLog.Info("SessionReconciler NATS connection failed, status events will not be published", "error", err)
+		} else {
+			setupLog.Info("SessionReconciler connected to NATS for status publishing")
+		}
+	}
+
 	// Register SessionReconciler
 	// Manages the lifecycle of Session resources:
 	//   - Creates Deployments, Services, and PVCs for user sessions
 	//   - Handles state transitions (running, hibernated, terminated)
 	//   - Updates status with pod information and resource usage
 	if err = (&controllers.SessionReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		NATSConn:     sessionNATSConn,
+		ControllerID: controllerID,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Session")
 		os.Exit(1)
