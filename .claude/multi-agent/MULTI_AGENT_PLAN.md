@@ -35,58 +35,211 @@
 
 ---
 
-## Current Focus: Architecture Redesign - Platform Agnostic Controllers
+## Current Focus: v1.0.0 Stable Release (APPROVED 2025-11-20)
 
-### Strategic Shift
+### Strategic Direction
 
-**Goal**: Transition from a Kubernetes-native architecture to a platform-agnostic "Control Plane + Agent" model.
-**Reason**: To support multiple backends (Docker, Hyper-V, vCenter) and simplify the core API.
+**Decision:** Focus on stabilizing and completing existing Kubernetes-native platform before architectural changes.
+**Rationale:** Current architecture is production-ready. Build on solid foundation before redesigning.
 
-### Success Criteria
+### v1.0.0 Stable Release Goals
+
+**Target:** 10-12 weeks to stable release
+
+- [ ] **Priority 1**: Increase test coverage from 15% to 70%+ (6-8 weeks)
+- [ ] **Priority 2**: Implement top 10 plugins by extracting handler logic (4-6 weeks)
+- [ ] **Priority 3**: Verify and fix template repository sync (1-2 weeks)
+- [ ] **Priority 4**: Fix critical bugs discovered during testing
+
+### v1.1 Multi-Platform (DEFERRED - Documented for Future)
+
+**Note:** Architecture redesign plans preserved for v1.1 release after v1.0.0 stable.
 
 - [ ] **Phase 1**: Control Plane Decoupling (Database-backed models, Controller API)
 - [ ] **Phase 2**: K8s Agent Adaptation (Refactor k8s-controller to Agent)
-- [ ] **Phase 3**: UI Updates (Terminology, Admin Views)
+- [ ] **Phase 3**: Docker Controller Completion
+- [ ] **Phase 4**: UI Updates (Terminology, Admin Views)
+
+See "Deferred Tasks (v1.1+)" section below for detailed plans.
 
 ---
 
-## Active Tasks
+## Active Tasks - v1.0.0 Stable
 
-### Task: Phase 1 - Control Plane Decoupling
+### Task: Test Coverage - Controller Tests
+
+- **Assigned To**: Builder / Validator
+- **Status**: Not Started
+- **Priority**: CRITICAL (P0)
+- **Dependencies**: None
+- **Target Coverage**: 30-40% → 70%+
+- **Notes**:
+  - Expand existing 4 test files in k8s-controller/controllers/
+  - Add tests for error handling, edge cases, concurrent operations
+  - Test hibernation cycles, session lifecycle, resource quotas
+  - Use envtest for local execution
+- **Estimated Effort**: 2-3 weeks
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Test Coverage - API Handler Tests
+
+- **Assigned To**: Builder / Validator
+- **Status**: Not Started
+- **Priority**: CRITICAL (P0)
+- **Dependencies**: None
+- **Target Coverage**: 10-20% → 70%+
+- **Notes**:
+  - Add tests for 63 untested handler files in api/internal/handlers/
+  - Focus on critical paths first: sessions, users, auth, quotas
+  - Test error handling, validation, authorization
+  - Fix existing test build errors (method name mismatches)
+- **Estimated Effort**: 3-4 weeks
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Test Coverage - UI Component Tests
+
+- **Assigned To**: Builder / Validator
+- **Status**: Not Started
+- **Priority**: HIGH (P1)
+- **Dependencies**: None
+- **Target Coverage**: 5% → 70%+
+- **Notes**:
+  - Add tests for 48 untested components in ui/src/components/
+  - Test all pages in ui/src/pages/ and ui/src/pages/admin/
+  - Vitest already configured with 80% threshold
+  - Focus on critical user flows first
+- **Estimated Effort**: 2-3 weeks
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Plugin Implementation - Top 10 Plugins
 
 - **Assigned To**: Builder
 - **Status**: Not Started
-- **Priority**: CRITICAL
+- **Priority**: HIGH (P1)
 - **Dependencies**: None
 - **Notes**:
-  - Create `Session` and `Template` database tables (replace CRD dependency).
-  - Implement `Controller` registration API (WebSocket/gRPC).
-  - Refactor API to use DB instead of K8s client.
-- **Last Updated**: 2025-11-20 - Architecture Redesign
+  - Extract existing handler logic into plugin modules
+  - Priority plugins:
+    1. streamspace-calendar (extract from scheduling.go)
+    2. streamspace-slack (extract from integrations.go)
+    3. streamspace-teams (extract from integrations.go)
+    4. streamspace-discord (extract from integrations.go)
+    5. streamspace-pagerduty (extract from integrations.go)
+    6. streamspace-multi-monitor (extract from handlers)
+    7. streamspace-snapshots (extract logic)
+    8. streamspace-recording (extract logic)
+    9. streamspace-compliance (extract logic)
+    10. streamspace-dlp (extract logic)
+  - Add plugin configuration UI
+  - Add plugin-specific tests
+  - Document each plugin
+- **Estimated Effort**: 4-6 weeks (4-5 days per plugin)
+- **Last Updated**: 2025-11-20 - Architect
 
-### Task: Phase 2 - K8s Agent Adaptation
+### Task: Template Repository Verification
+
+- **Assigned To**: Builder / Validator
+- **Status**: Not Started
+- **Priority**: MEDIUM (P1)
+- **Dependencies**: None
+- **Notes**:
+  - Verify external streamspace-templates repository exists and is accessible
+  - Test catalog sync functionality in /api/internal/handlers/catalog.go
+  - Verify template discovery and installation works
+  - Test with multiple template sources
+  - Document template repository setup for users
+- **Estimated Effort**: 1-2 weeks
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Critical Bug Fixes
 
 - **Assigned To**: Builder
 - **Status**: Not Started
-- **Priority**: High
-- **Dependencies**: Phase 1
+- **Priority**: CRITICAL (P0)
+- **Dependencies**: Test Coverage tasks (bugs will be discovered)
 - **Notes**:
-  - Fork `k8s-controller` to `controllers/k8s`.
-  - Implement Agent loop (connect to API, listen for commands).
-  - Replace CRD status updates with API reporting.
-- **Last Updated**: 2025-11-20 - Architecture Redesign
+  - Fix any critical bugs discovered during test implementation
+  - Priority: session lifecycle, authentication, authorization, data integrity
+  - Track in GitHub issues as discovered
+- **Estimated Effort**: Ongoing during testing phase
+- **Last Updated**: 2025-11-20 - Architect
 
-### Task: Phase 3 - UI Updates
+---
 
-- **Assigned To**: Builder / Scribe
-- **Status**: Not Started
-- **Priority**: Medium
-- **Dependencies**: Phase 1
+## Deferred Tasks (v1.1+ Multi-Platform Architecture)
+
+**Status:** DEFERRED until v1.0.0 stable release complete
+**Reason:** Current K8s architecture is production-ready. Complete testing and plugins first.
+
+### Phase 1: Control Plane Decoupling (v1.1)
+
+- **Assigned To**: Builder (future)
+- **Status**: Deferred
+- **Priority**: Medium (after v1.0.0)
+- **Dependencies**: v1.0.0 stable release
 - **Notes**:
-  - Rename "Pod" to "Instance".
-  - Update "Nodes" view to "Controllers".
-  - Ensure status fields map correctly.
-- **Last Updated**: 2025-11-20 - Architecture Redesign
+  - Create `Session` and `Template` database tables (replace CRD dependency)
+  - Implement `Controller` registration API (WebSocket/gRPC)
+  - Refactor API to use DB instead of K8s client
+  - Maintain backward compatibility with existing K8s controller
+- **Estimated Effort**: 4-6 weeks
+- **Target Release**: v1.1.0
+
+### Phase 2: K8s Agent Adaptation (v1.1)
+
+- **Assigned To**: Builder (future)
+- **Status**: Deferred
+- **Priority**: Medium (after Phase 1)
+- **Dependencies**: Phase 1 complete
+- **Notes**:
+  - Fork `k8s-controller` to `controllers/k8s`
+  - Implement Agent loop (connect to API, listen for commands)
+  - Replace CRD status updates with API reporting
+  - Test dual-mode operation (CRD + API)
+- **Estimated Effort**: 3-4 weeks
+- **Target Release**: v1.1.0
+
+### Phase 3: Docker Controller Completion (v1.1)
+
+- **Assigned To**: Builder (future)
+- **Status**: Deferred (current: 718 lines, 10% complete)
+- **Priority**: Medium (parallel with Phase 2)
+- **Dependencies**: Phase 1 complete
+- **Notes**:
+  - Complete Docker container lifecycle management
+  - Implement volume management for user storage
+  - Add network configuration
+  - Implement status reporting back to API
+  - Create integration tests
+- **Estimated Effort**: 4-6 weeks
+- **Target Release**: v1.1.0
+
+### Phase 4: UI Updates for Multi-Platform (v1.1)
+
+- **Assigned To**: Builder / Scribe (future)
+- **Status**: Deferred
+- **Priority**: Low (after Phase 2-3)
+- **Dependencies**: Phase 2 and 3 complete
+- **Notes**:
+  - Rename "Pod" to "Instance" (platform-agnostic terminology)
+  - Update "Nodes" view to "Controllers"
+  - Add platform selector (Kubernetes, Docker, etc.)
+  - Ensure status fields map correctly for all platforms
+  - Update documentation
+- **Estimated Effort**: 2-3 weeks
+- **Target Release**: v1.1.0
+
+### v1.1.0 Success Criteria
+
+- [ ] API backend uses database instead of K8s CRDs
+- [ ] Kubernetes controller operates as Agent (connects to API)
+- [ ] Docker controller fully functional (parity with K8s controller)
+- [ ] UI supports multiple controller platforms
+- [ ] Backward compatibility maintained with v1.0.0 deployments
+- [ ] Documentation updated for multi-platform deployment
+- [ ] Integration tests pass for both K8s and Docker
+
+**Estimated Total for v1.1.0:** 13-19 weeks after v1.0.0 stable
 
 ---
 
@@ -384,42 +537,38 @@ After thorough examination of 150+ files across all components, I'm pleased to r
    - Docker controller: 718 lines, not functional (acknowledged as "5% complete")
    - Template catalog: External repository dependency needs verification
 
-3. **Strategic Recommendation: PAUSE Architecture Redesign**
-
-   **Original Plan:** Phase 1-3 architecture redesign to platform-agnostic model
-
-   **Architect's Assessment:** The current Kubernetes-native architecture is **production-ready and working**. Before undertaking a major architectural shift, I recommend:
-
-   **Priority 1 (Critical for v1.0.0 Stable):**
-   - Increase test coverage from 15% to 70%+ (6-8 weeks)
-   - Implement top 10 plugins by extracting existing handler logic (4-6 weeks)
-   - Verify template repository sync functionality (1-2 weeks)
-   - Fix any critical bugs discovered in testing
-
-   **Priority 2 (Multi-Platform Support):**
-   - Complete Docker controller implementation (4-6 weeks)
-   - Only THEN consider Control Plane + Agent redesign
-   - Kubernetes controller works well as-is
-
-   **Priority 3 (Future Enhancements):**
-   - VNC independence migration (TigerVNC + noVNC)
-   - Architecture redesign to platform-agnostic model
-   - Multi-cluster federation
-
-   **Rationale:**
-   - Don't fix what isn't broken (K8s controller is production-ready)
-   - Build on solid foundation (improve testing, finish plugins)
-   - Complete Docker controller BEFORE abstracting architecture
-   - Validate current architecture works well before redesigning
-
-4. **No Blockers Found**
-   - All claimed features either exist or are honestly documented as stubs
-   - Codebase is well-structured and maintainable
-   - Documentation quality is excellent
-
 **Full Details:** See `/docs/CODEBASE_AUDIT_REPORT.md` (comprehensive 400+ line report)
 
-**Recommendation to User:** StreamSpace is ready for v1.0.0-beta as claimed. Focus on testing and plugin implementation before stable release.
+---
+
+### User Decision - 2025-11-20 19:00 UTC ✅
+
+**APPROVED: Option 1 - Focus on v1.0.0 Stable Release**
+
+**Strategic Direction:**
+- ✅ Focus on testing and plugins for v1.0.0 stable
+- ✅ Defer architecture redesign to v1.1.0+
+- ✅ Preserve v1.1 multi-platform plans for future
+
+**Active Priorities for v1.0.0 (10-12 weeks):**
+1. Increase test coverage from 15% to 70%+ (P0)
+2. Implement top 10 plugins by extracting handler logic (P1)
+3. Verify template repository sync functionality (P1)
+4. Fix critical bugs discovered during testing (P0)
+
+**Deferred to v1.1.0:**
+- Control Plane decoupling (database-backed models)
+- K8s Agent adaptation (refactor controller)
+- Docker controller completion
+- Multi-platform UI updates
+
+**Next Steps:**
+- Architect: ✅ Create detailed task breakdown (COMPLETE)
+- Builder: Ready to start on test coverage (controller tests first)
+- Validator: Ready to assist with test implementation
+- Scribe: Ready to document testing patterns and plugin migration
+
+**No Blockers:** All tasks defined and ready to begin
 
 ---
 
