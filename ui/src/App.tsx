@@ -58,6 +58,9 @@ const AuditLogs = lazy(() => import('./pages/admin/AuditLogs'));
 const Settings = lazy(() => import('./pages/admin/Settings'));
 const License = lazy(() => import('./pages/admin/License'));
 const APIKeys = lazy(() => import('./pages/admin/APIKeys'));
+const Monitoring = lazy(() => import('./pages/admin/Monitoring'));
+const Controllers = lazy(() => import('./pages/admin/Controllers'));
+const Recordings = lazy(() => import('./pages/admin/Recordings'));
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -367,6 +370,30 @@ function App() {
               element={
                 <AdminRoute>
                   <APIKeys />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/monitoring"
+              element={
+                <AdminRoute>
+                  <Monitoring />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/controllers"
+              element={
+                <AdminRoute>
+                  <Controllers />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/recordings"
+              element={
+                <AdminRoute>
+                  <Recordings />
                 </AdminRoute>
               }
             />
