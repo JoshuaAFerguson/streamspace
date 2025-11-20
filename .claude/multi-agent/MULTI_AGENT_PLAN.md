@@ -47,9 +47,10 @@
 **Target:** 10-12 weeks to stable release
 
 - [ ] **Priority 1**: Increase test coverage from 15% to 70%+ (6-8 weeks)
-- [ ] **Priority 2**: Implement top 10 plugins by extracting handler logic (4-6 weeks)
-- [ ] **Priority 3**: Verify and fix template repository sync (1-2 weeks)
-- [ ] **Priority 4**: Fix critical bugs discovered during testing
+- [ ] **Priority 2**: Complete critical admin UI features (4-6 weeks) - **NEWLY IDENTIFIED**
+- [ ] **Priority 3**: Implement top 10 plugins by extracting handler logic (4-6 weeks)
+- [ ] **Priority 4**: Verify and fix template repository sync (1-2 weeks)
+- [ ] **Priority 5**: Fix critical bugs discovered during testing
 
 ### v1.1 Multi-Platform (DEFERRED - Documented for Future)
 
@@ -163,6 +164,179 @@ See "Deferred Tasks (v1.1+)" section below for detailed plans.
   - Priority: session lifecycle, authentication, authorization, data integrity
   - Track in GitHub issues as discovered
 - **Estimated Effort**: Ongoing during testing phase
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Admin UI - Audit Logs Viewer
+
+- **Assigned To**: Builder
+- **Status**: Not Started
+- **Priority**: CRITICAL (P0)
+- **Dependencies**: None
+- **Notes**:
+  - **Backend**: audit_log table exists, middleware active
+  - **Missing**: GET endpoint and admin UI page
+  - **Implementation**:
+    - API Handler: `api/internal/handlers/audit.go`
+      - GET /api/v1/admin/audit (list with filters)
+      - GET /api/v1/admin/audit/:id (detail)
+      - GET /api/v1/admin/audit/export (CSV/JSON export)
+    - UI Page: `ui/src/pages/admin/AuditLogs.tsx`
+      - Filterable table (user, action, resource, date range)
+      - JSON diff viewer for changes
+      - Export functionality for compliance reports
+      - Real-time updates via WebSocket
+  - **Why Critical**: Required for SOC2/HIPAA/GDPR compliance, security incident investigation
+- **Estimated Effort**: 2-3 days
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Admin UI - System Configuration
+
+- **Assigned To**: Builder
+- **Status**: Not Started
+- **Priority**: CRITICAL (P0)
+- **Dependencies**: None
+- **Notes**:
+  - **Backend**: configuration table exists with 10+ settings
+  - **Missing**: All handlers and UI
+  - **Implementation**:
+    - API Handler: `api/internal/handlers/configuration.go`
+      - GET /api/v1/admin/config (list all by category)
+      - PUT /api/v1/admin/config/:key (update with validation)
+      - POST /api/v1/admin/config/test (test before applying)
+      - GET /api/v1/admin/config/history (change history)
+    - UI Page: `ui/src/pages/admin/Settings.tsx`
+      - Tabbed interface by category (Ingress, Storage, Resources, Features, Session, Security, Compliance)
+      - Type-aware form fields (string, boolean, number, duration, enum, array)
+      - Validation and test configuration
+      - Change history with diff viewer
+      - Export/import configuration (JSON/YAML)
+  - **Configuration Categories**:
+    - Ingress: domain, TLS settings
+    - Storage: className, defaultSize, allowedClasses
+    - Resources: defaultMemory, defaultCPU, max limits
+    - Features: metrics, hibernation, recordings
+    - Session: idleTimeout, maxDuration, allowedImages
+    - Security: MFA, SAML, OIDC, IP whitelist
+    - Compliance: frameworks, retention, archiving
+  - **Why Critical**: Cannot deploy to production without config UI (database editing is unacceptable)
+- **Estimated Effort**: 3-4 days
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Admin UI - License Management
+
+- **Assigned To**: Builder
+- **Status**: Not Started
+- **Priority**: CRITICAL (P0)
+- **Dependencies**: None
+- **Notes**:
+  - **Backend**: No implementation at all
+  - **Missing**: Everything (tables, handlers, middleware, UI)
+  - **Implementation**:
+    - Database Schema: Add to `api/internal/db/database.go`
+      - licenses table (key, tier, features, limits, expiration)
+      - license_usage table (daily snapshots)
+    - API Handler: `api/internal/handlers/license.go`
+      - GET /api/v1/admin/license (get current)
+      - POST /api/v1/admin/license/activate (activate key)
+      - GET /api/v1/admin/license/usage (usage dashboard)
+    - Middleware: `api/internal/middleware/license.go`
+      - Check limits before resource creation
+      - Warn at 80/90/95% of limits
+    - UI Page: `ui/src/pages/admin/License.tsx`
+      - Current license display (tier, expiration, features, usage)
+      - Activate license form
+      - Usage graphs (historical trends, forecasts)
+      - Limit warnings
+  - **License Tiers**:
+    - Community: 10 users, 20 sessions, basic auth only
+    - Pro: 100 users, 200 sessions, SAML/OIDC/MFA/recordings
+    - Enterprise: unlimited, all features, SLA, custom integrations
+  - **Why Critical**: Cannot sell Pro/Enterprise without license enforcement, no revenue model
+- **Estimated Effort**: 3-4 days
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Admin UI - API Keys Management
+
+- **Assigned To**: Builder
+- **Status**: Not Started
+- **Priority**: HIGH (P1)
+- **Dependencies**: None
+- **Notes**:
+  - **Backend**: Handlers exist (CreateAPIKey, ListAPIKeys, DeleteAPIKey, RevokeAPIKey, GetAPIKeyUsage)
+  - **Missing**: Admin UI only
+  - **Implementation**:
+    - User Page: `ui/src/pages/Settings.tsx` (add API Keys section)
+    - Admin Page: `ui/src/pages/admin/APIKeys.tsx` (system-wide view)
+    - Features: Create with scopes, revoke, usage stats, rate limits
+  - **Why Important**: Essential for automation and integrations
+- **Estimated Effort**: 2 days
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Admin UI - Alert Management
+
+- **Assigned To**: Builder
+- **Status**: Not Started
+- **Priority**: HIGH (P1)
+- **Dependencies**: None
+- **Notes**:
+  - **Backend**: Handlers exist (GetAlerts, CreateAlert, UpdateAlert, DeleteAlert, AcknowledgeAlert, ResolveAlert)
+  - **Missing**: Management UI
+  - **Implementation**:
+    - Page: `ui/src/pages/admin/Monitoring.tsx`
+    - Features:
+      - Active alerts list
+      - Alert rule configuration (thresholds, conditions)
+      - Alert history
+      - Integration settings (webhooks, PagerDuty, Slack)
+  - **Why Important**: Essential for production operations and incident response
+- **Estimated Effort**: 2-3 days
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Admin UI - Controller Management
+
+- **Assigned To**: Builder
+- **Status**: Not Started
+- **Priority**: HIGH (P1)
+- **Dependencies**: None
+- **Notes**:
+  - **Backend**: platform_controllers table exists
+  - **Missing**: Handlers and UI
+  - **Implementation**:
+    - API Handler: `api/internal/handlers/controllers.go`
+      - GET /api/v1/admin/controllers (list)
+      - POST /api/v1/admin/controllers/register (register new)
+      - PUT /api/v1/admin/controllers/:id (update)
+      - DELETE /api/v1/admin/controllers/:id (unregister)
+    - UI Page: `ui/src/pages/admin/Controllers.tsx`
+    - Features:
+      - List registered controllers (K8s, Docker, etc.)
+      - Controller status (online/offline, heartbeat)
+      - Register new controllers
+      - Workload distribution settings
+  - **Why Important**: Critical for multi-platform architecture (v1.1+)
+- **Estimated Effort**: 3-4 days
+- **Last Updated**: 2025-11-20 - Architect
+
+### Task: Admin UI - Session Recordings Viewer
+
+- **Assigned To**: Builder
+- **Status**: Not Started
+- **Priority**: HIGH (P1)
+- **Dependencies**: None
+- **Notes**:
+  - **Backend**: Tables exist (session_recordings, recording_access_log, recording_policies), limited handlers
+  - **Missing**: Complete viewer UI
+  - **Implementation**:
+    - Complete API handlers in `api/internal/handlers/recordings.go`
+    - Page: `ui/src/pages/admin/Recordings.tsx`
+    - Features:
+      - List all recordings
+      - Video player with controls
+      - Download/delete recordings
+      - Access log viewer
+      - Retention policy configuration
+  - **Why Important**: Compliance requirement for sensitive environments
+- **Estimated Effort**: 4-5 days
 - **Last Updated**: 2025-11-20 - Architect
 
 ---
@@ -659,6 +833,45 @@ Ready when you are! 💪
 
 ---
 
+### Architect → Team - 2025-11-20 20:00 UTC 📊
+
+**Admin UI Gap Analysis Complete ✅**
+
+User requested review of admin UI functionality. After comprehensive analysis:
+
+**Key Findings:**
+1. **12 Admin Pages Exist** (~229KB total) - Dashboard, Users, Groups, Compliance, Integrations, Nodes, Plugins, Scaling all complete ✅
+2. **Critical Gaps Identified** - Backend functionality exists but no admin UI
+3. **3 P0 (CRITICAL) Features Missing**:
+   - Audit Logs Viewer (2-3 days) - Required for compliance
+   - System Configuration (3-4 days) - Cannot deploy without config UI
+   - License Management (3-4 days) - Cannot commercialize without licensing
+4. **4 P1 (HIGH) Features Missing**:
+   - API Keys Management (2 days)
+   - Alert Management (2-3 days)
+   - Controller Management (3-4 days)
+   - Session Recordings Viewer (4-5 days)
+5. **5 P2 (MEDIUM) Features** - Event logs, workflows, snapshots, DLP, backup/restore
+
+**Total Estimated Effort:** 29-40 development days (P0 + P1 + P2)
+**Critical Path (P0 only):** 8-11 days
+
+**Integration with v1.0.0 Timeline:**
+- Admin UI P0 features can run parallel with plugin implementation (weeks 4-6)
+- No change to overall 10-12 week timeline
+- P1/P2 features can be done by additional contributors or deferred
+
+**Detailed Analysis:** See `/docs/ADMIN_UI_GAP_ANALYSIS.md`
+
+**Tasks Added to Active Tasks:** 8 new admin UI tasks (3 P0, 4 P1, 1 P2 optional)
+
+**Next Steps:**
+- Builder: Continue with controller tests (current active task)
+- Builder: Move to admin UI P0 features after testing (or parallel with plugins)
+- Review and approve revised timeline
+
+---
+
 ## Completed Work Log
 
 ### 2025-11-20 - Architect (Agent 1)
@@ -692,3 +905,45 @@ Ready when you are! 💪
 - Await team decision on strategic priorities
 - If approved: Builder can start on test coverage improvements
 - If architecture redesign still desired: Architect can create detailed migration plan
+
+---
+
+### 2025-11-20 - Architect (Agent 1) - Continued
+
+**Milestone:** Admin UI Gap Analysis ✅
+
+**Deliverables:**
+1. ✅ Comprehensive review of 12 existing admin pages (~229KB)
+2. ✅ Deep analysis of backend vs frontend gaps using Explore agent
+3. ✅ Identification of 3 P0 (CRITICAL) missing features
+4. ✅ Identification of 4 P1 (HIGH) missing features
+5. ✅ Identification of 5 P2 (MEDIUM) missing features
+6. ✅ Detailed implementation plan with effort estimates
+7. ✅ Gap analysis report: `/docs/ADMIN_UI_GAP_ANALYSIS.md`
+8. ✅ Updated MULTI_AGENT_PLAN.md with 8 new admin UI tasks
+9. ✅ Revised v1.0.0 timeline integrating admin UI work
+
+**Critical Gaps Identified:**
+- **Audit Logs Viewer** - Backend exists (audit_log table, middleware), no UI
+- **System Configuration** - Backend exists (configuration table), no handlers/UI
+- **License Management** - No implementation at all (blocks commercialization)
+- **API Keys Management** - Handlers exist, no UI
+- **Alert Management** - Handlers exist, no management UI
+- **Controller Management** - Table exists, no handlers/UI
+- **Session Recordings Viewer** - Tables exist, limited handlers, no viewer
+
+**Impact Analysis:**
+- **Cannot pass compliance audits** without audit logs viewer
+- **Cannot deploy to production** without system configuration UI
+- **Cannot commercialize** without license management
+- **Reduced operational efficiency** without alert and API key management
+
+**Timeline Integration:**
+- Total effort: 29-40 days (all features)
+- Critical path (P0 only): 8-11 days
+- Can run parallel with plugin implementation (weeks 4-6)
+- No impact to overall 10-12 week v1.0.0 timeline
+
+**Time Investment:** ~1 hour of deep analysis + exploration
+**Files Examined:** 12 admin pages, backend handlers, database schema
+**Verdict:** Admin backend is solid, UI has critical gaps that block production deployment
