@@ -1,333 +1,56 @@
 # CLAUDE.md - AI Assistant Guide for StreamSpace
 
-This document provides comprehensive guidance for AI assistants working with the StreamSpace codebase.
-
-**Last Updated**: 2025-11-15
-**Project Version**: v1.0.0 (Phase 5 - Production Ready)
-
----
-
-## 📋 Table of Contents
-
-- [Project Overview](#project-overview)
-- [Strategic Vision: Independence from Proprietary Technologies](#strategic-vision-independence-from-proprietary-technologies)
-- [Repository Structure](#repository-structure)
-- [Key Technologies](#key-technologies)
-- [Custom Resource Definitions (CRDs)](#custom-resource-definitions-crds)
-- [Development Workflows](#development-workflows)
-- [Git Conventions](#git-conventions)
-- [Testing Guidelines](#testing-guidelines)
-- [Deployment Instructions](#deployment-instructions)
-- [Code Style & Conventions](#code-style--conventions)
-- [Common Tasks & Commands](#common-tasks--commands)
-- [Important Context for AI Assistants](#important-context-for-ai-assistants)
-- [Troubleshooting](#troubleshooting)
+**Last Updated**: 2025-11-20
+**Project Version**: v1.0.0-beta (45% complete)
+**Development Model**: Multi-agent workflow (Architect, Builder, Validator, Scribe)
 
 ---
 
-## 📖 Project Overview
+## 📋 Quick Reference
 
-**StreamSpace** is a platform-agnostic multi-user platform that streams containerized applications to web browsers. It features a central Control Plane (API/WebUI) that manages distributed Controllers across various platforms (Kubernetes, Docker, Hyper-V, vCenter, etc.).
+### Current Status (v1.0.0 Development)
 
-**Strategic Goal**: Build a universal, open-source container streaming platform that runs anywhere, independent of the underlying infrastructure.
+**Progress**: Week 2-3 of 10-12 weeks (45% complete)
 
-### Key Features
+**✅ Completed:**
+- Comprehensive codebase audit (Architect)
+- All 3 P0 admin features (Builder):
+  - Audit Logs Viewer (1,131 lines)
+  - System Configuration (938 lines)
+  - License Management (1,814 lines)
+- API Keys Management - P1 (Builder, 1,217 lines)
+- Controller test coverage expansion (Validator, 1,565 lines, +32 test cases)
+- Comprehensive documentation (Scribe, 3,600+ lines)
 
-- **Platform Agnostic**: Runs on Kubernetes, Docker, Hyper-V, vCenter, etc.
-- **Agent-Based Architecture**: Controllers act as agents on target nodes.
-- Browser-based access to any containerized application
-- Multi-user support with SSO (Authentik/Keycloak)
-- Persistent home directories (NFS/HostPath/Volume)
-- On-demand auto-hibernation for resource efficiency
-- 200+ pre-built application templates (LinuxServer.io catalog)
-- Resource quotas and limits per user
-- **Plugin system** for extending platform functionality
-- Comprehensive monitoring with Grafana and Prometheus
+**🔄 In Progress:**
+- API handler test coverage (Validator, next P0 task)
+- Remaining P1 admin features (Builder)
 
-### Project Status
-
-- **Current Phase**: Phase 5 (Production-Ready) - ✅ COMPLETE
-- **Current Version**: v1.0.0
-- **Next Phase**: Phase 6 (VNC Independence) - Migration to TigerVNC + noVNC
-- **Migration**: Completed migration from `ai-infra-k3s/workspaces/` to standalone repository
-- **Branding**: Rebranded from "Workspace Streaming Platform" to "StreamSpace"
-- **Implementation**: 82+ database tables, 70+ API handlers, 50+ UI components, 15+ middleware layers
-
-### Architecture Changes
-
-- **Control Plane**: Centralized API and WebUI.
-- **Controllers**: Platform-specific agents (e.g., `streamspace-controller-k8s`, `streamspace-controller-docker`).
-- **Communication**: Controllers connect to the Control Plane via secure API/WebSocket.
-- **Resources**: Abstracted `Session` and `Template` models translated by controllers.
-
-### API Changes from Migration
-
-- **Old API Group**: `workspaces.aiinfra.io/v1alpha1`
-- **New API Group**: `stream.space/v1alpha1`
-- **Old Resources**: WorkspaceSession, WorkspaceTemplate
-- **New Resources**: Session (short: `ss`), Template (short: `tpl`)
+**📋 Next Priorities:**
+1. Complete test coverage: API handlers (P0), UI components (P1)
+2. Complete P1 admin features: Alert Management, Controller Management, Session Recordings
+3. Implement top 10 plugins by extracting handler logic
+4. Verify template repository sync
 
 ---
 
-## 🎯 Strategic Vision: Independence from Proprietary Technologies
+## 🎯 Project Overview
 
-**CRITICAL**: StreamSpace is being built as a **100% open source, fully independent** container streaming platform. All proprietary dependencies must be eliminated by v1.0.
+**StreamSpace** is a Kubernetes-native container streaming platform that delivers GUI applications to web browsers.
 
-### Mission Statement
+**Key Features:**
+- Browser-based access to containerized applications
+- Multi-user support with enterprise SSO (SAML, OIDC, MFA)
+- Auto-hibernation for resource efficiency
+- Comprehensive admin UI with audit logs and license management
+- 200+ application templates (external repository)
+- Plugin system for extensibility
 
-StreamSpace will become the leading open source alternative to commercial container streaming platforms, offering complete independence from proprietary technologies while providing enterprise-grade features.
-
-### Independence Roadmap
-
-#### Current Dependencies to Eliminate
-
-1. **KasmVNC** (Proprietary VNC Implementation)
-   - **Current Status**: Used in all GUI application templates
-   - **Target Replacement**: TigerVNC + noVNC (100% open source)
-   - **Timeline**: Phase 3 (Months 7-9)
-   - **Impact**: ~50 file references, complete architecture change
-   - **Alternative Options**:
-     - **Primary**: TigerVNC server + noVNC web client
-     - **Secondary**: Apache Guacamole (clientless remote desktop)
-     - **Research**: WebRTC-based streaming (lower latency)
-
-2. **LinuxServer.io Container Images** (External Dependency)
-   - **Current Status**: All 22 templates use LinuxServer.io images
-   - **Target Replacement**: StreamSpace-native container images
-   - **Timeline**: Phase 3 (Months 7-9)
-   - **Impact**: 100+ container images to build and maintain
-   - **Benefits**:
-     - Full control over VNC stack
-     - Optimized for StreamSpace
-     - Faster security patches
-     - ARM64 optimization
-
-3. **Kasm Brand References** (Marketing/Documentation)
-   - **Current Status**: Multiple references in docs and code
-   - **Target Replacement**: StreamSpace brand only
-   - **Timeline**: Ongoing, complete by Phase 3
-   - **Impact**: Documentation, comments, examples
-
-### Technical Migration Strategy
-
-#### Phase 3: VNC Independence (CRITICAL)
-
-**Recommended VNC Stack**:
-
-```
-┌─────────────────────────────────────┐
-│  Web Browser (User)                 │
-└──────────────┬──────────────────────┘
-               │ HTTPS + WebSocket
-               ↓
-┌─────────────────────────────────────┐
-│  noVNC Web Client (JavaScript)      │
-│  - Canvas rendering                 │
-│  - WebSocket transport              │
-│  - Input handling                   │
-└──────────────┬──────────────────────┘
-               │ RFB Protocol
-               ↓
-┌─────────────────────────────────────┐
-│  WebSocket Proxy (Go)               │
-│  - TLS termination                  │
-│  - Authentication                   │
-│  - Connection routing               │
-└──────────────┬──────────────────────┘
-               │ TCP
-               ↓
-┌─────────────────────────────────────┐
-│  TigerVNC Server (Container)        │
-│  - Xvfb (Virtual framebuffer)       │
-│  - Window manager (XFCE/i3)         │
-│  - Application                      │
-└─────────────────────────────────────┘
-```
-
-**Component Details**:
-
-1. **TigerVNC Server**
-   - License: GPL-2.0 (100% open source)
-   - Features: High performance, clipboard support, resize
-   - Platform: Linux, works with Xvfb
-   - Integration: Drop-in replacement for KasmVNC server
-
-2. **noVNC Client**
-   - License: MPL-2.0 (100% open source)
-   - Features: HTML5 canvas, touch support, mobile-friendly
-   - Customization: Full UI control, branding
-   - Integration: Direct WebSocket to VNC server
-
-3. **WebSocket Proxy**
-   - Implementation: Go-based custom proxy in API backend
-   - Features: Authentication, rate limiting, monitoring
-   - Integration: Part of StreamSpace API (Phase 2)
-
-#### Container Image Strategy
-
-**Base Image Tiers**:
-
-1. **Tier 1: Core Bases** (Build First)
-   - `streamspace/base-ubuntu-vnc:22.04` - Ubuntu with TigerVNC + XFCE
-   - `streamspace/base-alpine-vnc:3.18` - Alpine with TigerVNC + i3
-   - `streamspace/base-debian-vnc:12` - Debian with TigerVNC + MATE
-
-2. **Tier 2: Application Categories** (100+ images)
-   - Web Browsers: Firefox, Chromium, Brave (priority: high)
-   - Development: VS Code, IntelliJ, Eclipse
-   - Design: GIMP, Inkscape, Blender, Krita
-   - Productivity: LibreOffice, Calligra
-   - Media: Audacity, Kdenlive, OBS Studio
-
-3. **Tier 3: Specialized** (50+ images)
-   - Gaming: DuckStation, Dolphin, RetroArch
-   - Scientific: Jupyter, R Studio, Octave
-   - CAD/Engineering: FreeCAD, KiCad, OpenSCAD
-
-**Image Build Infrastructure**:
-
-```yaml
-# GitHub Actions workflow
-name: Build Container Images
-on:
-  schedule: [cron: '0 0 * * 0']  # Weekly
-  push: {branches: [main]}
-
-jobs:
-  build-matrix:
-    strategy:
-      matrix:
-        app: [firefox, chromium, vscode, gimp, ...]
-        arch: [amd64, arm64]
-    steps:
-      - Build with TigerVNC + noVNC
-      - Security scan (Trivy)
-      - Sign image (Cosign)
-      - Push to ghcr.io/streamspace
-```
-
-### Development Guidelines for AI Assistants
-
-**IMPORTANT RULES**:
-
-1. **Never introduce new Kasm dependencies**
-   - Don't reference KasmVNC in new code
-   - Don't use Kasm-specific features
-   - Don't add Kasm to documentation
-
-2. **Use generic VNC terminology**
-   - Say "VNC server" not "KasmVNC server"
-   - Say "VNC client" not "Kasm client"
-   - Say "streaming" not "Kasm streaming"
-
-3. **Prepare for VNC migration**
-   - Write VNC-agnostic code
-   - Use configuration for VNC endpoints
-   - Abstract VNC details behind interfaces
-
-4. **Reference alternatives in docs**
-   - Mention noVNC as the target
-   - Link to TigerVNC documentation
-   - Explain migration path
-
-5. **Track dependencies**
-   - Document any external dependencies
-   - Prefer open source alternatives
-   - Plan for self-hosting
-
-### Code Patterns for VNC Abstraction
-
-**Good Pattern** (VNC-agnostic):
-
-```go
-type VNCConfig struct {
-    Port        int    `json:"port"`
-    Protocol    string `json:"protocol"`  // "vnc", "rfb", "websocket"
-    Encryption  bool   `json:"encryption"`
-}
-
-func (t *Template) GetVNCPort() int {
-    if t.Spec.VNC.Port != 0 {
-        return t.Spec.VNC.Port
-    }
-    return 5900  // Standard VNC port
-}
-```
-
-**Bad Pattern** (Kasm-specific):
-
-```go
-// ❌ DON'T DO THIS
-type KasmVNCConfig struct {
-    KasmPort int `json:"kasmPort"`
-}
-```
-
-**Good Template Definition**:
-
-```yaml
-apiVersion: stream.space/v1alpha1
-kind: Template
-metadata:
-  name: firefox-browser
-  namespace: streamspace
-spec:
-  vnc:  # Generic VNC config
-    enabled: true
-    port: 5900
-    protocol: rfb
-    websocket: true
-```
-
-**Bad Template Definition**:
-
-```yaml
-# ❌ DON'T DO THIS
-spec:
-  kasmvnc:  # Kasm-specific
-    enabled: true
-    kasmPort: 3000
-```
-
-### Migration Checklist
-
-Track progress toward full independence:
-
-**Phase 3 Tasks**:
-
-- [ ] Research and select VNC stack (TigerVNC + noVNC)
-- [ ] Build proof-of-concept with open source VNC
-- [ ] Create base container images with TigerVNC
-- [ ] Implement WebSocket proxy in API backend
-- [ ] Rebuild all 22 templates with new VNC stack
-- [ ] Update all documentation
-- [ ] Remove all KasmVNC references from code
-- [ ] Remove all KasmVNC references from docs
-- [ ] Update CRD field names (kasmvnc → vnc)
-- [ ] Migration guide for existing deployments
-- [ ] Performance testing and optimization
-- [ ] Security audit of new VNC stack
-
-**Completion Criteria**:
-
-- Zero mentions of "Kasm" or "kasmvnc" in codebase
-- All container images built by StreamSpace
-- No external dependencies on proprietary software
-- Documentation explains open source stack
-- Migration path documented for users
-
-### Reference Documentation
-
-For detailed migration plan, see:
-
-- `ROADMAP.md` - Complete development roadmap
-- Phase 3 section for VNC migration details
-- Phase 6 for production readiness
-
-For technical architecture, see:
-
-- `docs/ARCHITECTURE.md` - Current architecture
-- Future: `docs/VNC_MIGRATION.md` - VNC migration guide
+**Current Architecture:**
+- **Kubernetes-native**: Production-ready K8s controller with CRDs
+- **API Backend**: Go/Gin with 70+ handlers, 87 database tables
+- **Web UI**: React/TypeScript with 50+ components
+- **VNC Stack**: Currently LinuxServer.io images (migration to TigerVNC + noVNC planned for v2.0)
 
 ---
 
@@ -335,263 +58,127 @@ For technical architecture, see:
 
 ```
 streamspace/
-├── .git/                    # Git repository
-├── .gitignore              # Comprehensive ignore rules
-├── README.md               # User-facing documentation
-├── LICENSE                 # MIT License
-├── CONTRIBUTING.md         # Contribution guidelines
-├── MIGRATION_SUMMARY.md    # Migration details and history
-├── CLAUDE.md              # This file - AI assistant guide
-│
-├── manifests/              # Kubernetes manifests
-│   ├── crds/              # Custom Resource Definitions
-│   │   ├── session.yaml           # Session CRD (main resource)
-│   │   ├── template.yaml          # Template CRD (application definitions)
-│   │   ├── workspacesession.yaml  # Legacy CRD (for backwards compatibility)
-│   │   └── workspacetemplate.yaml # Legacy CRD (for backwards compatibility)
-│   │
-│   ├── config/            # Core platform configuration
-│   │   ├── namespace.yaml         # streamspace namespace
-│   │   ├── rbac.yaml             # RBAC roles and bindings
-│   │   ├── controller-deployment.yaml   # Controller deployment spec
-│   │   ├── controller-configmap.yaml    # Controller configuration
-│   │   ├── api-deployment.yaml          # API backend deployment
-│   │   ├── ui-deployment.yaml           # Web UI deployment
-│   │   ├── database-init.yaml           # PostgreSQL initialization
-│   │   └── ingress.yaml                 # Traefik ingress configuration
-│   │
-│   ├── templates/         # Minimal bundled templates (1-2 defaults)
-│   │   └── browsers/      # Firefox only (minimal default)
-│   │
-│   └── monitoring/        # Observability stack
-│       ├── servicemonitor.yaml              # Prometheus ServiceMonitor
-│       ├── prometheusrule.yaml             # Alert rules
-│       └── grafana-dashboard-workspace-overview.yaml  # Grafana dashboard
-│
-├── chart/                 # Helm chart for deployment
-│   ├── Chart.yaml        # Chart metadata
-│   ├── values.yaml       # Default configuration values
-│   ├── README.md         # Helm installation guide
-│   └── templates/        # Helm templates (to be created)
-│
-├── docs/                  # Technical documentation
-│   ├── ARCHITECTURE.md        # Complete system architecture
-│   ├── CONTROLLER_GUIDE.md    # Go controller implementation guide
-│   ├── PLUGIN_API.md          # Plugin API reference documentation
-│   └── (other guides)         # VNC migration, deployment, SAML, etc.
-│
-├── scripts/               # Utility scripts
-│   └── generate-templates.py  # Generate 200+ LinuxServer.io templates
-│
-├── PLUGIN_DEVELOPMENT.md  # Plugin development guide
-│
-├── controllers/           # Directory for platform-specific controllers
-│   ├── k8s/               # Kubernetes controller (formerly `k8s-controller/`)
-│   ├── docker/            # Docker controller (future)
-│   └── hyperv/            # Hyper-V controller (future)
-│
-├── api/                   # Go API backend (REST + WebSocket)
-│   ├── cmd/              # API server entry point
-│   ├── internal/         # API handlers, middleware, database
-│   │   ├── db/          # Database models and queries
-│   │   ├── handlers/    # HTTP request handlers
-│   │   ├── middleware/  # Authentication, logging
-│   │   └── plugins/     # Plugin system implementation
-│   ├── config/          # API configuration
-│   └── tests/           # API tests
-│
-└── ui/                   # React web UI
-    ├── src/             # Source code
-    │   ├── components/  # React components (PluginCard, PluginDetailModal, etc.)
-    │   ├── pages/       # Page components (PluginCatalog, InstalledPlugins, etc.)
-    │   ├── lib/         # Utilities and API client
-    │   └── App.tsx      # Main application
-    ├── public/          # Static assets
-    └── tests/           # UI tests
+├── .claude/multi-agent/         # Multi-agent coordination files
+│   └── MULTI_AGENT_PLAN.md     # Central coordination document
+├── api/                         # Go API backend (REST + WebSocket)
+│   ├── internal/handlers/      # 70+ API handlers
+│   ├── internal/middleware/    # 15+ middleware layers
+│   └── internal/db/            # Database (87 tables)
+├── k8s-controller/             # Kubernetes controller (Kubebuilder)
+│   └── controllers/            # Session, Hibernation, Template controllers
+├── ui/                         # React web UI
+│   ├── src/pages/admin/        # Admin portal (12+ pages)
+│   └── src/components/         # Reusable components
+├── manifests/                  # Kubernetes manifests
+│   ├── crds/                   # Session and Template CRDs
+│   └── config/                 # Deployment configurations
+├── docs/                       # Technical documentation
+│   ├── CODEBASE_AUDIT_REPORT.md
+│   ├── ADMIN_UI_GAP_ANALYSIS.md
+│   ├── TESTING_GUIDE.md
+│   └── ADMIN_UI_IMPLEMENTATION.md
+└── chart/                      # Helm chart
 ```
 
-### Directory Purposes
+---
 
-- **`manifests/`**: All Kubernetes YAML manifests, organized by purpose
-  - `crds/`: Custom Resource Definitions for Sessions and Templates
-  - `config/`: Platform deployment configurations
-  - `templates/`: **Minimal bundled templates** (1-2 defaults for offline/air-gapped use)
-  - `monitoring/`: Prometheus and Grafana configurations
+## 🤖 Multi-Agent Development Workflow
 
-- **`chart/`**: Helm chart for easy deployment and configuration management
-  - Includes repository sync configuration for external templates and plugins
+StreamSpace uses a **4-agent development model** for parallel work:
 
-- **`docs/`**: Comprehensive technical documentation
-  - Architecture diagrams and data flows
-  - Implementation guides for each component
-  - Plugin system documentation
+### Agent Roles
 
-- **`scripts/`**: Automation scripts for template generation and utilities
+**Agent 1: Architect** (Research & Planning)
+- Codebase exploration and analysis
+- Feature gap identification
+- Architecture planning and design decisions
+- **Branch**: `claude/audit-streamspace-codebase-*`
 
-- **`controllers/`**: Directory for platform-specific controllers
-  - `k8s/`: Kubernetes controller (formerly `k8s-controller/`)
-  - `docker/`: Docker controller (future)
-  - `hyperv/`: Hyper-V controller (future)
+**Agent 2: Builder** (Feature Implementation)
+- New features (admin UI, API handlers, controllers)
+- Bug fixes and refactoring
+- **Does NOT write tests** (that's Validator's job)
+- **Branch**: `claude/setup-agent2-builder-*`
 
-- **`api/`**: Go API backend (REST + WebSocket)
-  - Control Plane logic
-  - Controller management and communication
-  - Authentication and session management
-  - Plugin system backend
-  - WebSocket proxy for VNC connections
-  - **Repository sync** for external templates and plugins
+**Agent 3: Validator** (Testing & QA)
+- Unit tests, integration tests, E2E tests
+- Test coverage expansion (goal: 70%+)
+- Quality assurance and bug discovery
+- **Branch**: `claude/setup-agent3-validator-*`
 
-- **`ui/`**: React web UI with TypeScript
-  - User dashboard for session management
-  - Admin panel for platform administration
-  - Plugin catalog and management UI
+**Agent 4: Scribe** (Documentation)
+- Technical documentation
+- API references, deployment guides
+- Testing guides and implementation guides
+- **Branch**: `claude/setup-agent4-scribe-*`
 
-### External Repositories
+### Coordination
 
-StreamSpace uses separate repositories for templates and plugins to enable:
+**Central Document**: `.claude/multi-agent/MULTI_AGENT_PLAN.md`
+- All agents update this file with progress
+- Task assignments and status tracking
+- Integration notes and blockers
 
-- Independent versioning and releases
-- Community contributions without main repo access
-- Flexible deployment (online/offline modes)
-- Multiple repository sources
-
-**Template Repository**: [streamspace-templates](https://github.com/JoshuaAFerguson/streamspace-templates)
-
-- 22+ official application templates
-- Organized by category (browsers, development, design, etc.)
-- Auto-synced by API backend (configurable interval)
-- Catalog metadata for discovery
-
-**Plugin Repository**: [streamspace-plugins](https://github.com/JoshuaAFerguson/streamspace-plugins)
-
-- Official and community plugins
-- Extension points for platform functionality
-- Auto-discovery via catalog
-- Optional auto-install on deployment
+**Integration Process**:
+1. Agents work independently on their branches
+2. Architect periodically pulls and merges all agent work
+3. Conflicts resolved, progress documented
+4. Changes pushed to Architect's branch
 
 ---
 
-## 🛠 Key Technologies
+## 🎯 Key Technologies
 
-### Core Stack
+**Backend:**
+- Go 1.21+ with Gin framework
+- PostgreSQL (87 tables)
+- Kubernetes controller (Kubebuilder 3.x)
 
-- **Kubernetes**: 1.19+ (k3s recommended for ARM64)
-- **Container Runtime**: Docker/containerd
-- **Storage**: NFS with ReadWriteMany support
-- **Ingress**: Traefik (default) or any Kubernetes ingress controller
-- **Authentication**: Authentik or Keycloak (OIDC/SSO)
-- **Database**: PostgreSQL (for user data, sessions, audit logs)
+**Frontend:**
+- React 18+ with TypeScript
+- Material-UI (MUI)
+- React Router, Axios
 
-### Controller (✅ Implemented)
+**Infrastructure:**
+- Kubernetes 1.19+ (k3s recommended)
+- NFS storage (ReadWriteMany)
+- Traefik ingress
 
-- **Language**: Go 1.21+
-- **Framework**: Kubebuilder 3.x
-- **Client**: controller-runtime
-- **Metrics**: Prometheus client_golang
-- **Status**: Production-ready with hibernation, session lifecycle, and user PVC management
-
-### API Backend (✅ Implemented)
-
-- **Framework**: Go with Gin framework
-- **Authentication**: Local, SAML 2.0, OIDC OAuth2, JWT, MFA (TOTP)
-- **WebSocket**: Real-time session updates and VNC proxy
-- **Database**: PostgreSQL with 82+ tables
-- **Handlers**: 70+ API handler files
-- **Middleware**: 15+ layers (CORS, auth, rate limiting, CSRF, audit logging, compression)
-- **Integrations**: Webhooks (16 events), Slack, Teams, Discord, PagerDuty, email (SMTP)
-
-### Web UI (✅ Implemented)
-
-- **Framework**: React 18+ with TypeScript
-- **UI Library**: Material-UI (MUI)
-- **State Management**: React Context API
-- **Routing**: React Router
-- **HTTP Client**: Axios with JWT interceptors
-- **Components**: 50+ React components
-- **Pages**: 14 user pages, 12 admin pages
-- **Features**: Session management, plugin catalog, admin panel, real-time updates
-
-### Application Streaming
-
-- **VNC Server**: Currently KasmVNC (⚠️ TEMPORARY - will be replaced with TigerVNC + noVNC in Phase 3)
-- **Base Images**: Currently LinuxServer.io containers (⚠️ TEMPORARY - will be replaced with StreamSpace-native images in Phase 3)
-- **VNC Port**: 5900 (standard VNC) or 3000 (current LinuxServer.io convention)
-- **Target Stack**: TigerVNC server + noVNC client + WebSocket proxy (100% open source)
-
-### Monitoring
-
-- **Metrics**: Prometheus
-- **Dashboards**: Grafana
-- **Alerts**: PrometheusRule CRDs
-- **Service Discovery**: ServiceMonitor CRDs
+**Testing:**
+- Controller: Ginkgo/Gomega + envtest
+- API: Go standard testing + sqlmock
+- UI: Vitest (configured for 80% threshold)
 
 ---
 
-## 🎯 Custom Resource Definitions (CRDs)
+## 🔑 Custom Resource Definitions (CRDs)
 
 ### Session CRD (`stream.space/v1alpha1`)
 
-**Purpose**: Represents a user's containerized workspace session.
-
-**Location**: `manifests/crds/session.yaml`
-
-**Short Names**: `ss`, `sessions`
-
-**Key Fields**:
+Represents a user's containerized session.
 
 ```yaml
 apiVersion: stream.space/v1alpha1
 kind: Session
 metadata:
-  name: user1-firefox           # Unique session identifier
+  name: user1-firefox
   namespace: streamspace
 spec:
-  user: user1                   # Username (required)
-  template: firefox-browser     # Template name (required)
-  state: running                # running | hibernated | terminated (required)
-  resources:                    # Resource limits
+  user: user1
+  template: firefox-browser
+  state: running  # running | hibernated | terminated
+  resources:
     memory: 2Gi
     cpu: 1000m
-  persistentHome: true          # Mount user's persistent home directory
-  idleTimeout: 30m              # Auto-hibernate after inactivity
-  maxSessionDuration: 8h        # Maximum session lifetime
-status:
-  phase: Running                # Pending | Running | Hibernated | Failed | Terminated
-  podName: ss-user1-firefox-abc123
-  url: https://user1-firefox.streamspace.local
-  lastActivity: "2025-01-15T10:30:00Z"
-  resourceUsage:
-    memory: 1.2Gi
-    cpu: 450m
-  conditions: []                # Standard Kubernetes conditions
+  persistentHome: true
+  idleTimeout: 30m
 ```
 
-**kubectl Examples**:
-
-```bash
-# List all sessions
-kubectl get sessions -n streamspace
-kubectl get ss -n streamspace  # Using short name
-
-# Get session details
-kubectl describe session user1-firefox -n streamspace
-
-# Watch session status
-kubectl get ss -n streamspace -w
-
-# Delete a session
-kubectl delete session user1-firefox -n streamspace
-```
+**Short names**: `ss`, `sessions`
 
 ### Template CRD (`stream.space/v1alpha1`)
 
-**Purpose**: Defines an application template that can be launched as a Session.
-
-**Location**: `manifests/crds/template.yaml`
-
-**Short Names**: `tpl`, `templates`
-
-**Key Fields**:
+Defines an application template.
 
 ```yaml
 apiVersion: stream.space/v1alpha1
@@ -601,181 +188,23 @@ metadata:
   namespace: streamspace
 spec:
   displayName: Firefox Web Browser
-  description: Modern, privacy-focused web browser
-  category: Web Browsers        # Categorization for UI
-  icon: https://example.com/firefox-icon.png
+  category: Web Browsers
   baseImage: lscr.io/linuxserver/firefox:latest
   defaultResources:
     memory: 2Gi
     cpu: 1000m
-  ports:
-    - name: vnc
-      containerPort: 3000
-      protocol: TCP
-  env:
-    - name: PUID
-      value: "1000"
-    - name: PGID
-      value: "1000"
-  volumeMounts:
-    - name: user-home
-      mountPath: /config
-  kasmvnc:
+  vnc:
     enabled: true
     port: 3000
-  capabilities:
-    - Network
-    - Audio
-    - Clipboard
-  tags:
-    - browser
-    - web
-    - privacy
 ```
 
-**kubectl Examples**:
-
-```bash
-# List all templates
-kubectl get templates -n streamspace
-kubectl get tpl -n streamspace  # Using short name
-
-# View template details
-kubectl describe template firefox-browser -n streamspace
-
-# Get templates by category
-kubectl get tpl -n streamspace -l category="Web Browsers"
-```
-
-### Legacy CRDs (Backwards Compatibility)
-
-- `workspacesession.yaml`: Old WorkspaceSession CRD (deprecated, use Session)
-- `workspacetemplate.yaml`: Old WorkspaceTemplate CRD (deprecated, use Template)
-
-These exist for migration compatibility but should not be used in new code.
-
----
-
-## 🔄 Development Workflows
-
-### Phase 1: Controller Implementation (Current Phase)
-
-**Goal**: Build the Go-based Kubernetes controller using Kubebuilder.
-
-**Prerequisites**:
-
-- Go 1.21+
-- Kubebuilder 3.x
-- Docker
-- kubectl with cluster access
-- Make
-
-**Implementation Steps**:
-
-1. **Initialize Kubebuilder Project**:
-
-```bash
-mkdir -p controller
-cd controller
-
-# Initialize Go module
-go mod init github.com/yourusername/streamspace
-
-# Initialize Kubebuilder
-kubebuilder init --domain streamspace.io --repo github.com/yourusername/streamspace
-
-# Create APIs
-kubebuilder create api --group stream --version v1alpha1 --kind Session
-kubebuilder create api --group stream --version v1alpha1 --kind Template
-```
-
-2. **Define CRD Types**:
-
-- Edit `api/v1alpha1/session_types.go`
-- Edit `api/v1alpha1/template_types.go`
-- Reference: `docs/CONTROLLER_GUIDE.md` for detailed examples
-
-3. **Implement Reconcilers**:
-
-- `controllers/session_controller.go`: Main reconciliation logic
-- `controllers/hibernation_controller.go`: Auto-hibernation logic
-- `controllers/user_controller.go`: User PVC management
-
-4. **Add Prometheus Metrics**:
-
-- Active sessions gauge
-- Hibernation events counter
-- Resource usage metrics
-
-5. **Build and Test**:
-
-```bash
-# Generate CRDs and code
-make manifests generate
-
-# Install CRDs to cluster
-make install
-
-# Run controller locally
-make run
-
-# Run tests
-make test
-
-# Build Docker image
-make docker-build IMG=your-registry/streamspace-controller:v0.1.0
-```
-
-6. **Deploy to Cluster**:
-
-```bash
-# Push image
-make docker-push IMG=your-registry/streamspace-controller:v0.1.0
-
-# Deploy controller
-make deploy IMG=your-registry/streamspace-controller:v0.1.0
-```
-
-### Phase 2: API & UI Implementation (Future)
-
-**API Backend** (Go with Gin or Python with FastAPI):
-
-- REST endpoints for session management
-- WebSocket proxy for KasmVNC connections
-- JWT authentication with OIDC
-- Kubernetes client for CRD operations
-
-**Web UI** (React + TypeScript):
-
-- User dashboard (my sessions, catalog)
-- Admin panel (all sessions, users, templates)
-- Session viewer (iframe or new tab)
-- Real-time status updates via WebSocket
-
-### Phase 3: Monitoring & Observability (Future)
-
-- Grafana dashboards
-- Prometheus alert rules
-- Audit logging
-- Usage analytics
+**Short names**: `tpl`, `templates`
 
 ---
 
 ## 📝 Git Conventions
 
-### Branch Strategy
-
-**Main Branch**: `main` (protected)
-
-**Feature Branches**:
-
-- Format: `claude/claude-md-<session-id>`
-- Example: `claude/claude-md-mhy5zeq2njvrp3yh-01MfcP2sWxBRw6sTTyEGW5gg`
-- Always develop on feature branches, not main
-
-### Commit Messages
-
-Follow conventional commit format:
+### Commit Message Format
 
 ```
 <type>(<scope>): <subject>
@@ -785,952 +214,246 @@ Follow conventional commit format:
 <footer>
 ```
 
-**Types**:
+**Types**: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `refactor`: Code refactoring
-- `test`: Test additions or changes
-- `chore`: Build/tooling changes
-- `ci`: CI/CD changes
-
-**Examples**:
-
+**Examples:**
 ```bash
-feat(controller): implement session hibernation reconciler
-fix(crd): correct validation for resource limits
-docs(architecture): update data flow diagrams
-refactor(api): extract authentication middleware
-test(controller): add session lifecycle integration tests
+feat(admin-ui): implement audit logs viewer with CSV export
+fix(controller): handle session deletion during reconciliation
+test(controller): add concurrent operation tests for session controller
+docs(architecture): update data flow diagrams for v1.0.0
 ```
 
-### Commit Guidelines
+### Branch Naming
 
-1. **Clear and Concise**: Summarize what changed and why
-2. **Present Tense**: Use "add" not "added", "fix" not "fixed"
-3. **Focus on Why**: Explain the reason for the change
-4. **Reference Issues**: Include issue numbers when applicable
+**Multi-agent branches**:
+- `claude/audit-streamspace-codebase-*` - Architect
+- `claude/setup-agent2-builder-*` - Builder
+- `claude/setup-agent3-validator-*` - Validator
+- `claude/setup-agent4-scribe-*` - Scribe
 
-**Good Examples**:
-
-```bash
-git commit -m "Add hibernation controller for auto-scaling sessions
-
-Implements idle timeout detection and automatic scale-to-zero for
-sessions that have been inactive beyond the configured threshold.
-
-Closes #42"
-```
-
-**Bad Examples** (avoid):
-
-```bash
-git commit -m "updates"
-git commit -m "fixed stuff"
-git commit -m "WIP"
-```
-
-### Git Operations
-
-**Pushing Changes**:
-
-```bash
-# Always push to feature branch with -u flag
-git push -u origin claude/claude-md-<session-id>
-
-# CRITICAL: Branch must start with 'claude/' and end with session ID
-# Otherwise push will fail with 403 error
-```
-
-**Network Retry Strategy**:
-
-- If `git push` or `git fetch` fails due to network errors
-- Retry up to 4 times with exponential backoff (2s, 4s, 8s, 16s)
-
-**Pull Requests**:
-
-- Create PRs from feature branch to main
-- Use PR template (see `CONTRIBUTING.md`)
-- Request review from maintainers
-- Ensure CI passes before merging
+**Important**: Always push to branches starting with `claude/` and ending with session ID, otherwise push will fail with 403.
 
 ---
 
-## 🧪 Testing Guidelines
+## 🧪 Testing
 
-### Unit Tests
-
-**Controller Tests**:
+### Run Controller Tests
 
 ```bash
-cd controller
+cd k8s-controller
 make test
+
+# Check coverage
+go test ./controllers -coverprofile=coverage.out
+go tool cover -func=coverage.out
 ```
 
-**Test Structure**:
-
-- Place tests in `*_test.go` files next to source
-- Use `ginkgo` and `gomega` for BDD-style tests
-- Mock Kubernetes client with `envtest`
-
-**Example Test**:
-
-```go
-var _ = Describe("Session Controller", func() {
-    Context("When creating a new Session", func() {
-        It("Should create a Deployment", func() {
-            // Test implementation
-        })
-    })
-})
-```
-
-### Integration Tests
-
-**Location**: `tests/` directory (to be created)
-
-**Run Integration Tests**:
+### Run API Tests
 
 ```bash
-./scripts/run-integration-tests.sh
+cd api
+go test ./... -v
 ```
 
-**Test Scenarios**:
-
-- Session creation and lifecycle
-- Hibernation and wake flows
-- Resource quota enforcement
-- User PVC provisioning
-
-### Manual Testing
-
-**Deploy to Test Cluster**:
+### Run UI Tests
 
 ```bash
-# Create test namespace
-kubectl create namespace streamspace-dev
+cd ui
+npm test
+npm test -- --coverage
+```
 
-# Deploy CRDs
-kubectl apply -f manifests/crds/
+### Current Test Coverage
 
-# Deploy templates
-kubectl apply -f manifests/templates/
+- **Controller**: 65-70% (32 new test cases added)
+- **API**: 10-20% (expansion in progress)
+- **UI**: 5% (expansion planned)
+- **Target**: 70%+ for all
 
-# Create test session
+---
+
+## 🚀 Key Commands
+
+### Kubernetes Operations
+
+```bash
+# List sessions
+kubectl get sessions -n streamspace
+kubectl get ss -n streamspace  # short name
+
+# List templates
+kubectl get templates -n streamspace
+kubectl get tpl -n streamspace  # short name
+
+# Create a session
 kubectl apply -f - <<EOF
 apiVersion: stream.space/v1alpha1
 kind: Session
 metadata:
   name: test-firefox
-  namespace: streamspace-dev
+  namespace: streamspace
 spec:
   user: testuser
   template: firefox-browser
   state: running
-  resources:
-    memory: 2Gi
-    cpu: 1000m
-  persistentHome: true
-  idleTimeout: 30m
 EOF
 
-# Verify session status
-kubectl get sessions -n streamspace-dev
-kubectl describe session test-firefox -n streamspace-dev
+# Check session status
+kubectl describe session test-firefox -n streamspace
 
-# Check created resources
-kubectl get pods,svc,pvc -n streamspace-dev -l workspace=test-firefox
-
-# Cleanup
-kubectl delete session test-firefox -n streamspace-dev
+# Delete session
+kubectl delete session test-firefox -n streamspace
 ```
 
----
-
-## 🚀 Deployment Instructions
-
-### Deploy CRDs Only
+### Development
 
 ```bash
-# Deploy Session and Template CRDs
-kubectl apply -f manifests/crds/session.yaml
-kubectl apply -f manifests/crds/template.yaml
-
-# Verify CRDs installed
-kubectl get crds | grep stream.space
-```
-
-### Deploy Application Templates
-
-```bash
-# Deploy all templates
-kubectl apply -f manifests/templates/
-
-# Or deploy specific category
-kubectl apply -f manifests/templates/browsers/
-kubectl apply -f manifests/templates/development/
-
-# Verify templates
-kubectl get templates -n streamspace
-```
-
-### Deploy Platform (Full Installation)
-
-**Option 1: Manual Deployment**:
-
-```bash
-# 1. Create namespace
-kubectl apply -f manifests/config/namespace.yaml
-
-# 2. Deploy RBAC
-kubectl apply -f manifests/config/rbac.yaml
-
-# 3. Deploy database
-kubectl apply -f manifests/config/database-init.yaml
-
-# 4. Deploy controller (after building image)
-kubectl apply -f manifests/config/controller-deployment.yaml
-kubectl apply -f manifests/config/controller-configmap.yaml
-
-# 5. Deploy API and UI (Phase 2)
-kubectl apply -f manifests/config/api-deployment.yaml
-kubectl apply -f manifests/config/ui-deployment.yaml
-
-# 6. Deploy ingress
-kubectl apply -f manifests/config/ingress.yaml
-
-# 7. Deploy monitoring
-kubectl apply -f manifests/monitoring/
-```
-
-**Option 2: Helm Deployment** (Recommended):
-
-```bash
-# Install from local chart
-helm install streamspace ./chart -n streamspace --create-namespace
-
-# Or with custom values
-helm install streamspace ./chart -n streamspace \
-  --values custom-values.yaml
-
-# Upgrade
-helm upgrade streamspace ./chart -n streamspace
-
-# Uninstall
-helm uninstall streamspace -n streamspace
-```
-
-### Configuration
-
-**Key Configuration Files**:
-
-- `chart/values.yaml`: Helm chart defaults
-- `manifests/config/controller-configmap.yaml`: Controller settings
-
-**Important Settings**:
-
-```yaml
-# Hibernation
-hibernation:
-  enabled: true
-  defaultIdleTimeout: 30m
-  checkInterval: 60s
-
-# Resources
-resources:
-  defaultMemory: 2Gi
-  defaultCPU: 1000m
-  maxMemory: 8Gi
-  maxCPU: 4000m
-
-# Storage
-storage:
-  className: nfs-client
-  defaultHomeSize: 50Gi
-
-# Networking
-networking:
-  ingressDomain: streamspace.local
-  ingressClass: traefik
-```
-
----
-
-## 📐 Code Style & Conventions
-
-### Go (Controller)
-
-**Style Guide**: Follow [Effective Go](https://golang.org/doc/effective_go.html)
-
-**Formatting**:
-
-```bash
-# Format code
-gofmt -w .
-
-# Run linter
-golangci-lint run
-```
-
-**Naming Conventions**:
-
-- Types: PascalCase (`SessionReconciler`, `UserManager`)
-- Functions: camelCase (`reconcileSession`, `ensureUserPVC`)
-- Constants: UPPER_SNAKE_CASE or PascalCase for exported
-- Packages: lowercase, single word (`controllers`, `metrics`)
-
-**Error Handling**:
-
-```go
-// Always handle errors explicitly
-if err := r.Create(ctx, deployment); err != nil {
-    log.Error(err, "Failed to create Deployment")
-    return ctrl.Result{}, err
-}
-
-// Use wrapped errors for context
-return fmt.Errorf("failed to get template %s: %w", templateName, err)
-```
-
-**Comments**:
-
-```go
-// SessionReconciler reconciles a Session object and manages
-// the lifecycle of workspace pods, services, and PVCs.
-type SessionReconciler struct {
-    client.Client
-    Scheme *runtime.Scheme
-}
-
-// Reconcile implements the main reconciliation logic for Sessions.
-// It handles state transitions (running, hibernated, terminated) and
-// ensures the actual state matches the desired state.
-func (r *SessionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    // Implementation
-}
-```
-
-### YAML (Kubernetes Manifests)
-
-**Formatting**:
-
-- Indent: 2 spaces
-- Use `---` separator between resources in same file
-- Order fields: apiVersion, kind, metadata, spec, status
-
-**Labels**:
-
-```yaml
-metadata:
-  labels:
-    app: streamspace-session
-    user: username
-    template: firefox-browser
-    session: user1-firefox
-    app.kubernetes.io/name: streamspace
-    app.kubernetes.io/component: session-pod
-    app.kubernetes.io/managed-by: streamspace-controller
-```
-
-**Annotations**:
-
-```yaml
-metadata:
-  annotations:
-    description: "User session for firefox-browser"
-    streamspace.io/created-by: "user1"
-    streamspace.io/last-activity: "2025-01-15T10:30:00Z"
-```
-
-**Resource Naming**:
-
-- Sessions: `{username}-{template}` (e.g., `user1-firefox`)
-- Pods: `ss-{username}-{template}-{hash}` (e.g., `ss-user1-firefox-abc123`)
-- Services: `ss-{username}-{template}-svc`
-- PVCs: `home-{username}` (e.g., `home-user1`)
-
-### Documentation
-
-**Code Comments**:
-
-- Public APIs must have godoc comments
-- Complex logic should have inline comments explaining "why"
-- Use TODO/FIXME/NOTE markers with issue references
-
-**Markdown Files**:
-
-- Use ATX-style headers (`#` not `===`)
-- Include table of contents for long documents
-- Use code blocks with language tags
-- Keep line length reasonable (80-120 chars)
-
----
-
-## 🔧 Common Tasks & Commands
-
-### Working with CRDs
-
-**Install CRDs**:
-
-```bash
-kubectl apply -f manifests/crds/session.yaml
-kubectl apply -f manifests/crds/template.yaml
-```
-
-**Update CRDs** (after modifying in controller):
-
-```bash
-cd controller
-make manifests  # Generate updated CRDs
-kubectl apply -f config/crd/bases/
-```
-
-**View CRD Definition**:
-
-```bash
-kubectl get crd sessions.stream.space -o yaml
-kubectl explain session.spec
-kubectl explain session.status
-```
-
-### Working with Sessions
-
-**Create a Session**:
-
-```bash
-kubectl apply -f - <<EOF
-apiVersion: stream.space/v1alpha1
-kind: Session
-metadata:
-  name: user1-firefox
-  namespace: streamspace
-spec:
-  user: user1
-  template: firefox-browser
-  state: running
-  resources:
-    memory: 2Gi
-    cpu: 1000m
-  persistentHome: true
-  idleTimeout: 30m
-EOF
-```
-
-**List Sessions**:
-
-```bash
-# All sessions
-kubectl get sessions -n streamspace
-
-# User's sessions
-kubectl get sessions -n streamspace -l user=user1
-
-# Running sessions only
-kubectl get sessions -n streamspace --field-selector spec.state=running
-```
-
-**Hibernate a Session**:
-
-```bash
-kubectl patch session user1-firefox -n streamspace \
-  --type merge -p '{"spec":{"state":"hibernated"}}'
-```
-
-**Wake a Session**:
-
-```bash
-kubectl patch session user1-firefox -n streamspace \
-  --type merge -p '{"spec":{"state":"running"}}'
-```
-
-**Delete a Session**:
-
-```bash
-kubectl delete session user1-firefox -n streamspace
-```
-
-### Working with Templates
-
-**Create a Template**:
-
-```bash
-kubectl apply -f manifests/templates/browsers/firefox.yaml
-```
-
-**Generate More Templates**:
-
-```bash
-cd scripts
-
-# Generate all 200+ LinuxServer.io templates
-python3 generate-templates.py
-
-# List available categories
-python3 generate-templates.py --list-categories
-
-# Generate specific category
-python3 generate-templates.py --category "Web Browsers"
-```
-
-**View Template Details**:
-
-```bash
-kubectl get template firefox-browser -n streamspace -o yaml
-```
-
-### Controller Development
-
-**Run Controller Locally**:
-
-```bash
-cd controller
+# Install CRDs
+kubectl apply -f manifests/crds/
+
+# Run controller locally
+cd k8s-controller
 make run ENABLE_WEBHOOKS=false
+
+# Deploy full platform
+helm install streamspace ./chart -n streamspace --create-namespace
 ```
 
-**View Controller Logs**:
+---
 
+## 📚 Important Documentation
+
+### For Current Development
+
+- **Multi-Agent Plan**: `.claude/multi-agent/MULTI_AGENT_PLAN.md` - Central coordination
+- **Codebase Audit**: `docs/CODEBASE_AUDIT_REPORT.md` - Comprehensive audit results
+- **Admin UI Gaps**: `docs/ADMIN_UI_GAP_ANALYSIS.md` - Missing features identified
+- **Testing Guide**: `docs/TESTING_GUIDE.md` - For Validator (1,186 lines)
+- **Implementation Guide**: `docs/ADMIN_UI_IMPLEMENTATION.md` - For Builder (1,446 lines)
+
+### For Architecture
+
+- **Architecture**: `docs/ARCHITECTURE.md` - Complete system architecture
+- **Controller Guide**: `docs/CONTROLLER_GUIDE.md` - Kubebuilder implementation
+- **Plugin API**: `docs/PLUGIN_API.md` - Plugin system reference
+
+### Changelogs
+
+- **CHANGELOG.md**: User-facing changes and milestones
+- **FEATURES.md**: Complete feature list with implementation status
+- **ROADMAP.md**: Development roadmap (v1.0.0 → v2.0.0)
+
+---
+
+## 🎯 Current v1.0.0 Priorities
+
+### Completed ✅
+
+1. **Codebase Audit**: Verified documentation accuracy (87 tables, 66K+ lines API code)
+2. **P0 Admin Features** (100%):
+   - Audit Logs Viewer (SOC2/HIPAA/GDPR compliance)
+   - System Configuration (7 categories, full config UI)
+   - License Management (Community/Pro/Enterprise tiers)
+3. **P1 Admin Features** (25%):
+   - API Keys Management (scope-based access, rate limiting)
+4. **Controller Tests**: 65-70% coverage (+32 test cases, 1,565 lines)
+
+### In Progress 🔄
+
+1. **API Handler Tests** (Validator, P0, 3-4 weeks)
+2. **UI Component Tests** (Validator, P1, 2-3 weeks)
+3. **Remaining P1 Admin Features** (Builder):
+   - Alert Management (2-3 days)
+   - Controller Management (3-4 days)
+   - Session Recordings Viewer (4-5 days)
+
+### Next Up 📋
+
+1. **Plugin Implementation** (Builder, P1, 4-6 weeks):
+   - Extract logic from 10 handlers into plugins
+   - Calendar, Slack, Teams, Discord, PagerDuty, Multi-Monitor, Snapshots, Recording, Compliance, DLP
+2. **Template Repository Verification** (P1, 1-2 weeks)
+3. **Bug Fixes** (Ongoing, discovered during testing)
+
+---
+
+## 🚨 Critical Context for AI Assistants
+
+### What's Actually Implemented
+
+**Database**: 87 tables (verified)
+**API Backend**: 66,988 lines (70+ handlers)
+**Kubernetes Controller**: 6,562 lines (production-ready)
+**Web UI**: 54 components/pages (complete)
+**Authentication**: SAML, OIDC, MFA, JWT (all implemented)
+**Admin UI**: 4/8 features complete (all P0 done, 1 P1 done)
+
+### What's NOT Implemented
+
+**Plugins**: Framework complete (8,580 lines), but 28 plugin implementations are stubs
+**Docker Controller**: 718 lines (not functional, deferred to v1.1)
+**Test Coverage**: 15-20% overall (being expanded to 70%+)
+**Templates**: 1 local template, external repo dependency (needs verification)
+
+### Production Readiness
+
+✅ **CAN Deploy**: Full admin UI, config management, audit logs
+✅ **CAN Commercialize**: License enforcement with 3 tiers
+✅ **CAN Pass Audits**: SOC2, HIPAA, GDPR, ISO 27001 support
+⚠️ **Test Coverage**: Needs expansion before production (in progress)
+
+---
+
+## 🔧 Common Issues & Solutions
+
+### Controller Issues
+
+**Problem**: Session stuck in Pending
 ```bash
-# In cluster
+# Check controller logs
 kubectl logs -n streamspace deploy/streamspace-controller -f
 
-# Locally
-make run 2>&1 | tee controller.log
+# Check pod events
+kubectl get events -n streamspace --sort-by=.metadata.creationTimestamp
 ```
-
-**Debug Controller**:
-
-```bash
-# Enable debug logging
-export LOG_LEVEL=debug
-make run
-
-# Or use delve debugger
-dlv debug ./cmd/main.go
-```
-
-### Monitoring
-
-**View Prometheus Metrics**:
-
-```bash
-# Port forward to controller
-kubectl port-forward -n streamspace deploy/streamspace-controller 8080:8080
-
-# Query metrics
-curl http://localhost:8080/metrics | grep streamspace
-```
-
-**Access Grafana**:
-
-```bash
-kubectl port-forward -n observability svc/grafana 3000:80
-
-# Open http://localhost:3000
-# Default credentials: admin/admin
-```
-
-**View Alerts**:
-
-```bash
-kubectl get prometheusrules -n streamspace
-kubectl describe prometheusrule streamspace-alerts -n streamspace
-```
-
----
-
-## 🤖 Important Context for AI Assistants
-
-### Project History
-
-1. **Original Project**: Part of `ai-infra-k3s` repository as `workspaces/` subdirectory
-2. **Migration**: Moved to standalone `streamspace` repository (Nov 2024)
-3. **Rebranding**: Changed from "Workspace Streaming Platform" to "StreamSpace"
-4. **API Evolution**: `workspaces.aiinfra.io` → `stream.space`
-5. **Resource Renaming**: WorkspaceSession → Session, WorkspaceTemplate → Template
-
-### Current State
-
-**What Exists**:
-
-- ✅ Complete architecture documentation (`docs/ARCHITECTURE.md`)
-- ✅ Controller implementation guide (`docs/CONTROLLER_GUIDE.md`)
-- ✅ Plugin development guide (`PLUGIN_DEVELOPMENT.md`)
-- ✅ Plugin API reference (`docs/PLUGIN_API.md`)
-- ✅ CRD definitions (Session, Template)
-- ✅ 22 pre-built application templates
-- ✅ Kubernetes manifests for deployment
-- ✅ Helm chart structure with values
-- ✅ Monitoring configuration (Prometheus, Grafana)
-- ✅ Template generator script (for 200+ apps)
-- ✅ Comprehensive README and CONTRIBUTING guides
-
-**Implementation Status**:
-
-- ✅ Go controller using Kubebuilder (Phase 1 - Complete)
-- ✅ API backend with REST/WebSocket (Phase 2 - Complete)
-- ✅ React web UI with admin panel (Phase 4 - Complete)
-- ✅ **Plugin system** (backend, UI, documentation - Complete)
-- ✅ Hibernation controller logic (Phase 1 - Complete)
-- ✅ User management and quotas (Phase 2/4 - Complete)
-- ✅ CI/CD pipelines (Phase 3 - Complete)
-- ✅ Container image builds and registry (Phase 3 - Complete)
-- ✅ Comprehensive testing suite (Phase 5 - Complete)
-- ✅ Helm chart for deployment (Phase 5 - Complete)
-
-**What's Complete** (Phases 1-5):
-
-- ✅ **Controller**: Session lifecycle, hibernation, user PVC management
-- ✅ **API Backend**: 70+ handlers, authentication (Local/SAML/OIDC), webhooks, integrations
-- ✅ **Web UI**: 50+ components, 14 user pages, 12 admin pages
-- ✅ **Database**: 82+ tables with full schema
-- ✅ **Authentication**: Local, SAML 2.0 (6 providers), OIDC OAuth2 (8 providers), MFA
-- ✅ **Security**: CSRF, rate limiting, SSRF protection, IP whitelisting, audit logging
-- ✅ **Compliance**: DLP policies, SOC2/HIPAA/GDPR frameworks, violation tracking
-- ✅ **Session Features**: CRUD, sharing, snapshots, recording, tags, scheduling
-- ✅ **Collaboration**: Real-time chat, annotations, presence
-- ✅ **Admin Features**: User/group management, quotas, plugins, compliance dashboard
-- ✅ **Integrations**: Webhooks (16 events), Slack, Teams, Discord, PagerDuty, email
-- ✅ **Monitoring**: 40+ Prometheus metrics, Grafana dashboards, alert rules
-- ✅ **Plugin System**: Catalog, install, configure, versioning, ratings
-- ✅ **Template System**: Versioning, sharing, favorites, repository sync
-- ✅ **Testing**: Unit tests, integration tests, E2E tests
-- ✅ **Documentation**: Complete user/admin/developer guides
-
-**What Remains** (Future Enhancements - Phase 6+):
-
-- ⏳ VNC migration from LinuxServer.io to StreamSpace-native images (TigerVNC + noVNC)
-- ⏳ Multi-cluster federation
-- ⏳ WebRTC-based streaming (lower latency alternative)
-- ⏳ GPU acceleration support
-- ⏳ Advanced caching and materialized views
-
-### When Assisting with Code
-
-**⚠️ CRITICAL RULES** (See "Strategic Vision" section above for details):
-
-1. **NEVER introduce new Kasm/KasmVNC dependencies** - Use generic VNC terminology
-2. **NEVER reference Kasm in new code or documentation** - StreamSpace is fully independent
-3. **Always use VNC-agnostic patterns** - Abstract VNC implementation details
-
-**Standard Guidelines**:
-
-4. **CRD API Group**: Always use `stream.space/v1alpha1`, not `workspaces.aiinfra.io`
-5. **Resource Names**: Use `Session` and `Template`, not the old Workspace* names
-6. **Short Names**: Prefer `ss` and `tpl` in kubectl examples
-7. **Namespace**: Default namespace is `streamspace`, not `workspaces`
-8. **Kubebuilder**: When implementing controller, use domain `streamspace.io`
-9. **Images**: Currently LinuxServer.io (`lscr.io/linuxserver/...`), migrating to StreamSpace-native
-10. **VNC Port**: Use 5900 (standard VNC), currently 3000 for LinuxServer.io compatibility
-11. **Storage**: Assume NFS with ReadWriteMany access mode
-12. **Ingress Domain**: Default is `streamspace.local` (configurable)
-13. **VNC Fields**: Use `vnc:` not `kasmvnc:` in template specs
-
-### Key Design Decisions
-
-1. **Single Container Per Pod**: Each session runs one application container (no sidecars in Phase 1)
-2. **Shared User PVC**: All sessions for a user mount the same PVC at `/config`
-3. **Deployment Pattern**: Use Deployments (not StatefulSets) with replicas 0/1 for hibernation
-4. **Template-Based**: Sessions are instantiated from Template CRDs
-5. **State-Driven**: Session state (`running`/`hibernated`/`terminated`) drives reconciliation
-6. **Activity Tracking**: `lastActivity` timestamp updated externally (API/sidecar)
-7. **Hibernation Model**: Scale Deployment to 0 replicas, not delete pod
-8. **URL Pattern**: `{session-name}.{ingress-domain}` (e.g., `user1-firefox.streamspace.local`)
-
-### Common Misconceptions to Avoid
-
-**⚠️ Critical - Independence Strategy**:
-
-- ❌ **Don't** introduce new KasmVNC references - use generic VNC
-- ❌ **Don't** hardcode Kasm-specific features - keep VNC-agnostic
-- ❌ **Don't** use `kasmvnc:` field name - use `vnc:` instead
-- ❌ **Don't** assume KasmVNC will remain - code for TigerVNC migration
-
-**Architecture Patterns**:
-
-- ❌ **Don't** use StatefulSets - use Deployments with replicas field
-- ❌ **Don't** delete pods for hibernation - scale Deployment to 0
-- ❌ **Don't** create per-session PVCs - use shared user PVC
-- ❌ **Don't** use `workspaces.aiinfra.io` API group - use `stream.space`
-- ❌ **Don't** hardcode namespace - support configurable namespace
-- ❌ **Don't** implement WebSocket proxy in controller - that's for API backend (already implemented)
-- ✅ **Do** follow existing patterns - controller, API, and UI are all production-ready
-
-### Files to Reference
-
-When helping with specific tasks, reference these files:
-
-- **Feature list**: `FEATURES.md` - Complete list of all implemented features
-- **Strategic roadmap**: `ROADMAP.md` - Development roadmap (Phases 1-5 complete, Phase 6 planned)
-- **Architecture questions**: `docs/ARCHITECTURE.md`
-- **Controller implementation**: `docs/CONTROLLER_GUIDE.md`
-- **Plugin development**: `PLUGIN_DEVELOPMENT.md`, `docs/PLUGIN_API.md`
-- **CRD structure**: `manifests/crds/session.yaml`, `manifests/crds/template.yaml`
-- **Template examples**: `manifests/templates/browsers/firefox.yaml`
-- **Deployment config**: `chart/values.yaml`
-- **Migration context**: `MIGRATION_SUMMARY.md`
-- **Contribution workflow**: `CONTRIBUTING.md`
-- **Security**: `SECURITY.md`, `docs/SECURITY.md`
-
-### Code Generation vs Manual Writing
-
-- **CRDs**: Should be generated by Kubebuilder (`make manifests`)
-- **Reconciler scaffolding**: Generated by Kubebuilder
-- **Reconciler logic**: Manual implementation following `docs/CONTROLLER_GUIDE.md`
-- **RBAC markers**: Use kubebuilder annotations, generate with `make manifests`
-- **Template manifests**: Can be generated by `scripts/generate-templates.py`
-- **Helm templates**: Manual creation based on `manifests/config/` examples
-
----
-
-## 🔍 Troubleshooting
 
 ### CRD Issues
 
 **Problem**: CRD not found
-
 ```bash
-# Solution: Install CRDs
-kubectl apply -f manifests/crds/session.yaml
-kubectl apply -f manifests/crds/template.yaml
-
-# Verify
-kubectl get crds | grep stream.space
-```
-
-**Problem**: CRD validation errors
-
-```bash
-# Solution: Check CRD schema
-kubectl explain session.spec
-kubectl get crd sessions.stream.space -o yaml | grep -A 50 openAPIV3Schema
-
-# Re-apply updated CRD
-kubectl apply -f manifests/crds/session.yaml
-```
-
-### Session Issues
-
-**Problem**: Session stuck in Pending phase
-
-```bash
-# Check session status
-kubectl describe session <name> -n streamspace
-
-# Check controller logs
-kubectl logs -n streamspace deploy/streamspace-controller -f
-
-# Check pod status
-kubectl get pods -n streamspace -l session=<name>
-
-# Check events
-kubectl get events -n streamspace --sort-by=.metadata.creationTimestamp
-```
-
-**Problem**: Session pod not starting
-
-```bash
-# Check pod details
-kubectl describe pod <pod-name> -n streamspace
-
-# Check pod logs
-kubectl logs <pod-name> -n streamspace
-
-# Common issues:
-# - Image pull errors: Check image name and registry access
-# - PVC mount errors: Verify NFS provisioner is working
-# - Resource limits: Check node capacity
-```
-
-**Problem**: Hibernation not working
-
-```bash
-# Verify hibernation is enabled
-kubectl get cm -n streamspace streamspace-config -o yaml | grep hibernation
-
-# Check lastActivity timestamp
-kubectl get session <name> -n streamspace -o jsonpath='{.status.lastActivity}'
-
-# Check hibernation controller logs
-kubectl logs -n streamspace deploy/streamspace-controller -f | grep -i hibernation
-```
-
-### Template Issues
-
-**Problem**: Template not found
-
-```bash
-# List available templates
-kubectl get templates -n streamspace
-
-# Create template
-kubectl apply -f manifests/templates/browsers/firefox.yaml
-
-# Verify
-kubectl get template firefox-browser -n streamspace
-```
-
-**Problem**: Template image pull failures
-
-```bash
-# Test image manually
-docker pull lscr.io/linuxserver/firefox:latest
-
-# Check LinuxServer.io status
-curl -I https://lscr.io/v2/
-
-# Use alternative tag if latest fails
-kubectl edit template firefox-browser -n streamspace
-# Change tag to specific version
-```
-
-### Controller Issues
-
-**Problem**: Controller not starting
-
-```bash
-# Check controller deployment
-kubectl get deploy -n streamspace streamspace-controller
-
-# Check controller logs
-kubectl logs -n streamspace deploy/streamspace-controller
-
-# Common issues:
-# - CRDs not installed: kubectl apply -f manifests/crds/
-# - RBAC permissions: kubectl apply -f manifests/config/rbac.yaml
-# - Invalid config: kubectl get cm streamspace-config -n streamspace
-```
-
-**Problem**: Controller errors in logs
-
-```bash
-# Enable debug logging
-kubectl set env -n streamspace deploy/streamspace-controller LOG_LEVEL=debug
-
-# Watch logs
-kubectl logs -n streamspace deploy/streamspace-controller -f
-
-# Check for common errors:
-# - "Failed to get Template": Template CRD missing
-# - "Failed to create PVC": Storage class issues
-# - "Failed to create Deployment": Resource quota exceeded
+# Install CRDs
+kubectl apply -f manifests/crds/
 ```
 
 ### Storage Issues
 
 **Problem**: PVC stuck in Pending
-
 ```bash
-# Check PVC status
-kubectl describe pvc home-<username> -n streamspace
-
-# Check storage class
+# Check storage class exists
 kubectl get storageclass
 
-# Verify NFS provisioner
+# Verify NFS provisioner is running
 kubectl get pods -n kube-system | grep nfs
-
-# Common fixes:
-# - Install NFS provisioner
-# - Verify NFS server is accessible
-# - Check storage class exists
-```
-
-### Network Issues
-
-**Problem**: Cannot access session URL
-
-```bash
-# Check ingress
-kubectl get ingress -n streamspace
-
-# Check ingress controller
-kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik
-
-# Check service
-kubectl get svc -n streamspace -l session=<name>
-
-# Test connectivity
-kubectl port-forward -n streamspace svc/<service-name> 3000:3000
-# Access http://localhost:3000
-```
-
-### Build Issues
-
-**Problem**: `make` commands fail in controller
-
-```bash
-# Install Kubebuilder
-curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
-chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
-
-# Install controller-gen
-go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
-
-# Verify installation
-kubebuilder version
-controller-gen --version
-
-# Re-run make
-make manifests generate
-```
-
-**Problem**: Docker build fails
-
-```bash
-# Check Dockerfile exists
-ls -la Dockerfile
-
-# Build with verbose output
-docker build --progress=plain -t streamspace-controller:latest .
-
-# Check disk space
-df -h
-
-# Clean up old images
-docker system prune -a
 ```
 
 ---
 
-## 📚 Additional Resources
+## 📞 Key References
 
-### External Documentation
-
-- [Kubernetes Documentation](https://kubernetes.io/docs/)
-- [Kubebuilder Book](https://book.kubebuilder.io/)
-- [LinuxServer.io Documentation](https://docs.linuxserver.io/)
-- [KasmVNC Project](https://github.com/kasmtech/KasmVNC)
-- [Traefik Documentation](https://doc.traefik.io/traefik/)
-
-### Internal Documentation
-
-- `README.md`: User-facing project overview
-- `CONTRIBUTING.md`: Contribution guidelines and coding standards
-- `MIGRATION_SUMMARY.md`: Migration history and context
-- `docs/ARCHITECTURE.md`: Complete system architecture (17KB)
-- `docs/CONTROLLER_GUIDE.md`: Go controller implementation guide (19KB)
-- `chart/README.md`: Helm installation instructions
-
-### Community & Support
-
-- **GitHub Issues**: Bug reports and feature requests
-- **GitHub Discussions**: Questions and community support
-- **Discord**: Real-time chat (link in README)
-- **Documentation Site**: <https://docs.streamspace.io> (future)
+- **GitHub**: https://github.com/JoshuaAFerguson/streamspace
+- **Kubebuilder**: https://book.kubebuilder.io/
+- **Kubernetes CRDs**: https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/
+- **LinuxServer.io**: https://docs.linuxserver.io/ (temporary, migrating away)
 
 ---
 
-## 📅 Version History
+## 🎉 v1.0.0 Milestones Achieved
 
-- **v0.1.0** (2025-11-14): Initial CLAUDE.md creation
-  - Comprehensive guide for AI assistants
-  - Repository structure documentation
-  - Development workflows and conventions
-  - Phase 1 (Controller) implementation guidance
+- ✅ Production deployment enabled (full config UI)
+- ✅ Commercialization enabled (license enforcement)
+- ✅ Compliance ready (audit logs for SOC2/HIPAA/GDPR)
+- ✅ API automation enabled (API keys with scopes)
+- ✅ Test quality improved (controller coverage doubled)
 
----
-
-**For Questions**: Refer to `docs/ARCHITECTURE.md` for technical details, or `CONTRIBUTING.md` for contribution workflow.
-
-**Next Steps**: Follow `docs/CONTROLLER_GUIDE.md` to implement the Kubernetes controller using Kubebuilder.
+**Next Milestone**: Complete all test coverage expansion (API + UI tests) for stable release.
