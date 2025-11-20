@@ -3797,3 +3797,259 @@ Successfully integrated tenth wave of multi-agent development. Validator complet
 You can start your refactor work right now. The codebase is well-tested, well-documented, and ready. The multi-agent team will continue improving test coverage and fixing bugs in parallel - none of that will block you.
 
 **v1.0.0 Status: READY NOW** ✅
+
+---
+
+## v2.0 Architecture Refactor: Control Plane + Multi-Platform Agents
+
+**Started:** 2025-11-21  
+**Status:** In Progress  
+**Approach:** Bottom-Up (Option A)
+
+### Refactor Overview
+
+**Goal:** Transform StreamSpace from Kubernetes-native to multi-platform Control Plane + Agent architecture.
+
+**Key Changes:**
+- Control Plane: Centralized API managing sessions across all platforms
+- Platform-Specific Agents: K8s Agent, Docker Agent, future platform agents  
+- Outbound Connections: Agents connect TO Control Plane (firewall-friendly)
+- VNC Tunneling: VNC traffic tunneled through Control Plane (multi-network support)
+- Platform Abstraction: Generic "Session" concept, agents handle platform specifics
+
+**Documentation:** `docs/REFACTOR_ARCHITECTURE_V2.md`
+
+### Implementation Phases (Option A - Bottom-Up)
+
+**Phase Order:**
+1. ✅ Phase 1: Design & Documentation
+2. ✅ Phase 9: Database Schema  
+3. 🔄 Phase 2: Agent Registration (IN PROGRESS)
+4. Phase 3: WebSocket Command Channel
+5. Phase 5: K8s Agent Conversion
+6. Phase 4: VNC Proxy/Tunnel
+7. Phase 6: K8s Agent VNC Tunneling
+8. Phase 8: UI Updates
+9. Phase 7: Docker Agent
+10. Phase 10: Testing & Migration
+
+---
+
+### Phase 1: Design & Documentation ✅
+
+**Status:** COMPLETE  
+**Assigned To:** Architect  
+**Completed:** 2025-11-21
+
+**Deliverables:**
+- ✅ `docs/REFACTOR_ARCHITECTURE_V2.md` (727 lines)
+- ✅ Architecture diagrams (current vs. target)
+- ✅ WebSocket protocol specification
+- ✅ Database schema design
+- ✅ API endpoint specifications
+- ✅ 10-phase implementation plan
+- ✅ Success criteria and migration path
+
+---
+
+### Phase 9: Database Schema Updates ✅
+
+**Status:** COMPLETE  
+**Assigned To:** Architect  
+**Completed:** 2025-11-21
+
+**Deliverables:**
+- ✅ `agents` table migration (api/internal/db/database.go)
+- ✅ `agent_commands` table migration
+- ✅ `sessions` table alterations (agent_id, platform, platform_metadata)
+- ✅ Comprehensive indexes (12 indexes added)
+- ✅ Go models (api/internal/models/agent.go - 468 lines)
+  - Agent model with JSONB support
+  - AgentCommand model
+  - Request/response types
+  - Full documentation
+
+**Database Changes:**
+- `agents` table: Platform-specific execution agents
+- `agent_commands` table: Command queue for Control Plane → Agent communication  
+- `sessions` alterations: agent_id, platform, platform_metadata columns
+- Indexes for performance: agent lookups, command queue queries, session-agent relations
+
+**Migration Safety:**
+- Idempotent (CREATE IF NOT EXISTS)
+- DO blocks for ALTER TABLE (handles existing columns)
+- Foreign key constraints for referential integrity
+
+---
+
+### Phase 2: Control Plane - Agent Registration & Management 🔄
+
+**Status:** IN PROGRESS  
+**Assigned To:** Builder  
+**Priority:** HIGH  
+**Duration:** 3-5 days (estimated)
+
+**Objective:**
+Implement HTTP API endpoints for agent registration and management.
+
+**Tasks for Builder:**
+
+1. **Create `api/internal/handlers/agents.go`** - Agent management handler
+
+   **Required Endpoints:**
+   ```go
+   POST   /api/v1/agents/register          // Agent registers itself
+   GET    /api/v1/agents                   // List all agents (with filters)
+   GET    /api/v1/agents/:agent_id         // Get agent details
+   DELETE /api/v1/agents/:agent_id         // Deregister agent
+   POST   /api/v1/agents/:agent_id/heartbeat // Update heartbeat
+   ```
+
+   **Implementation Details:**
+   
+   a. **RegisterAgent (POST /register)**
+      - Accept `models.AgentRegistrationRequest` (defined in models/agent.go)
+      - Validate platform (kubernetes, docker, vm, cloud)
+      - Check if agent_id already exists:
+        - If exists: Update existing agent (re-registration)
+        - If new: Create new agent record
+      - Set status to "online"
+      - Set last_heartbeat to current time
+      - Return `models.Agent` (201 Created or 200 OK)
+
+   b. **ListAgents (GET /agents)**
+      - Support query filters: platform, status, region
+      - Return array of `models.Agent`
+      - Order by created_at DESC
+
+   c. **GetAgent (GET /agents/:agent_id)**
+      - Lookup by agent_id (not UUID id)
+      - Return `models.Agent`
+      - Return 404 if not found
+
+   d. **DeregisterAgent (DELETE /agents/:agent_id)**
+      - Delete agent from database
+      - CASCADE will delete related agent_commands
+      - Return success message
+
+   e. **UpdateHeartbeat (POST /agents/:agent_id/heartbeat)**
+      - Accept `models.AgentHeartbeatRequest`
+      - Update last_heartbeat timestamp
+      - Update status (online/draining)
+      - Update capacity (if provided)
+      - Return success message
+
+   **Code Structure:**
+   ```go
+   type AgentHandler struct {
+       database *db.Database
+   }
+   
+   func NewAgentHandler(database *db.Database) *AgentHandler { ... }
+   func (h *AgentHandler) RegisterRoutes(router *gin.RouterGroup) { ... }
+   func (h *AgentHandler) RegisterAgent(c *gin.Context) { ... }
+   func (h *AgentHandler) ListAgents(c *gin.Context) { ... }
+   func (h *AgentHandler) GetAgent(c *gin.Context) { ... }
+   func (h *AgentHandler) DeregisterAgent(c *gin.Context) { ... }
+   func (h *AgentHandler) UpdateHeartbeat(c *gin.Context) { ... }
+   
+   // Helper functions
+   func (h *AgentHandler) getAgentByAgentID(agentID string) (*models.Agent, error) { ... }
+   func (h *AgentHandler) updateExistingAgent(req models.AgentRegistrationRequest) (*models.Agent, error) { ... }
+   ```
+
+2. **Register routes in API main.go**
+
+   **Update:** `api/main.go` (or wherever routes are registered)
+   
+   ```go
+   // Add agent handler
+   agentHandler := handlers.NewAgentHandler(database)
+   agentHandler.RegisterRoutes(v1)
+   ```
+
+3. **Write unit tests:** `api/internal/handlers/agents_test.go`
+
+   **Test Coverage:**
+   - TestRegisterAgent_Success
+   - TestRegisterAgent_Duplicate (re-registration)
+   - TestRegisterAgent_InvalidPlatform
+   - TestListAgents_All
+   - TestListAgents_FilterByPlatform
+   - TestListAgents_FilterByStatus
+   - TestGetAgent_Success
+   - TestGetAgent_NotFound
+   - TestDeregisterAgent_Success
+   - TestDeregisterAgent_NotFound
+   - TestUpdateHeartbeat_Success
+   - TestUpdateHeartbeat_InvalidStatus
+   - TestUpdateHeartbeat_NotFound
+
+   **Test Patterns:**
+   - Use `sqlmock` for database mocking
+   - Use `httptest` for HTTP testing
+   - Follow existing test patterns in handlers/*_test.go
+
+**Reference Files:**
+- Models: `api/internal/models/agent.go` (all types defined)
+- Database: `api/internal/db/database.go` (tables created)
+- Example Handler: `api/internal/handlers/controllers.go` (similar structure)
+- Example Tests: `api/internal/handlers/configuration_test.go` (test patterns)
+
+**Acceptance Criteria:**
+- ✅ All 5 endpoints implemented
+- ✅ Input validation for all requests
+- ✅ Proper error handling (400, 404, 500 responses)
+- ✅ Database operations use prepared statements (prevent SQL injection)
+- ✅ Unit tests written with >70% coverage
+- ✅ All tests passing
+- ✅ Code follows existing handler patterns
+
+**Dependencies:** None (models and database schema are ready)
+
+**Notes for Builder:**
+- The models are already defined in `api/internal/models/agent.go`
+- The database tables are created via migrations
+- Follow the pattern from `api/internal/handlers/controllers.go` (similar functionality)
+- Use `gin` framework for HTTP handling
+- Use `sqlmock` for testing database interactions
+- DO NOT implement WebSocket functionality yet (that's Phase 3)
+
+**After Completion:**
+- Notify Architect for integration review
+- Notify Validator for testing
+- Notify Scribe for documentation
+
+---
+
+### Phase 3: Control Plane - WebSocket Command Channel
+
+**Status:** PENDING  
+**Assigned To:** Builder  
+**Dependencies:** Phase 2 (Agent Registration)
+
+**Tasks:** (Will be detailed when Phase 2 is complete)
+
+---
+
+### Architect Notes
+
+**Current Status (2025-11-21):**
+- ✅ Architecture documented
+- ✅ Database schema complete
+- 🔄 Agent registration API in progress (Builder assigned)
+- ⏳ Awaiting Builder completion
+
+**Next Steps:**
+1. Builder completes Phase 2 (Agent Registration API)
+2. Validator tests Phase 2
+3. Architect reviews and integrates
+4. Move to Phase 3 (WebSocket Command Channel)
+
+**Coordination:**
+- Builder works on implementation
+- Validator prepares test plans for Phase 2
+- Scribe updates documentation as changes merge
+- Architect coordinates integration
+
+---
