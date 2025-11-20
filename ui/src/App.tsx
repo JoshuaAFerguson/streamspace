@@ -56,6 +56,7 @@ const Scaling = lazy(() => import('./pages/admin/Scaling'));
 const Compliance = lazy(() => import('./pages/admin/Compliance'));
 const AuditLogs = lazy(() => import('./pages/admin/AuditLogs'));
 const Settings = lazy(() => import('./pages/admin/Settings'));
+const License = lazy(() => import('./pages/admin/License'));
 
 // Create React Query client
 const queryClient = new QueryClient({
@@ -349,6 +350,14 @@ function App() {
               element={
                 <AdminRoute>
                   <Settings />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/license"
+              element={
+                <AdminRoute>
+                  <License />
                 </AdminRoute>
               }
             />
