@@ -112,6 +112,11 @@ func TestCreateAPIKey_Success(t *testing.T) {
 
 	handler.CreateAPIKey(c)
 
+	// Debug: print response if test fails
+	if w.Code != http.StatusCreated {
+		t.Logf("Response body: %s", w.Body.String())
+	}
+
 	assert.Equal(t, http.StatusCreated, w.Code)
 
 	var response map[string]interface{}
