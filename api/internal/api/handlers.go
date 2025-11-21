@@ -170,7 +170,7 @@ type Handler struct {
 
 // CommandDispatcher interface for dispatching commands to agents
 type CommandDispatcher interface {
-	DispatchCommand(command interface{}) error
+	DispatchCommand(command *models.AgentCommand) error
 }
 
 // NewHandler creates a new API handler with injected dependencies.
