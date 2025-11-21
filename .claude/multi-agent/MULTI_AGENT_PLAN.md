@@ -1,8 +1,9 @@
 # StreamSpace Multi-Agent Orchestration Plan
 
-**Project:** StreamSpace - Kubernetes-native Container Streaming Platform  
-**Repository:** <https://github.com/JoshuaAFerguson/streamspace>  
-**Current Version:** v1.0.0 (Production Ready)  
+**Project:** StreamSpace - Kubernetes-native Container Streaming Platform
+**Repository:** <https://github.com/streamspace-dev/streamspace>
+**Website:** <https://streamspace.dev>
+**Current Version:** v1.0.0 (Production Ready)
 **Next Phase:** v2.0.0 - VNC Independence (TigerVNC + noVNC stack)
 
 ---
@@ -444,6 +445,178 @@ All changes committed and merged to `feature/streamspace-v2-agent-refactor` ✅
 **🎉 MAJOR MILESTONE: Unit Testing Phase 100% COMPLETE!**
 
 All changes committed and merged to `feature/streamspace-v2-agent-refactor` ✅
+
+---
+
+## 📦 Integration Update - Wave 6 (2025-11-20)
+
+### Architect → Team Integration Summary
+
+**Integration Date:** 2025-11-20 (Wave 6)
+**Integrated By:** Agent 1 (Architect)
+**Status:** ✅ Successfully integrated Builder bug fixes + Scribe final documentation
+
+**Integrated Changes:**
+
+### Scribe (Agent 4) - K8s Agent Deployment Guide + Final Status ✅
+
+**Commits Integrated:** 2 commits (66d5558, 8452c09)
+**Files Changed:** 2 files (+1,305 lines, -5 lines)
+
+**Work Completed:**
+- ✅ Created `docs/V2_AGENT_GUIDE.md` (1,297 lines, 15,000+ words)
+- ✅ Updated COORDINATION_STATUS.md with final Scribe status
+
+**V2_AGENT_GUIDE.md Coverage:**
+- Complete K8s Agent architecture overview
+- 3 installation options (Helm, K8s manifests, from source)
+- Full configuration reference (40+ environment variables)
+- RBAC and security best practices
+- Health monitoring and Prometheus metrics
+- Operational tasks (upgrades, scaling, node draining)
+- Troubleshooting guide (6 common scenarios)
+- Advanced configuration (pod templates, resource quotas, affinity)
+- Multi-agent deployment strategies
+
+**Complete v2.0-beta Documentation Suite:**
+1. ✅ V2_DEPLOYMENT_GUIDE.md (952 lines) - Control Plane deployment
+2. ✅ V2_AGENT_GUIDE.md (1,297 lines) - **NEW!** K8s Agent deployment
+3. ✅ V2_ARCHITECTURE.md (1,130 lines) - System architecture
+4. ✅ V2_MIGRATION_GUIDE.md (1,049 lines) - Migration from v1.x
+5. ✅ V2_BETA_RELEASE_NOTES.md (993 lines) - Release announcement
+6. ✅ CHANGELOG.md (updated) - Version history
+7. ✅ README.md (updated) - Project overview
+
+**Total Documentation**: 6,722 lines, 45,000+ words across 7 files
+
+**Impact:**
+- **ALL v2.0-beta documentation requirements COMPLETE!** 🎉
+- Operators have comprehensive guides for deploying and managing agents
+- Complete end-to-end deployment coverage (Control Plane → Agents)
+
+### Builder (Agent 2) - Catalog & Batch Handler Bug Fixes ✅
+
+**Commits Integrated:** 1 commit (68223c5)
+**Files Changed:** 3 files (+115 lines, -19 lines)
+
+**Bugs Fixed:**
+
+**1. Catalog Handler (catalog.go):**
+- **Issue**: Nil pointer in updateTemplateRating function
+- **Root Cause**: Function signature used interface{} instead of *gin.Context
+- **Fix**: Updated function signature and all calls to pass gin.Context directly
+- **Tests Fixed**: TestAddRating_Success, TestDeleteRating_Success (2 previously skipped tests)
+- **Status**: All 18 catalog tests now passing ✅
+
+**2. Batch Operations Handler (batch.go):**
+- **Issue**: Missing validation causing nil pointer panics
+- **Fixes Applied**:
+  - Added authentication checks to all 9 batch handlers
+  - Added empty array validation (7 handlers check sessionIds, snapshotIds, etc.)
+  - Added operation type validation for UpdateSessionTags (add/remove/replace)
+  - Added resource validation for UpdateSessionResources
+- **Impact**: Prevents panics, improves error handling and user feedback
+
+**Validation Added:**
+- User authentication: 9 handlers
+- Empty array checks: 7 handlers
+- Operation type validation: UpdateSessionTags
+- Resource validation: UpdateSessionResources
+
+**Testing Impact:**
+- All catalog handler tests passing (18/18 ✅)
+- Batch handler reliability improved (production-ready)
+- Bugs discovered by Validator RESOLVED ✅
+
+**Integration Summary:**
+- **Total Lines Added**: 1,420 (1,305 docs + 115 bug fixes)
+- **Scribe**: ALL documentation COMPLETE (6,722 total lines) ✅
+- **Builder**: Both discovered bugs FIXED ✅
+- **Validator-reported bugs**: 2/2 resolved
+- **Zero Conflicts**: Clean merges on both integrations
+
+**🎉 MAJOR MILESTONE: All P0 Bugs Fixed + Documentation 100% Complete!**
+
+All changes committed and merged to `feature/streamspace-v2-agent-refactor` ✅
+
+---
+
+## 🔧 Code Quality Update - K8s Agent Reorganization (2025-11-20)
+
+### Architect Code Refactoring
+
+**Date:** 2025-11-20
+**By:** Agent 1 (Architect)
+**Status:** ✅ Complete
+**Commit:** 5bdbca7
+
+**Issue Identified:**
+- K8s Agent directory structure was disorganized
+- All Go files scattered at root level with no clear organization
+- K8s manifests in generic `k8s/` subdirectory
+
+**Refactoring Completed:**
+
+**New Directory Structure:**
+```
+agents/k8s-agent/
+├── main.go                      # Entry point + K8sAgent struct
+├── agent_handlers.go            # Session lifecycle command handlers
+├── agent_k8s_operations.go      # Kubernetes API operations
+├── agent_message_handler.go     # Control Plane message routing
+├── agent_vnc_handler.go         # VNC message handlers
+├── agent_vnc_tunnel.go          # VNC tunnel manager
+├── internal/                    # Internal packages
+│   ├── config/                  # Configuration types
+│   │   └── config.go
+│   └── errors/                  # Error constants
+│       └── errors.go
+├── deployments/                 # K8s manifests (renamed from k8s/)
+│   ├── configmap.yaml
+│   ├── deployment.yaml
+│   └── rbac.yaml
+└── tests/                       # Test files
+    └── agent_test.go
+```
+
+**Key Changes:**
+
+1. **Independent Packages** (moved to `internal/`):
+   - `config/` - Configuration types and validation (exported for reuse)
+   - `errors/` - Error constants (standard pattern)
+
+2. **Agent Components** (main package with `agent_*` prefix):
+   - Renamed 5 files to use `agent_*` prefix for clarity
+   - Maintained tight coupling in main package (Go best practice)
+   - All K8sAgent methods remain in main package
+
+3. **Directory Organization**:
+   - `k8s/` → `deployments/` (clearer purpose)
+   - Root test files → `tests/` directory
+   - 8 main package files → 6 organized files
+
+4. **Import Path Updates**:
+   - Fixed module path (streamspace vs JoshuaAFerguson)
+   - Updated all imports to correct path: `github.com/streamspace/streamspace/agents/k8s-agent/internal/*`
+   - Resolved package name collision (errors → stderrors alias)
+
+**Technical Details:**
+- **Files Changed**: 14 files (390 insertions, 392 deletions)
+- **Build Status**: ✅ Verified with `go build -o /tmp/k8s-agent .`
+- **Code Size**: 2,175 lines organized across 8 files
+- **No Functional Changes**: Pure refactoring, zero behavior changes
+
+**Rationale:**
+- Improve code discoverability and maintainability
+- Separate concerns (independent packages vs tightly coupled agent logic)
+- Prepare for future expansion and testing
+- Follow Go best practices for package organization
+
+**Impact:**
+- ✅ Better code organization for future development
+- ✅ Clearer separation of concerns
+- ✅ Easier to locate specific functionality
+- ✅ Foundation for expanded testing
 
 ---
 

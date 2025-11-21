@@ -81,7 +81,7 @@ StreamSpace has completed a major architectural transformation to a multi-platfo
 
 ```bash
 # Clone repository
-git clone https://github.com/JoshuaAFerguson/streamspace.git
+git clone https://github.com/streamspace-dev/streamspace.git
 cd streamspace
 
 # Deploy CRDs
@@ -146,7 +146,7 @@ kubectl create secret generic streamspace-secrets \
 
 ## Available Applications
 
-Templates available via [streamspace-templates](https://github.com/JoshuaAFerguson/streamspace-templates):
+Templates available via [streamspace-templates](https://github.com/StreamSpace-dev/streamspace-templates):
 
 - **Browsers**: Firefox, Chromium, Brave, LibreWolf
 - **Development**: VS Code, GitHub Desktop
@@ -159,8 +159,8 @@ Templates available via [streamspace-templates](https://github.com/JoshuaAFergus
 ### Build Components
 
 ```bash
-# Controller
-cd k8s-controller && make docker-build IMG=your-registry/controller:latest
+# K8s Agent
+cd agents/k8s-agent && go build -o k8s-agent .
 
 # API
 cd api && go build -o streamspace-api
@@ -172,8 +172,8 @@ cd ui && npm install && npm run build
 ### Run Tests
 
 ```bash
-# Controller tests (requires envtest)
-cd k8s-controller && make test
+# K8s Agent tests
+cd agents/k8s-agent && go test ./... -v
 
 # API tests
 cd api && go test ./... -v
@@ -232,7 +232,7 @@ Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 ### Sessions not starting
 
 ```bash
-kubectl logs -n streamspace deploy/streamspace-controller
+kubectl logs -n streamspace -l app.kubernetes.io/component=api
 kubectl describe session <session-name> -n streamspace
 ```
 
@@ -254,9 +254,9 @@ StreamSpace is licensed under the MIT License. See [LICENSE](LICENSE) for detail
 
 ## Links
 
-- **GitHub**: <https://github.com/JoshuaAFerguson/streamspace>
-- **Templates**: <https://github.com/JoshuaAFerguson/streamspace-templates>
-- **Plugins**: <https://github.com/JoshuaAFerguson/streamspace-plugins>
+- **GitHub**: <https://github.com/StreamSpace-dev/streamspace>
+- **Templates**: <https://github.com/StreamSpace-dev/streamspace-templates>
+- **Plugins**: <https://github.com/StreamSpace-dev/streamspace-plugins>
 
 ---
 
