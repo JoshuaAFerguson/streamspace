@@ -25,6 +25,7 @@
 // - GET    /api/v1/agents/:agent_id - Get agent details
 // - DELETE /api/v1/agents/:agent_id - Deregister agent
 // - POST   /api/v1/agents/:agent_id/heartbeat - Update heartbeat
+// - POST   /api/v1/agents/:agent_id/command - Send command to agent
 //
 // Thread Safety:
 // - All database operations are thread-safe
@@ -32,6 +33,8 @@
 // Dependencies:
 // - Database: agents table (v2.0 schema)
 // - Models: api/internal/models/agent.go
+// - AgentHub: WebSocket connection manager
+// - CommandDispatcher: Command queuing and dispatch
 //
 // Example Usage:
 //
@@ -46,19 +49,26 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/streamspace/streamspace/api/internal/db"
 	"github.com/streamspace/streamspace/api/internal/models"
+	"github.com/streamspace/streamspace/api/internal/services"
+	"github.com/streamspace/streamspace/api/internal/websocket"
 )
 
 // AgentHandler handles agent registration and management
 type AgentHandler struct {
-	database *db.Database
+	database   *db.Database
+	hub        *websocket.AgentHub
+	dispatcher *services.CommandDispatcher
 }
 
 // NewAgentHandler creates a new agent handler
-func NewAgentHandler(database *db.Database) *AgentHandler {
+func NewAgentHandler(database *db.Database, hub *websocket.AgentHub, dispatcher *services.CommandDispatcher) *AgentHandler {
 	return &AgentHandler{
-		database: database,
+		database:   database,
+		hub:        hub,
+		dispatcher: dispatcher,
 	}
 }
 
@@ -71,6 +81,7 @@ func (h *AgentHandler) RegisterRoutes(router *gin.RouterGroup) {
 		agents.GET("/:agent_id", h.GetAgent)
 		agents.DELETE("/:agent_id", h.DeregisterAgent)
 		agents.POST("/:agent_id/heartbeat", h.UpdateHeartbeat)
+		agents.POST("/:agent_id/command", h.SendCommand)
 	}
 }
 
@@ -458,4 +469,140 @@ func (h *AgentHandler) UpdateHeartbeat(c *gin.Context) {
 		"status":        req.Status,
 		"lastHeartbeat": now,
 	})
+}
+
+// SendCommand godoc
+// @Summary Send a command to an agent
+// @Description Creates and dispatches a command to an agent. The command is queued and sent via WebSocket.
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Param agent_id path string true "Agent ID"
+// @Param request body models.SendCommandRequest true "Command request"
+// @Success 201 {object} models.AgentCommand "Command created and queued"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 404 {object} map[string]interface{} "Agent not found"
+// @Failure 503 {object} map[string]interface{} "Agent not connected"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /agents/{agent_id}/command [post]
+func (h *AgentHandler) SendCommand(c *gin.Context) {
+	agentID := c.Param("agent_id")
+
+	// Parse request
+	var req struct {
+		Action    string                 `json:"action" binding:"required"`
+		SessionID string                 `json:"sessionId,omitempty"`
+		Payload   map[string]interface{} `json:"payload,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Validate action
+	validActions := map[string]bool{
+		"start_session":     true,
+		"stop_session":      true,
+		"hibernate_session": true,
+		"wake_session":      true,
+	}
+	if !validActions[req.Action] {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid action",
+			"details": "Action must be one of: start_session, stop_session, hibernate_session, wake_session",
+		})
+		return
+	}
+
+	// Verify agent exists
+	var agent models.Agent
+	err := h.database.DB().QueryRow(`
+		SELECT id, agent_id, platform, status
+		FROM agents
+		WHERE agent_id = $1
+	`, agentID).Scan(&agent.ID, &agent.AgentID, &agent.Platform, &agent.Status)
+
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Agent not found",
+			"agentId": agentID,
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Database error",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Check if agent is connected via WebSocket
+	if h.hub != nil && !h.hub.IsAgentConnected(agentID) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "Agent not connected",
+			"details": "Agent must be connected via WebSocket to receive commands",
+			"agentId": agentID,
+			"status":  agent.Status,
+		})
+		return
+	}
+
+	// Generate command ID
+	commandID := "cmd-" + uuid.New().String()
+
+	// Convert payload to CommandPayload type
+	var payload *models.CommandPayload
+	if req.Payload != nil {
+		p := models.CommandPayload(req.Payload)
+		payload = &p
+	}
+
+	// Create command in database
+	now := time.Now()
+	var command models.AgentCommand
+	err = h.database.DB().QueryRow(`
+		INSERT INTO agent_commands (command_id, agent_id, session_id, action, payload, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'pending', $6)
+		RETURNING id, command_id, agent_id, session_id, action, payload, status, error_message, created_at, sent_at, acknowledged_at, completed_at
+	`, commandID, agentID, req.SessionID, req.Action, payload, now).Scan(
+		&command.ID,
+		&command.CommandID,
+		&command.AgentID,
+		&command.SessionID,
+		&command.Action,
+		&command.Payload,
+		&command.Status,
+		&command.ErrorMessage,
+		&command.CreatedAt,
+		&command.SentAt,
+		&command.AcknowledgedAt,
+		&command.CompletedAt,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to create command",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Dispatch command to agent
+	if h.dispatcher != nil {
+		if err := h.dispatcher.DispatchCommand(&command); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to dispatch command",
+				"details": err.Error(),
+			})
+			return
+		}
+	}
+
+	c.JSON(http.StatusCreated, command)
 }
