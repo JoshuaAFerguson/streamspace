@@ -95,6 +95,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -686,17 +687,17 @@ func (h *Handler) CreateSession(c *gin.Context) {
 
 	// 2. Select an agent to handle this session (load-balanced by active sessions)
 	// Calculate active sessions dynamically from sessions table for accurate load balancing
-	// Note: sessions.controller_id maps to agents.agent_id in v2.0-beta architecture
+	// v2.0-beta: Use agent_id column (not controller_id which is legacy v1.x)
 	var agentID string
 	err = h.db.DB().QueryRowContext(ctx, `
 		SELECT a.agent_id
 		FROM agents a
 		LEFT JOIN (
-			SELECT controller_id, COUNT(*) as active_sessions
+			SELECT agent_id, COUNT(*) as active_sessions
 			FROM sessions
 			WHERE state IN ('running', 'starting')
-			GROUP BY controller_id
-		) s ON a.agent_id = s.controller_id
+			GROUP BY agent_id
+		) s ON a.agent_id = s.agent_id
 		WHERE a.status = 'online' AND a.platform = $1
 		ORDER BY COALESCE(s.active_sessions, 0) ASC
 		LIMIT 1
@@ -747,13 +748,25 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	// 4. Create command in database
 	commandID := fmt.Sprintf("cmd-%s", uuid.New().String()[:8])
 	now := time.Now()
+
+	// Marshal payload to JSON for database insertion (JSONB column)
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Failed to marshal command payload: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to create command payload",
+			"message": fmt.Sprintf("Failed to marshal payload: %v", err),
+		})
+		return
+	}
+
 	var command models.AgentCommand
 	var errorMessage sql.NullString // Handle NULL error_message column
 	err = h.db.DB().QueryRowContext(ctx, `
 		INSERT INTO agent_commands (command_id, agent_id, session_id, action, payload, status, created_at)
 		VALUES ($1, $2, $3, $4, $5, 'pending', $6)
 		RETURNING id, command_id, agent_id, session_id, action, payload, status, error_message, created_at, sent_at, acknowledged_at, completed_at
-	`, commandID, agentID, sessionName, "start_session", payload, now).Scan(
+	`, commandID, agentID, sessionName, "start_session", payloadJSON, now).Scan(
 		&command.ID,
 		&command.CommandID,
 		&command.AgentID,
@@ -807,6 +820,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		State:              "pending",
 		Namespace:          h.namespace,
 		Platform:           h.platform,
+		AgentID:            agentID, // v2.0-beta: Track which agent is managing this session
 		Memory:             memory,
 		CPU:                cpu,
 		PersistentHome:     session.PersistentHome,
@@ -918,31 +932,132 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := c.Param("id")
 
-	// Verify session exists before deletion and get user info for event
-	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
-		return
-	}
+	// 1. Verify session exists in DATABASE and get agent managing it
+	// v2.0-beta: API does NOT access Kubernetes directly - agent handles ALL K8s operations
+	var agentID sql.NullString // Use sql.NullString for nullable column
+	var currentState string
+	err := h.db.DB().QueryRowContext(ctx, `
+		SELECT agent_id, state FROM sessions WHERE id = $1
+	`, sessionID).Scan(&agentID, &currentState)
 
-	// Publish session delete event for controller to handle
-	deleteEvent := &events.SessionDeleteEvent{
-		SessionID: sessionID,
-		UserID:    session.User,
-		Platform:  h.platform,
-	}
-	if err := h.publisher.PublishSessionDelete(ctx, deleteEvent); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to delete session",
-			"message": fmt.Sprintf("Failed to publish delete event: %v", err),
+	if err == sql.ErrNoRows {
+		log.Printf("Session %s not found in database", sessionID)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Session not found",
+			"message": "The specified session does not exist",
 		})
 		return
 	}
 
-	log.Printf("Published session delete event for %s (controller will delete resources)", sessionID)
+	if err != nil {
+		log.Printf("Failed to query session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to query session",
+			"message": fmt.Sprintf("Database error: %v", err),
+		})
+		return
+	}
+
+	// Check if session has an agent assigned
+	if !agentID.Valid || agentID.String == "" {
+		log.Printf("Session %s has no agent assigned (agent_id is NULL or empty)", sessionID)
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "Session not ready",
+			"message": "Session has no agent assigned - cannot terminate. Session may still be pending or failed to start.",
+		})
+		return
+	}
+
+	// Check if session is already terminating or terminated
+	if currentState == "terminating" || currentState == "terminated" {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":   "Session already terminating",
+			"message": fmt.Sprintf("Session is already in %s state", currentState),
+		})
+		return
+	}
+
+	// 2. Create stop_session command in database
+	commandID := fmt.Sprintf("cmd-%s", uuid.New().String()[:8])
+	now := time.Now()
+	payload := map[string]interface{}{
+		"sessionId": sessionID,
+		"namespace": h.namespace,
+	}
+
+	// Marshal payload to JSON for database insertion (JSONB column)
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Failed to marshal stop command payload: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to create stop command",
+			"message": fmt.Sprintf("Failed to marshal payload: %v", err),
+		})
+		return
+	}
+
+	var command models.AgentCommand
+	var errorMessage sql.NullString
+	err = h.db.DB().QueryRowContext(ctx, `
+		INSERT INTO agent_commands (command_id, agent_id, session_id, action, payload, status, created_at)
+		VALUES ($1, $2, $3, $4, $5, 'pending', $6)
+		RETURNING id, command_id, agent_id, session_id, action, payload, status, error_message, created_at, sent_at, acknowledged_at, completed_at
+	`, commandID, agentID.String, sessionID, "stop_session", payloadJSON, now).Scan(
+		&command.ID,
+		&command.CommandID,
+		&command.AgentID,
+		&command.SessionID,
+		&command.Action,
+		&command.Payload,
+		&command.Status,
+		&errorMessage,
+		&command.CreatedAt,
+		&command.SentAt,
+		&command.AcknowledgedAt,
+		&command.CompletedAt,
+	)
+
+	if errorMessage.Valid {
+		command.ErrorMessage = errorMessage.String
+	}
+
+	if err != nil {
+		log.Printf("Failed to create stop_session command: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to create stop command",
+			"message": fmt.Sprintf("Failed to create command in database: %v", err),
+		})
+		return
+	}
+	log.Printf("Created stop_session command %s for session %s", commandID, sessionID)
+
+	// 3. Update database session state to terminating
+	// Agent will update CRD when it processes the command
+	if err := h.sessionDB.UpdateSessionState(ctx, sessionID, "terminating"); err != nil {
+		log.Printf("Failed to update database session state (non-fatal): %v", err)
+	}
+
+	// 4. Dispatch command to agent via WebSocket
+	if h.dispatcher != nil {
+		if err := h.dispatcher.DispatchCommand(&command); err != nil {
+			log.Printf("Failed to dispatch stop command %s: %v", commandID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to dispatch stop command",
+				"message": fmt.Sprintf("Failed to dispatch command to agent: %v", err),
+			})
+			return
+		}
+		log.Printf("Dispatched stop_session command %s to agent %s for session %s", commandID, agentID.String, sessionID)
+	} else {
+		log.Printf("Warning: CommandDispatcher is nil, stop command %s not dispatched", commandID)
+	}
+
+	// Return accepted response
+	// Agent will handle ALL Kubernetes operations (delete Deployment, Service, update CRD)
 	c.JSON(http.StatusAccepted, gin.H{
-		"name":    sessionID,
-		"message": "Session deletion requested, waiting for controller",
+		"name":      sessionID,
+		"commandId": commandID,
+		"message":   "Session termination requested, agent will delete resources",
 	})
 }
 
