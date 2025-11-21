@@ -137,28 +137,146 @@ After merging `claude/audit-streamspace-codebase-011L9FVvX77mjeHy4j1Guj9B`, I've
   - [ ] Integration with Control Plane VNC proxy successful
 - **Blocker For**: UI VNC Viewer Update, Integration Tests
 
-### Task: UI VNC Viewer Update ⚡ CRITICAL
+### Task: UI VNC Viewer Update ⚡ CRITICAL - THE FINAL PIECE!
 
-- **Assigned To**: Builder (Agent 2)
-- **Status**: Not Started
-- **Priority**: P0 - CRITICAL
-- **Dependencies**: VNC Proxy (❌ pending), K8s Agent VNC Tunneling (❌ pending)
-- **Estimated Effort**: 1-2 days (100-200 lines of changes)
-- **Target**: Week 2 of v2.0-beta sprint
-- **Description**:
-  - Update VNC viewer to use Control Plane proxy
-  - Change WebSocket URL from `ws://{podIP}:5900` to `/vnc/{session_id}`
-  - Add connection error handling
-  - Test VNC streaming through proxy
-- **Files to Update**:
-  - `ui/src/components/VNCViewer.tsx` (or similar component)
-  - `ui/src/pages/SessionViewer.tsx` (if exists)
-- **Acceptance Criteria**:
-  - [ ] VNC viewer connects to Control Plane proxy
-  - [ ] VNC streaming functional
-  - [ ] Error messages clear to users
-  - [ ] Performance acceptable (< 100ms latency)
-- **Blocker For**: Integration Tests, User testing
+- **Assigned To**: Builder (Agent 2) **← ACTIVE ASSIGNMENT (2025-11-21)**
+- **Status**: 🔥 **IN PROGRESS** - Assigned by Architect
+- **Priority**: P0 - CRITICAL BLOCKER (THE LAST TASK FOR v2.0-beta!)
+- **Dependencies**: VNC Proxy (✅ COMPLETE), K8s Agent VNC Tunneling (✅ COMPLETE)
+- **Estimated Effort**: 1-2 hours (NOT days! Simple URL change)
+- **Target**: IMMEDIATELY - This is the only remaining blocker!
+- **Context**: Phase 8 is 95% complete. This final 5% enables end-to-end VNC streaming via Control Plane.
+
+#### 📋 Current Implementation Analysis
+
+**File**: `ui/src/pages/SessionViewer.tsx` (line 421-433)
+
+The SessionViewer currently uses an **iframe** approach to embed VNC:
+```typescript
+<iframe
+  ref={iframeRef}
+  src={session.status.url}  // ← v1.x: Direct URL to pod's noVNC interface
+  style={{ width: '100%', height: '100%', border: 'none' }}
+  title={`Session: ${session.name}`}
+  allow="clipboard-read; clipboard-write"
+  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+/>
+```
+
+**Current behavior (v1.x):**
+- `session.status.url` contains direct URL to pod (e.g., `http://10.42.1.5:3000`)
+- Iframe loads noVNC web interface running in the pod
+- VNC traffic goes directly: UI ↔ Pod (requires pod IP accessibility)
+
+#### 🎯 Required Changes for v2.0
+
+**New behavior (v2.0):**
+- Iframe should load noVNC interface served by Control Plane
+- noVNC connects to VNC proxy WebSocket: `ws://control-plane/api/v1/vnc/{sessionId}`
+- VNC traffic flows: UI ↔ Control Plane ↔ Agent ↔ Pod (firewall-friendly)
+
+#### 🔧 Implementation Options
+
+**Option 1: Control Plane serves noVNC static page (RECOMMENDED)**
+1. Create static noVNC HTML page in Control Plane (served at `/vnc-viewer/{sessionId}`)
+2. This page loads noVNC library and connects to `/api/v1/vnc/{sessionId}` WebSocket
+3. Update SessionViewer iframe src: `src={`/vnc-viewer/${sessionId}`}`
+
+**Option 2: Integrate noVNC library into React component**
+1. Install noVNC npm package: `npm install @novnc/novnc`
+2. Replace iframe with canvas element
+3. Use RFB client directly in React component
+4. Connect to `/api/v1/vnc/{sessionId}` WebSocket
+
+**Architect's Recommendation: Option 1** (simpler, maintains existing iframe approach)
+
+#### 📝 Detailed Implementation Steps (Option 1)
+
+**Step 1: Create noVNC static page in Control Plane**
+
+Create: `api/static/vnc-viewer.html`
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StreamSpace VNC Viewer</title>
+  <script src="https://unpkg.com/@novnc/novnc@1.4.0/core/rfb.js"></script>
+  <style>
+    body { margin: 0; padding: 0; overflow: hidden; background: #000; }
+    #vnc-canvas { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="vnc-canvas"></div>
+  <script>
+    const sessionId = window.location.pathname.split('/').pop();
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const vncUrl = `${wsProtocol}//${window.location.host}/api/v1/vnc/${sessionId}`;
+
+    const rfb = new RFB(document.getElementById('vnc-canvas'), vncUrl, {
+      shared: true,
+      credentials: { password: '' }
+    });
+
+    rfb.scaleViewport = true;
+    rfb.resizeSession = true;
+
+    rfb.addEventListener('connect', () => console.log('VNC connected'));
+    rfb.addEventListener('disconnect', () => console.log('VNC disconnected'));
+  </script>
+</body>
+</html>
+```
+
+**Step 2: Add Control Plane route to serve noVNC viewer**
+
+Update: `api/cmd/main.go` (or routes file)
+```go
+// Serve static noVNC viewer
+router.StaticFile("/vnc-viewer.html", "./static/vnc-viewer.html")
+router.GET("/vnc-viewer/:sessionId", func(c *gin.Context) {
+    c.File("./static/vnc-viewer.html")
+})
+```
+
+**Step 3: Update SessionViewer iframe URL**
+
+Update: `ui/src/pages/SessionViewer.tsx` (line 423)
+```typescript
+// OLD (v1.x - direct pod access):
+src={session.status.url}
+
+// NEW (v2.0 - Control Plane proxy):
+src={`/vnc-viewer/${sessionId}`}
+```
+
+That's it! This 3-line change completes Phase 8 and enables v2.0-beta!
+
+#### ✅ Acceptance Criteria
+- [ ] noVNC static page created and served by Control Plane
+- [ ] SessionViewer iframe updated to use `/vnc-viewer/{sessionId}`
+- [ ] VNC connection establishes through Control Plane proxy
+- [ ] VNC streaming functional (can see and control session desktop)
+- [ ] Error messages displayed if connection fails
+- [ ] Backwards compatibility: Falls back gracefully if proxy unavailable
+
+#### 🚀 Success Indicators
+- Users can view sessions through VNC proxy
+- No direct pod IP access required
+- VNC traffic tunneled through Control Plane → Agent → Pod
+- **v2.0-beta is READY for integration testing!**
+
+#### 📦 Blocker For
+- Integration Tests (E2E VNC streaming)
+- v2.0-beta release candidate
+- User acceptance testing
+
+#### 💡 Notes for Builder
+- VNC proxy endpoint already complete: `api/internal/handlers/vnc_proxy.go` ✅
+- K8s Agent tunneling already complete: `agents/k8s-agent/vnc_tunnel.go` ✅
+- WebSocket authentication handled by proxy (JWT token)
+- This is truly the LAST piece for v2.0-beta!
+- After this: immediate integration testing → beta release!
 
 ### Task: Integration Tests - v2.0 Architecture 📋 HIGH PRIORITY
 
@@ -5825,10 +5943,11 @@ c. **Agent Capacity Widget**
 
 **Next Steps (Priority Order):**
 1. **VNC Viewer Proxy Integration** (P0 - THE LAST BLOCKER!)
+   - **ASSIGNED TO: BUILDER (Agent 2)**
    - Estimated: 1-2 hours
-   - Assign to: Builder or Architect
    - Impact: Enables end-to-end VNC streaming via Control Plane
    - After this: v2.0-beta is READY for testing!
+   - See detailed assignment below in "Active Tasks" section
 
 2. **Integration Testing** (P0 - Post-VNC Viewer)
    - E2E VNC streaming tests
