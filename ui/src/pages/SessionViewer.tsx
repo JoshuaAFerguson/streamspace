@@ -197,6 +197,13 @@ export default function SessionViewer() {
       const sessionData = await api.getSession(sessionId);
       setSession(sessionData);
 
+      // v2.0: Store JWT token in sessionStorage for noVNC viewer
+      // The token is needed by the noVNC viewer page to authenticate WebSocket connections
+      const token = localStorage.getItem('token');
+      if (token) {
+        sessionStorage.setItem('streamspace_token', token);
+      }
+
       // Check if current user is the session owner
       setIsOwner(sessionData.user === username);
 
@@ -417,10 +424,10 @@ export default function SessionViewer() {
       </AppBar>
 
       <Box sx={{ flex: 1, position: 'relative', bgcolor: '#000' }}>
-        {/* BUG FIX: Add sandbox attribute to prevent malicious session content from accessing parent page */}
+        {/* v2.0: VNC connection routed through Control Plane proxy for firewall-friendly access */}
         <iframe
           ref={iframeRef}
-          src={session.status.url}
+          src={`/vnc-viewer/${sessionId}`}
           style={{
             width: '100%',
             height: '100%',
