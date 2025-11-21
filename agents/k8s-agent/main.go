@@ -40,6 +40,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -230,6 +231,7 @@ func main() {
 	maxCPU := flag.Int("max-cpu", 100, "Maximum CPU cores available")
 	maxMemory := flag.Int("max-memory", 128, "Maximum memory in GB")
 	maxSessions := flag.Int("max-sessions", 100, "Maximum concurrent sessions")
+	heartbeatInterval := flag.Int("heartbeat-interval", getEnvIntOrDefault("HEALTH_CHECK_INTERVAL", 30), "Heartbeat interval in seconds")
 
 	flag.Parse()
 
@@ -243,17 +245,23 @@ func main() {
 
 	// Create agent configuration
 	config := &config.AgentConfig{
-		AgentID:         *agentID,
-		ControlPlaneURL: *controlPlaneURL,
-		Platform:        *platform,
-		Region:          *region,
-		Namespace:       *namespace,
-		KubeConfig:      *kubeConfig,
+		AgentID:           *agentID,
+		ControlPlaneURL:   *controlPlaneURL,
+		Platform:          *platform,
+		Region:            *region,
+		Namespace:         *namespace,
+		KubeConfig:        *kubeConfig,
+		HeartbeatInterval: *heartbeatInterval,
 		Capacity: config.AgentCapacity{
 			MaxCPU:      *maxCPU,
 			MaxMemory:   *maxMemory,
 			MaxSessions: *maxSessions,
 		},
+	}
+
+	// Validate configuration
+	if err := config.Validate(); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
 	}
 
 	// Create agent
@@ -280,6 +288,23 @@ func getEnvOrDefault(key, defaultValue string) string {
 	}
 	return defaultValue
 }
+
+// getEnvIntOrDefault returns environment variable value as int or default.
+// Supports both duration strings (e.g., "30s", "1m") and integer strings.
+func getEnvIntOrDefault(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		// Try parsing as duration string (e.g., "30s", "1m")
+		if duration, err := time.ParseDuration(value); err == nil {
+			return int(duration.Seconds())
+		}
+		// Try parsing as integer
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
 const (
 	// Time allowed to write a message to the peer
 	writeWait = 10 * time.Second
