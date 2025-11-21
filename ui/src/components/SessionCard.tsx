@@ -17,6 +17,11 @@ import {
   LocalOffer as TagIcon,
   Share as ShareIcon,
   Link as LinkIcon,
+  Cloud as K8sIcon,
+  Storage as DockerIcon,
+  CloudQueue as VMIcon,
+  CloudCircle as CloudIcon,
+  Computer as AgentIcon,
 } from '@mui/icons-material';
 import TagChip from './TagChip';
 import ActivityIndicator from './ActivityIndicator';
@@ -121,6 +126,21 @@ function SessionCard({
     }
   };
 
+  const getPlatformIcon = (platform?: string) => {
+    switch (platform?.toLowerCase()) {
+      case 'kubernetes':
+        return <K8sIcon fontSize="small" />;
+      case 'docker':
+        return <DockerIcon fontSize="small" />;
+      case 'vm':
+        return <VMIcon fontSize="small" />;
+      case 'cloud':
+        return <CloudIcon fontSize="small" />;
+      default:
+        return <AgentIcon fontSize="small" />;
+    }
+  };
+
   return (
     <Card>
       <CardContent>
@@ -171,6 +191,38 @@ function SessionCard({
                 Active Connections
               </Typography>
               <Typography variant="body2">{session.activeConnections}</Typography>
+            </Box>
+          )}
+          {/* v2.0 Platform/Agent information */}
+          {session.platform && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2" color="text.secondary">
+                Platform
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {getPlatformIcon(session.platform)}
+                <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
+                  {session.platform}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+          {session.agent_id && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2" color="text.secondary">
+                Agent
+              </Typography>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', fontFamily: 'monospace' }} noWrap>
+                {session.agent_id}
+              </Typography>
+            </Box>
+          )}
+          {session.region && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2" color="text.secondary">
+                Region
+              </Typography>
+              <Typography variant="body2">{session.region}</Typography>
             </Box>
           )}
           {session.status.url && (

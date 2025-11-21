@@ -39,6 +39,10 @@ export interface Session {
   idleThreshold?: number; // seconds
   isIdle?: boolean;
   isActive?: boolean;
+  // v2.0 multi-platform architecture fields
+  agent_id?: string;  // ID of the agent running this session
+  platform?: string;  // Platform type (kubernetes, docker, vm, cloud)
+  region?: string;    // Region where session is running
 }
 
 export interface SessionStatus {
