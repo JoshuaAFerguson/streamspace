@@ -283,22 +283,11 @@ func (h *Handler) ListSessions(c *gin.Context) {
 	}
 
 	if err != nil {
-		// Fall back to Kubernetes for backward compatibility
-		log.Printf("Database session query failed, falling back to k8s: %v", err)
-		var k8sSessions []*k8s.Session
-		if userID != "" {
-			k8sSessions, err = h.k8sClient.ListSessionsByUser(ctx, h.namespace, userID)
-		} else {
-			k8sSessions, err = h.k8sClient.ListSessions(ctx, h.namespace)
-		}
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		enriched := h.enrichSessionsWithDBInfo(ctx, k8sSessions)
-		c.JSON(http.StatusOK, gin.H{
-			"sessions": enriched,
-			"total":    len(enriched),
+		// v2.0-beta: Database is source of truth, no K8s fallback
+		log.Printf("Database session query failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to list sessions",
+			"message": fmt.Sprintf("Database error: %v", err),
 		})
 		return
 	}
@@ -318,18 +307,14 @@ func (h *Handler) GetSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := c.Param("id")
 
-	// Use database as source of truth for multi-platform support
+	// v2.0-beta: Database is source of truth for all session data
 	dbSession, err := h.sessionDB.GetSession(ctx, sessionID)
 	if err != nil {
-		// Fall back to Kubernetes for backward compatibility
-		log.Printf("Database session query failed, falling back to k8s: %v", err)
-		k8sSession, k8sErr := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
-		if k8sErr != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
-			return
-		}
-		enriched := h.enrichSessionWithDBInfo(ctx, k8sSession)
-		c.JSON(http.StatusOK, enriched)
+		log.Printf("Session %s not found in database: %v", sessionID, err)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Session not found",
+			"message": fmt.Sprintf("No session found with ID: %s", sessionID),
+		})
 		return
 	}
 
