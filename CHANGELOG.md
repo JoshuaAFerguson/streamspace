@@ -132,6 +132,165 @@ StreamSpace v1.0.0 is READY NOW. Start refactor work immediately. Testing contin
 
 ---
 
+### 🚀 v2.0 REFACTOR LAUNCHED - Control Plane + Agent Architecture (2025-11-21) 🚀
+
+**MAJOR REFACTOR: Multi-Platform Agent Architecture Implementation Begins**
+
+Following v1.0.0-READY declaration, v2.0 refactor work has begun with immediate progress!
+
+**v2.0 Architecture Overview:**
+- **Goal**: Multi-platform support (Kubernetes, Docker, VM, Cloud)
+- **Approach**: Control Plane + Agent architecture
+- **Benefits**: Platform abstraction, simplified core, improved scalability
+- **Documentation**: `docs/REFACTOR_ARCHITECTURE_V2.md` (727 lines)
+
+**Phase 1: Design & Planning (COMPLETE)** ✅
+- Comprehensive v2.0 architecture document created
+- Database schema designed
+- API specifications defined
+- WebSocket protocols planned
+- 9 implementation phases mapped
+- **Duration**: Completed quickly
+- **Output**: 727 lines of architecture documentation
+
+**Phase 9: Database Schema (COMPLETE)** ✅
+- **New Tables**:
+  1. **agents** table - Platform-specific execution agents
+     - Tracks agent status, capacity, heartbeats, WebSocket connections
+     - Supports Kubernetes, Docker, VM, Cloud platforms
+     - JSONB columns for flexible capacity and metadata
+     - Comprehensive indexes for performance
+  2. **agent_commands** table - Control Plane → Agent command queue
+     - Tracks command lifecycle (pending → sent → ack → completed/failed)
+     - Supports start/stop/hibernate/wake session actions
+     - Links commands to agents and sessions
+- **Table Alterations**:
+  - **sessions** table - Added platform-agnostic columns
+    - agent_id: Which agent is running this session
+    - platform: kubernetes, docker, vm, cloud
+    - platform_metadata: Platform-specific details (JSONB)
+- **Models Created**: `api/internal/models/agent.go` (389 lines)
+  - Agent, AgentCommand models
+  - AgentRegistrationRequest, AgentHeartbeatRequest
+  - AgentStatusUpdate, CreateSessionCommand
+  - Full JSON/DB tag mappings
+- **Completed by**: Architect (Agent 1)
+
+**Phase 2: Agent Registration & Management API (COMPLETE)** ✅
+- **HTTP Endpoints Implemented** (5 total):
+  1. **POST /api/v1/agents/register** - Register agent (new or re-register)
+  2. **GET /api/v1/agents** - List all agents (with filters)
+  3. **GET /api/v1/agents/:agent_id** - Get agent details
+  4. **DELETE /api/v1/agents/:agent_id** - Deregister agent
+  5. **POST /api/v1/agents/:agent_id/heartbeat** - Update heartbeat
+- **Implementation**:
+  - Handler: `api/internal/handlers/agents.go` (461 lines)
+  - Tests: `api/internal/handlers/agents_test.go` (461 lines, 13 test cases)
+  - Routes: Registered in `api/cmd/main.go`
+- **Features**:
+  - Platform validation (kubernetes, docker, vm, cloud)
+  - Re-registration support (existing agents update in-place)
+  - Query filtering (platform, status, region)
+  - Status tracking (online, offline, draining)
+  - Heartbeat updates with optional capacity
+  - Proper error handling (400, 404, 500)
+  - SQL injection prevention (prepared statements)
+- **Test Coverage**: 13 test cases, all passing
+  - Register (new, re-registration, invalid platform)
+  - List (all, filter by platform, filter by status)
+  - Get (success, not found)
+  - Deregister (success, not found)
+  - Heartbeat (success, invalid status, not found)
+- **Duration**: ~1 day (estimated 3-5 days) - **AHEAD OF SCHEDULE!**
+- **Completed by**: Builder (Agent 2)
+
+**Phase 3: WebSocket Command Channel (IN PROGRESS)** 🔄
+- **Assigned to**: Builder (Agent 2)
+- **Duration**: 5-7 days estimated
+- **Components to Implement** (7 major):
+  1. WebSocket Hub (agent connection management)
+  2. WebSocket Handler (agent connection endpoint)
+  3. Command Dispatcher (queue and dispatch)
+  4. WebSocket Protocol (message types)
+  5. Agent Handler updates (command endpoint)
+  6. main.go updates (initialization)
+  7. Unit tests (>70% coverage)
+- **Goal**: Real-time bidirectional communication Control Plane ↔ Agents
+- **Status**: Task specifications added (247 lines), ready to implement
+
+**Phase 8: UI Updates (PLANNED - Detailed Specifications Added)** 📋
+- **8 Major UI Update Areas** (373 lines of specifications):
+  1. **Admin - Agents Management Page (NEW)** - Complete agent list with real-time status
+  2. **Session List Updates (MODIFY)** - Show agent, platform, region columns
+  3. **Session Creation Form (MODIFY)** - Optional platform/agent selection
+  4. **VNC Viewer Updates (CRITICAL)** - Change to Control Plane proxy connection
+  5. **Session Details Updates (MODIFY)** - Show agent ID, platform, region
+  6. **Admin Navigation Update (MODIFY)** - Add "Agents" menu item
+  7. **Dashboard Updates (MODIFY)** - Agent status and capacity widgets
+  8. **Error Handling & Notifications** - Agent offline warnings, helpful fallbacks
+- **Priority 1 (P0)**: VNC Viewer (blocks all streaming)
+- **Priority 2 (P0)**: Agents Admin Page (visibility)
+- **Priority 3 (P1)**: Session List/Details (info display)
+- **Assigned to**: Builder (after Phase 3-4 complete)
+
+**Parallel Work - Validator Continues API Handler Tests (Non-Blocking)** ✅
+- **6 New API Handler Test Files Created** (~2,127 lines):
+  1. **applications_test.go** (287 lines) - Application CRUD operations
+  2. **groups_test.go** (456 lines) - User group management
+  3. **quotas_test.go** (279 lines) - Quota enforcement
+  4. **sessiontemplates_test.go** (351 lines) - Template management
+  5. **setup_test.go** (349 lines) - Initial setup workflows
+  6. **users_test.go** (405 lines) - User management
+- **Test Coverage Progress**:
+  - P0 handlers: 4/4 (100%) ✅
+  - Additional handlers: 6 more complete
+  - **Total API test code**: 3,156 → 5,283 lines (+2,127 lines)
+  - **Total test files**: 10 API handler test files
+- **Completed by**: Validator (Agent 3)
+- **Approach**: Non-blocking parallel work continues as planned
+
+**Documentation Updates (Multi-Agent Coordination)** 📚
+- **v2.0 Architecture**: `docs/REFACTOR_ARCHITECTURE_V2.md` (727 lines)
+  - Comprehensive architecture document
+  - Phase-by-phase implementation plan
+  - Database schema, API specs, WebSocket protocols
+- **Multi-Agent Instructions**: All 4 agent instruction files updated for v2.0 context
+  - Architect, Builder, Validator, Scribe instructions
+  - Reflects v1.0.0-READY status and v2.0 refactor focus
+- **Project Documentation**: README, QUICK_REFERENCE, CHANGES_SUMMARY updated
+  - 505+ lines of updates in CHANGES_SUMMARY
+  - 366+ lines of updates in QUICK_REFERENCE
+  - 247+ lines of updates in README
+- **Template Repository**: Minor verification updates (161 lines)
+
+**v2.0 Refactor Summary:**
+- **Total Code Added**: 3,755 lines (922 Phase 2 + 389 models + 79 DB + 2,127 tests + 238 other)
+- **Documentation Added**: 2,101 lines (727 architecture + 1,374 instruction updates)
+- **Phases Complete**: 2/9 (Phase 1 Design, Phase 9 Database) ✅
+- **Phases In Progress**: 1/9 (Phase 3 WebSocket) 🔄
+- **Team Velocity**: EXCELLENT - Phase 2 completed in 1 day (estimated 3-5)
+
+**Benefits Already Realized:**
+- ✅ Clean API for agent registration and management
+- ✅ Database schema ready for multi-platform support
+- ✅ Comprehensive architecture documentation guides future work
+- ✅ Testing continues in parallel (non-blocking)
+- ✅ Multi-agent team coordination working smoothly
+
+**Next Steps:**
+- Builder: Complete Phase 3 (WebSocket Command Channel, 5-7 days)
+- Validator: Continue API handler tests (ongoing, non-blocking)
+- Scribe: Document v2.0 progress (this update!)
+- Architect: Coordinate, integrate, assign Phase 4 when Phase 3 completes
+
+**Timeline:**
+- v2.0 Phase 2: ✅ COMPLETE (1 day, ahead of schedule)
+- v2.0 Phase 3: 🔄 IN PROGRESS (5-7 days estimated)
+- v2.0 Overall: Estimated 6-8 weeks total
+- Parallel testing: Ongoing, non-blocking
+
+---
+
 ### Added - Multi-Agent Development Progress (2025-11-20)
 
 **Admin UI - Audit Logs Viewer (P0 - COMPLETE)** ✅
