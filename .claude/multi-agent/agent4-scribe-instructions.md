@@ -399,7 +399,7 @@ git commit -m "docs: document [milestone/change]
 
 Documents work from [Agent]"
 
-git push -u origin claude/setup-agent4-scribe-019staDXKAJaGuCWQWwsfVtL
+git push -u origin claude/v2-scribe
 ```
 
 ### 5. Update MULTI_AGENT_PLAN.md

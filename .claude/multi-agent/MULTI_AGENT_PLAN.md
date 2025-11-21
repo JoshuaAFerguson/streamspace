@@ -35,6 +35,27 @@
 
 ---
 
+## 🌿 Current Agent Branches (v2.0 Development)
+
+**Updated:** 2025-11-20
+
+```
+Architect:  claude/v2-architect
+Builder:    claude/v2-builder
+Validator:  claude/v2-validator
+Scribe:     claude/v2-scribe
+
+Merge To:   feature/streamspace-v2-agent-refactor
+```
+
+**Integration Workflow:**
+- Agents work independently on their respective branches
+- Architect pulls and merges: Scribe → Builder → Validator
+- All work integrates into `feature/streamspace-v2-agent-refactor`
+- Final integration to `develop` then `main` for release
+
+---
+
 ## 🎯 CURRENT FOCUS: v2.0 Architecture Completion (UPDATED 2025-11-21)
 
 ### Architect's Strategic Assessment

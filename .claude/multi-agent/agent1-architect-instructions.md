@@ -67,38 +67,39 @@ You are **Agent 1: The Architect** for StreamSpace development. You are the stra
 
 ## Working with Other Agents
 
-### Agent Branches (Current)
+### Agent Branches (v2.0 Development)
 ```
-Architect:  claude/audit-streamspace-codebase-011L9FVvX77mjeHy4j1Guj9B
-Builder:    claude/setup-agent2-builder-01H8U2FdjPrj3ee4Hi3oZoWz
-Validator:  claude/setup-agent3-validator-01GL2ZjZMHXQAKNbjQVwy9xA
-Scribe:     claude/setup-agent4-scribe-019staDXKAJaGuCWQWwsfVtL
+Architect:  claude/v2-architect
+Builder:    claude/v2-builder
+Validator:  claude/v2-validator
+Scribe:     claude/v2-scribe
+Merge To:   feature/streamspace-v2-agent-refactor
 ```
 
 ### Integration Workflow
 
 ```bash
 # 1. Fetch updates from all agents
-git fetch origin claude/setup-agent2-builder-01H8U2FdjPrj3ee4Hi3oZoWz \
-               claude/setup-agent3-validator-01GL2ZjZMHXQAKNbjQVwy9xA \
-               claude/setup-agent4-scribe-019staDXKAJaGuCWQWwsfVtL
+git fetch origin claude/v2-builder \
+               claude/v2-validator \
+               claude/v2-scribe
 
 # 2. Check what's new
-git log --oneline origin/claude/setup-agent2-builder-* ^HEAD
-git log --oneline origin/claude/setup-agent3-validator-* ^HEAD
-git log --oneline origin/claude/setup-agent4-scribe-* ^HEAD
+git log --oneline origin/claude/v2-builder ^HEAD
+git log --oneline origin/claude/v2-validator ^HEAD
+git log --oneline origin/claude/v2-scribe ^HEAD
 
 # 3. Merge in order (Scribe first, then Builder, then Validator)
-git merge origin/claude/setup-agent4-scribe-* --no-edit
-git merge origin/claude/setup-agent2-builder-* --no-edit
-git merge origin/claude/setup-agent3-validator-* --no-edit
+git merge origin/claude/v2-scribe --no-edit
+git merge origin/claude/v2-builder --no-edit
+git merge origin/claude/v2-validator --no-edit
 
 # 4. Update MULTI_AGENT_PLAN.md with integration summary
 
 # 5. Commit and push
 git add -A
 git commit -m "merge: [description of integrated work]"
-git push -u origin claude/audit-streamspace-codebase-*
+git push -u origin feature/streamspace-v2-agent-refactor
 ```
 
 ### To Builder (Agent 2)
@@ -244,24 +245,24 @@ All changes committed and merged to `claude/audit-streamspace-codebase-*` ✅
 git fetch --all
 
 # Check for new commits
-git log --oneline origin/claude/setup-agent2-builder-* ^HEAD
-git log --oneline origin/claude/setup-agent3-validator-* ^HEAD
-git log --oneline origin/claude/setup-agent4-scribe-* ^HEAD
+git log --oneline origin/claude/v2-builder ^HEAD
+git log --oneline origin/claude/v2-validator ^HEAD
+git log --oneline origin/claude/v2-scribe ^HEAD
 
 # See detailed changes
-git log --stat origin/claude/setup-agent2-builder-* ^HEAD --reverse
+git log --stat origin/claude/v2-builder ^HEAD --reverse
 ```
 
 ### Merge Agent Work
 ```bash
 # Merge Scribe (usually fast-forward)
-git merge origin/claude/setup-agent4-scribe-* --no-edit
+git merge origin/claude/v2-scribe --no-edit
 
 # Merge Builder
-git merge origin/claude/setup-agent2-builder-* --no-edit
+git merge origin/claude/v2-builder --no-edit
 
 # Merge Validator
-git merge origin/claude/setup-agent3-validator-* --no-edit
+git merge origin/claude/v2-validator --no-edit
 ```
 
 ### Update and Push
@@ -272,8 +273,8 @@ git merge origin/claude/setup-agent3-validator-* --no-edit
 git add -A
 git commit -m "merge: [description]"
 
-# Push to Architect branch
-git push -u origin claude/audit-streamspace-codebase-*
+# Push to merge branch
+git push -u origin feature/streamspace-v2-agent-refactor
 ```
 
 ## Current Priorities (Post-v1.0.0-READY)
