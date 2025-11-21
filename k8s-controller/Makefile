@@ -1,3 +1,17 @@
+# ============================================================================
+# DEPRECATED: v1.0 Kubernetes Controller (CRD-based)
+# ============================================================================
+# This Makefile is for the v1.0 Kubernetes-native controller architecture.
+# It has been DEPRECATED in favor of the v2.0 multi-platform agent architecture.
+#
+# For v2.0, use:
+#   - agents/k8s-agent/      (K8s Agent - replacement for this controller)
+#   - agents/docker-agent/   (Docker Agent - v2.1)
+#   - Root Makefile          (v2.0 build targets)
+#
+# Migration Guide: docs/V2_ARCHITECTURE_STATUS.md
+# ============================================================================
+
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/streamspace/controller:latest
 
@@ -13,12 +27,27 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: build
+all: deprecation-warning build
+
+deprecation-warning: ## Display deprecation warning
+	@echo "\033[1;33m"
+	@echo "╔═══════════════════════════════════════════════════════════════════╗"
+	@echo "║                                                                   ║"
+	@echo "║   ⚠️  WARNING: This v1.0 controller is DEPRECATED  ⚠️            ║"
+	@echo "║                                                                   ║"
+	@echo "║   StreamSpace v2.0 uses a multi-platform agent architecture.     ║"
+	@echo "║   Please use 'make build-k8s-agent' from the root directory.     ║"
+	@echo "║                                                                   ║"
+	@echo "║   Migration Guide: docs/V2_ARCHITECTURE_STATUS.md                ║"
+	@echo "║                                                                   ║"
+	@echo "╚═══════════════════════════════════════════════════════════════════╝"
+	@echo "\033[0m"
+	@echo ""
 
 ##@ General
 
 .PHONY: help
-help: ## Display this help.
+help: deprecation-warning ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Development
