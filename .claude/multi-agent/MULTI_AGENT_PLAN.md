@@ -3797,3 +3797,892 @@ Successfully integrated tenth wave of multi-agent development. Validator complet
 You can start your refactor work right now. The codebase is well-tested, well-documented, and ready. The multi-agent team will continue improving test coverage and fixing bugs in parallel - none of that will block you.
 
 **v1.0.0 Status: READY NOW** ✅
+
+---
+
+## v2.0 Architecture Refactor: Control Plane + Multi-Platform Agents
+
+**Started:** 2025-11-21  
+**Status:** In Progress  
+**Approach:** Bottom-Up (Option A)
+
+### Refactor Overview
+
+**Goal:** Transform StreamSpace from Kubernetes-native to multi-platform Control Plane + Agent architecture.
+
+**Key Changes:**
+- Control Plane: Centralized API managing sessions across all platforms
+- Platform-Specific Agents: K8s Agent, Docker Agent, future platform agents  
+- Outbound Connections: Agents connect TO Control Plane (firewall-friendly)
+- VNC Tunneling: VNC traffic tunneled through Control Plane (multi-network support)
+- Platform Abstraction: Generic "Session" concept, agents handle platform specifics
+
+**Documentation:** `docs/REFACTOR_ARCHITECTURE_V2.md`
+
+### Implementation Phases (Option A - Bottom-Up)
+
+**Phase Order:**
+1. ✅ Phase 1: Design & Documentation
+2. ✅ Phase 9: Database Schema
+3. ✅ Phase 2: Agent Registration (COMPLETE 2025-11-21)
+4. 🔄 Phase 3: WebSocket Command Channel (IN PROGRESS)
+5. ⏳ Phase 5: K8s Agent Conversion
+6. ⏳ Phase 4: VNC Proxy/Tunnel
+7. ⏳ Phase 6: K8s Agent VNC Tunneling
+8. ⏳ Phase 8: UI Updates
+9. ⏳ Phase 7: Docker Agent
+10. ⏳ Phase 10: Testing & Migration
+
+---
+
+### Phase 1: Design & Documentation ✅
+
+**Status:** COMPLETE  
+**Assigned To:** Architect  
+**Completed:** 2025-11-21
+
+**Deliverables:**
+- ✅ `docs/REFACTOR_ARCHITECTURE_V2.md` (727 lines)
+- ✅ Architecture diagrams (current vs. target)
+- ✅ WebSocket protocol specification
+- ✅ Database schema design
+- ✅ API endpoint specifications
+- ✅ 10-phase implementation plan
+- ✅ Success criteria and migration path
+
+---
+
+### Phase 9: Database Schema Updates ✅
+
+**Status:** COMPLETE  
+**Assigned To:** Architect  
+**Completed:** 2025-11-21
+
+**Deliverables:**
+- ✅ `agents` table migration (api/internal/db/database.go)
+- ✅ `agent_commands` table migration
+- ✅ `sessions` table alterations (agent_id, platform, platform_metadata)
+- ✅ Comprehensive indexes (12 indexes added)
+- ✅ Go models (api/internal/models/agent.go - 468 lines)
+  - Agent model with JSONB support
+  - AgentCommand model
+  - Request/response types
+  - Full documentation
+
+**Database Changes:**
+- `agents` table: Platform-specific execution agents
+- `agent_commands` table: Command queue for Control Plane → Agent communication  
+- `sessions` alterations: agent_id, platform, platform_metadata columns
+- Indexes for performance: agent lookups, command queue queries, session-agent relations
+
+**Migration Safety:**
+- Idempotent (CREATE IF NOT EXISTS)
+- DO blocks for ALTER TABLE (handles existing columns)
+- Foreign key constraints for referential integrity
+
+---
+
+### Phase 2: Control Plane - Agent Registration & Management ✅
+
+**Status:** COMPLETE
+**Assigned To:** Builder
+**Completed:** 2025-11-21
+**Priority:** HIGH
+**Actual Duration:** ~1 day (estimated 3-5 days)
+
+**Deliverables:**
+- ✅ `api/internal/handlers/agents.go` (461 lines)
+  - All 5 HTTP endpoints implemented
+  - Input validation for platforms (kubernetes, docker, vm, cloud)
+  - Proper error handling (400, 404, 500)
+  - Database operations with prepared statements
+- ✅ `api/internal/handlers/agents_test.go` (461 lines)
+  - 13 comprehensive unit tests
+  - All CRUD operations tested
+  - sqlmock for database mocking
+  - Follows existing test patterns
+- ✅ Routes registered in `api/cmd/main.go`
+- ✅ All tests passing
+- ✅ Code quality excellent
+
+**Builder Performance:** Exceeded expectations - completed in ~1 day vs 3-5 day estimate
+
+**Objective:**
+Implement HTTP API endpoints for agent registration and management.
+
+**Tasks for Builder:**
+
+1. **Create `api/internal/handlers/agents.go`** - Agent management handler
+
+   **Required Endpoints:**
+   ```go
+   POST   /api/v1/agents/register          // Agent registers itself
+   GET    /api/v1/agents                   // List all agents (with filters)
+   GET    /api/v1/agents/:agent_id         // Get agent details
+   DELETE /api/v1/agents/:agent_id         // Deregister agent
+   POST   /api/v1/agents/:agent_id/heartbeat // Update heartbeat
+   ```
+
+   **Implementation Details:**
+   
+   a. **RegisterAgent (POST /register)**
+      - Accept `models.AgentRegistrationRequest` (defined in models/agent.go)
+      - Validate platform (kubernetes, docker, vm, cloud)
+      - Check if agent_id already exists:
+        - If exists: Update existing agent (re-registration)
+        - If new: Create new agent record
+      - Set status to "online"
+      - Set last_heartbeat to current time
+      - Return `models.Agent` (201 Created or 200 OK)
+
+   b. **ListAgents (GET /agents)**
+      - Support query filters: platform, status, region
+      - Return array of `models.Agent`
+      - Order by created_at DESC
+
+   c. **GetAgent (GET /agents/:agent_id)**
+      - Lookup by agent_id (not UUID id)
+      - Return `models.Agent`
+      - Return 404 if not found
+
+   d. **DeregisterAgent (DELETE /agents/:agent_id)**
+      - Delete agent from database
+      - CASCADE will delete related agent_commands
+      - Return success message
+
+   e. **UpdateHeartbeat (POST /agents/:agent_id/heartbeat)**
+      - Accept `models.AgentHeartbeatRequest`
+      - Update last_heartbeat timestamp
+      - Update status (online/draining)
+      - Update capacity (if provided)
+      - Return success message
+
+   **Code Structure:**
+   ```go
+   type AgentHandler struct {
+       database *db.Database
+   }
+   
+   func NewAgentHandler(database *db.Database) *AgentHandler { ... }
+   func (h *AgentHandler) RegisterRoutes(router *gin.RouterGroup) { ... }
+   func (h *AgentHandler) RegisterAgent(c *gin.Context) { ... }
+   func (h *AgentHandler) ListAgents(c *gin.Context) { ... }
+   func (h *AgentHandler) GetAgent(c *gin.Context) { ... }
+   func (h *AgentHandler) DeregisterAgent(c *gin.Context) { ... }
+   func (h *AgentHandler) UpdateHeartbeat(c *gin.Context) { ... }
+   
+   // Helper functions
+   func (h *AgentHandler) getAgentByAgentID(agentID string) (*models.Agent, error) { ... }
+   func (h *AgentHandler) updateExistingAgent(req models.AgentRegistrationRequest) (*models.Agent, error) { ... }
+   ```
+
+2. **Register routes in API main.go**
+
+   **Update:** `api/main.go` (or wherever routes are registered)
+   
+   ```go
+   // Add agent handler
+   agentHandler := handlers.NewAgentHandler(database)
+   agentHandler.RegisterRoutes(v1)
+   ```
+
+3. **Write unit tests:** `api/internal/handlers/agents_test.go`
+
+   **Test Coverage:**
+   - TestRegisterAgent_Success
+   - TestRegisterAgent_Duplicate (re-registration)
+   - TestRegisterAgent_InvalidPlatform
+   - TestListAgents_All
+   - TestListAgents_FilterByPlatform
+   - TestListAgents_FilterByStatus
+   - TestGetAgent_Success
+   - TestGetAgent_NotFound
+   - TestDeregisterAgent_Success
+   - TestDeregisterAgent_NotFound
+   - TestUpdateHeartbeat_Success
+   - TestUpdateHeartbeat_InvalidStatus
+   - TestUpdateHeartbeat_NotFound
+
+   **Test Patterns:**
+   - Use `sqlmock` for database mocking
+   - Use `httptest` for HTTP testing
+   - Follow existing test patterns in handlers/*_test.go
+
+**Reference Files:**
+- Models: `api/internal/models/agent.go` (all types defined)
+- Database: `api/internal/db/database.go` (tables created)
+- Example Handler: `api/internal/handlers/controllers.go` (similar structure)
+- Example Tests: `api/internal/handlers/configuration_test.go` (test patterns)
+
+**Acceptance Criteria:**
+- ✅ All 5 endpoints implemented
+- ✅ Input validation for all requests
+- ✅ Proper error handling (400, 404, 500 responses)
+- ✅ Database operations use prepared statements (prevent SQL injection)
+- ✅ Unit tests written with >70% coverage
+- ✅ All tests passing
+- ✅ Code follows existing handler patterns
+
+**Dependencies:** None (models and database schema are ready)
+
+**Notes for Builder:**
+- The models are already defined in `api/internal/models/agent.go`
+- The database tables are created via migrations
+- Follow the pattern from `api/internal/handlers/controllers.go` (similar functionality)
+- Use `gin` framework for HTTP handling
+- Use `sqlmock` for testing database interactions
+- DO NOT implement WebSocket functionality yet (that's Phase 3)
+
+**After Completion:**
+- Notify Architect for integration review
+- Notify Validator for testing
+- Notify Scribe for documentation
+
+---
+
+### Phase 3: Control Plane - WebSocket Command Channel 🔄
+
+**Status:** IN PROGRESS
+**Assigned To:** Builder
+**Started:** 2025-11-21
+**Priority:** HIGH
+**Duration:** 5-7 days (estimated)
+**Dependencies:** Phase 2 (Agent Registration) ✅ COMPLETE
+
+**Objective:**
+Implement WebSocket hub for bidirectional agent communication. Agents connect TO Control Plane and receive commands over persistent WebSocket connections.
+
+**Tasks for Builder:**
+
+1. **Create WebSocket Hub:** `api/internal/websocket/agent_hub.go`
+
+   **Purpose:** Central hub managing all agent WebSocket connections
+
+   **Structure:**
+   ```go
+   type AgentConnection struct {
+       AgentID     string
+       Conn        *websocket.Conn
+       Platform    string
+       LastPing    time.Time
+       Send        chan []byte
+       Receive     chan []byte
+       Mutex       sync.RWMutex
+   }
+
+   type AgentHub struct {
+       // Map of agent_id -> AgentConnection
+       connections map[string]*AgentConnection
+       mutex       sync.RWMutex
+
+       // Channels for hub operations
+       register    chan *AgentConnection
+       unregister  chan *AgentConnection
+       broadcast   chan BroadcastMessage
+
+       // Database for persisting agent state
+       database    *db.Database
+   }
+
+   func NewAgentHub(database *db.Database) *AgentHub { ... }
+   func (h *AgentHub) Run() { ... }  // Main hub event loop
+   func (h *AgentHub) RegisterAgent(agentID string, conn *websocket.Conn) error { ... }
+   func (h *AgentHub) UnregisterAgent(agentID string) { ... }
+   func (h *AgentHub) SendCommandToAgent(agentID string, command *models.AgentCommand) error { ... }
+   func (h *AgentHub) BroadcastToAllAgents(message []byte) { ... }
+   func (h *AgentHub) GetConnectedAgents() []string { ... }
+   func (h *AgentHub) IsAgentConnected(agentID string) bool { ... }
+   ```
+
+   **Hub Event Loop (h.Run()):**
+   - Listen on register/unregister/broadcast channels
+   - Update agent status in database when connected/disconnected
+   - Handle agent heartbeats (update last_heartbeat timestamp)
+   - Detect stale connections (no heartbeat for 30 seconds)
+   - Clean up disconnected agents
+
+2. **Create WebSocket Handler:** `api/internal/handlers/agent_websocket.go`
+
+   **Purpose:** HTTP handler for agent WebSocket upgrade
+
+   **Endpoints:**
+   ```go
+   GET /api/v1/agents/connect?agent_id=xxx  // Agent connects here
+   ```
+
+   **Implementation:**
+   ```go
+   type AgentWebSocketHandler struct {
+       hub      *websocket.AgentHub
+       upgrader websocket.Upgrader
+       database *db.Database
+   }
+
+   func NewAgentWebSocketHandler(hub *websocket.AgentHub, database *db.Database) *AgentWebSocketHandler { ... }
+   func (h *AgentWebSocketHandler) HandleAgentConnection(c *gin.Context) { ... }
+   func (h *AgentWebSocketHandler) readPump(conn *AgentConnection) { ... }
+   func (h *AgentWebSocketHandler) writePump(conn *AgentConnection) { ... }
+   ```
+
+   **HandleAgentConnection Flow:**
+   - Validate agent_id query parameter
+   - Verify agent exists in database
+   - Upgrade HTTP connection to WebSocket
+   - Register connection with hub
+   - Start read/write pumps (goroutines)
+   - Handle connection lifecycle
+
+3. **Create Command Dispatcher:** `api/internal/services/command_dispatcher.go`
+
+   **Purpose:** Queue and dispatch commands to agents
+
+   **Structure:**
+   ```go
+   type CommandDispatcher struct {
+       database *db.Database
+       hub      *websocket.AgentHub
+       queue    chan *models.AgentCommand
+       workers  int
+   }
+
+   func NewCommandDispatcher(database *db.Database, hub *websocket.AgentHub) *CommandDispatcher { ... }
+   func (d *CommandDispatcher) Start() { ... }  // Start worker pool
+   func (d *CommandDispatcher) DispatchCommand(command *models.AgentCommand) error { ... }
+   func (d *CommandDispatcher) worker() { ... }  // Worker goroutine
+   func (d *CommandDispatcher) sendToAgent(command *models.AgentCommand) error { ... }
+   func (d *CommandDispatcher) handleCommandResponse(response CommandResponse) error { ... }
+   ```
+
+   **Command Lifecycle:**
+   - Create command with status="pending"
+   - Queue command for dispatch
+   - Worker picks up command
+   - Send to agent over WebSocket
+   - Update status="sent", set sent_at timestamp
+   - Wait for agent acknowledgment
+   - Update status="ack", set acknowledged_at timestamp
+   - Wait for completion response
+   - Update status="completed", set completed_at timestamp
+   - Handle errors (status="failed", set error_message)
+
+4. **Define WebSocket Protocol:** `api/internal/models/agent_protocol.go`
+
+   **Purpose:** Message types for agent communication
+
+   **Message Types:**
+   ```go
+   type AgentMessage struct {
+       Type      string          `json:"type"`
+       Timestamp time.Time       `json:"timestamp"`
+       Payload   json.RawMessage `json:"payload"`
+   }
+
+   // Message types from Control Plane → Agent
+   const (
+       MessageTypeCommand    = "command"      // Execute a command
+       MessageTypePing       = "ping"         // Keep-alive ping
+       MessageTypeShutdown   = "shutdown"     // Graceful shutdown
+   )
+
+   // Message types from Agent → Control Plane
+   const (
+       MessageTypeHeartbeat  = "heartbeat"    // Regular heartbeat
+       MessageTypeAck        = "ack"          // Command acknowledged
+       MessageTypeComplete   = "complete"     // Command completed
+       MessageTypeFailed     = "failed"       // Command failed
+       MessageTypeStatus     = "status"       // Session status update
+   )
+
+   type CommandMessage struct {
+       CommandID string                 `json:"commandId"`
+       Action    string                 `json:"action"`
+       Payload   map[string]interface{} `json:"payload"`
+   }
+
+   type HeartbeatMessage struct {
+       Status         string               `json:"status"`
+       ActiveSessions int                  `json:"activeSessions"`
+       Capacity       *models.AgentCapacity `json:"capacity,omitempty"`
+   }
+
+   type AckMessage struct {
+       CommandID string `json:"commandId"`
+   }
+
+   type CompleteMessage struct {
+       CommandID string                 `json:"commandId"`
+       Result    map[string]interface{} `json:"result,omitempty"`
+   }
+
+   type FailedMessage struct {
+       CommandID string `json:"commandId"`
+       Error     string `json:"error"`
+   }
+   ```
+
+5. **Update Agent Handler:** `api/internal/handlers/agents.go`
+
+   **Additions:**
+   - Integrate with AgentHub for real-time status
+   - Add endpoint: `POST /api/v1/agents/:agent_id/command` - Send command to agent
+   - Check if agent is connected before allowing commands
+
+6. **Update main.go:** `api/cmd/main.go`
+
+   **Initialize WebSocket components:**
+   ```go
+   // Create agent WebSocket hub
+   agentHub := websocket.NewAgentHub(database)
+   go agentHub.Run()  // Start hub event loop
+
+   // Create command dispatcher
+   dispatcher := services.NewCommandDispatcher(database, agentHub)
+   go dispatcher.Start()  // Start dispatcher workers
+
+   // Create WebSocket handler
+   agentWSHandler := handlers.NewAgentWebSocketHandler(agentHub, database)
+
+   // Register WebSocket route
+   router.GET("/api/v1/agents/connect", agentWSHandler.HandleAgentConnection)
+
+   // Pass dispatcher to agent handler for command sending
+   agentHandler := handlers.NewAgentHandler(database, dispatcher)
+   agentHandler.RegisterRoutes(v1)
+   ```
+
+7. **Write Unit Tests:**
+   - `api/internal/websocket/agent_hub_test.go` - Hub functionality
+   - `api/internal/handlers/agent_websocket_test.go` - WebSocket handler
+   - `api/internal/services/command_dispatcher_test.go` - Command dispatch
+
+   **Test Coverage:**
+   - Agent connection/disconnection
+   - Message routing (hub → agent, agent → hub)
+   - Command queuing and dispatch
+   - Heartbeat handling and timeout detection
+   - Multiple concurrent agents
+   - Error scenarios (disconnects, invalid messages)
+
+**Reference Files:**
+- Existing WebSocket: `api/internal/websocket/manager.go` (VNC WebSocket patterns)
+- Agent Models: `api/internal/models/agent.go` (AgentCommand model)
+- Command Queue: Database migrations in `api/internal/db/database.go`
+
+**Acceptance Criteria:**
+- ✅ Agent can connect via WebSocket (/api/v1/agents/connect)
+- ✅ Hub manages multiple concurrent agent connections
+- ✅ Commands can be queued and dispatched to agents
+- ✅ Command lifecycle tracked (pending → sent → ack → completed)
+- ✅ Agents send heartbeats, hub updates database
+- ✅ Stale connections detected and cleaned up (>30s no heartbeat)
+- ✅ Unit tests with >70% coverage
+- ✅ All tests passing
+- ✅ WebSocket protocol documented
+
+**Notes for Builder:**
+- Use `github.com/gorilla/websocket` library (already in project)
+- Follow patterns from existing WebSocket manager for VNC
+- Implement graceful connection handling (reconnection support)
+- Use channels for goroutine communication (Go best practices)
+- DO NOT implement VNC tunneling yet (that's Phase 4)
+- DO NOT implement actual agent clients yet (that's Phase 5-7)
+
+**After Completion:**
+- Notify Architect for integration review
+- Notify Validator for testing
+- Notify Scribe for documentation
+
+---
+
+### Phase 8: UI Updates - Admin UI & Session Management 🎯
+
+**Status:** PENDING
+**Assigned To:** Builder
+**Priority:** HIGH (User Interface Critical)
+**Duration:** 5-7 days (estimated)
+**Dependencies:** Phase 2 (Agent Registration API), Phase 4 (VNC Proxy)
+
+**Objective:**
+Update all UI components to support multi-platform agents and Control Plane VNC proxying.
+
+**Critical Admin UI Updates:**
+
+#### 1. **Admin - Agents Management Page** (NEW PAGE)
+
+**Location:** `ui/src/pages/admin/Agents.jsx`
+
+**Purpose:**
+Replace/enhance the existing Controllers admin page with new Agents management for v2.0 architecture.
+
+**Requirements:**
+
+a. **Agent List View**
+   - Display all registered agents in DataGrid
+   - Columns:
+     - Agent ID
+     - Platform (with icon: K8s, Docker, VM, Cloud)
+     - Region
+     - Status (Online/Offline/Draining with colored badge)
+     - Active Sessions (count)
+     - Capacity (maxSessions / CPU / Memory)
+     - Last Heartbeat (time ago)
+     - Actions (View Details, Drain, Remove)
+
+   - **Filters:**
+     - Platform dropdown (All, Kubernetes, Docker, VM, Cloud)
+     - Status dropdown (All, Online, Offline, Draining)
+     - Region dropdown (All, + dynamic regions from agents)
+
+   - **Sorting:**
+     - By Agent ID, Platform, Status, Last Heartbeat
+
+   - **Refresh:**
+     - Auto-refresh every 10 seconds
+     - Manual refresh button
+
+b. **Agent Details Modal**
+   - Click on agent row opens modal
+   - Display:
+     - Full agent metadata
+     - Capacity details (JSON formatted)
+     - Connection information (WebSocket ID when connected)
+     - Sessions currently running on this agent (list with links)
+     - Platform-specific metadata
+     - Created/Updated timestamps
+   - Actions:
+     - Set to Draining mode
+     - Remove agent (with confirmation)
+     - View agent logs (future)
+
+c. **Agent Health Indicators**
+   - Visual health status:
+     - 🟢 Online: Last heartbeat < 30 seconds ago
+     - 🟡 Warning: Last heartbeat 30-60 seconds ago
+     - 🔴 Offline: Last heartbeat > 60 seconds ago
+   - Show time since last heartbeat ("2 minutes ago")
+   - Show agent uptime (since created_at)
+
+d. **Platform Distribution Chart**
+   - Pie chart showing agent distribution by platform
+   - Bar chart showing capacity utilization per platform
+   - Total sessions across all agents
+
+**API Integration:**
+```javascript
+// Fetch agents
+GET /api/v1/agents?platform={platform}&status={status}&region={region}
+
+// Get agent details
+GET /api/v1/agents/{agent_id}
+
+// Remove agent
+DELETE /api/v1/agents/{agent_id}
+```
+
+**Code Structure:**
+```javascript
+// ui/src/pages/admin/Agents.jsx
+export const AgentsPage = () => {
+  const [agents, setAgents] = useState([]);
+  const [filters, setFilters] = useState({});
+  const [selectedAgent, setSelectedAgent] = useState(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  useEffect(() => {
+    fetchAgents();
+    const interval = setInterval(fetchAgents, 10000); // Auto-refresh
+    return () => clearInterval(interval);
+  }, [filters]);
+
+  const fetchAgents = async () => { ... };
+  const handleRemoveAgent = async (agentId) => { ... };
+  const handleDrainAgent = async (agentId) => { ... };
+
+  return (
+    <Box>
+      <Typography variant="h4">Agent Management</Typography>
+      <AgentFilters filters={filters} onChange={setFilters} />
+      <AgentDataGrid agents={agents} onRowClick={handleRowClick} />
+      <AgentDetailsModal
+        agent={selectedAgent}
+        open={detailsOpen}
+        onClose={() => setDetailsOpen(false)}
+      />
+    </Box>
+  );
+};
+```
+
+**Testing Requirements:**
+```javascript
+// ui/src/pages/admin/Agents.test.jsx
+- Test agent list rendering
+- Test platform filters
+- Test status filters
+- Test auto-refresh
+- Test agent details modal
+- Test remove agent action
+- Test drain agent action
+- Test health indicator colors
+- Test empty state (no agents)
+- Test error handling
+```
+
+#### 2. **Session List Updates** (MODIFY EXISTING)
+
+**Location:** `ui/src/pages/sessions/SessionList.jsx`
+
+**Add Columns:**
+- **Agent** (agent_id) - Shows which agent is running this session
+- **Platform** (kubernetes/docker/vm/cloud) - With icon
+- **Region** - Where session is running
+
+**Add Filters:**
+- Filter by Agent
+- Filter by Platform
+- Filter by Region
+
+**Session Card Updates:**
+- Show agent badge
+- Show platform icon
+- Show region tag
+
+#### 3. **Session Creation Form Updates** (MODIFY EXISTING)
+
+**Location:** `ui/src/pages/sessions/CreateSession.jsx`
+
+**Add Fields:**
+
+a. **Platform Selection** (Optional)
+   - Dropdown: "Automatic", "Kubernetes", "Docker", "VM", "Cloud"
+   - Default: "Automatic" (Control Plane selects best agent)
+   - Description: "Choose where to run this session"
+
+b. **Agent Selection** (Optional - Advanced)
+   - Only shown if platform is selected
+   - Dropdown populated from available agents for that platform
+   - Filter by: status=online, selected platform
+   - Show agent capacity and current load
+
+c. **Region Preference** (Optional)
+   - Dropdown of available regions
+   - Control Plane prioritizes agents in this region
+
+**API Updates:**
+```javascript
+POST /api/v1/sessions
+{
+  "user": "alice",
+  "template": "firefox-browser",
+  "platform": "kubernetes",    // NEW - optional
+  "agent_id": "k8s-east-1",    // NEW - optional (overrides platform)
+  "region": "us-east-1",       // NEW - optional
+  "resources": { ... }
+}
+```
+
+#### 4. **VNC Viewer Updates** (CRITICAL - MODIFY EXISTING)
+
+**Location:** `ui/src/components/VNCViewer.jsx`
+
+**Current Implementation (v1.x - Direct Connection):**
+```javascript
+// Direct connection to pod
+const vncUrl = `ws://${podIP}:5900`;
+const rfb = new RFB(canvas, vncUrl);
+```
+
+**New Implementation (v2.0 - Control Plane Proxy):**
+```javascript
+// Proxy through Control Plane
+const vncUrl = `/vnc/${sessionId}`;  // WebSocket endpoint
+const rfb = new RFB(canvas, vncUrl);
+```
+
+**Changes Required:**
+- Remove dependency on pod IP
+- Use session ID to connect via Control Plane proxy
+- Update connection error handling
+- Add reconnection logic (Control Plane manages tunneling)
+- Show connection status (connecting to agent, tunneling established, etc.)
+
+**Connection Status Indicator:**
+- "Connecting to session..."
+- "Establishing tunnel through agent..."
+- "Connected" (show agent and platform)
+- "Connection lost - Reconnecting..."
+
+#### 5. **Session Details Page Updates** (MODIFY EXISTING)
+
+**Location:** `ui/src/pages/sessions/SessionDetails.jsx`
+
+**Add Information:**
+- Agent ID (with link to agent details)
+- Platform (with icon)
+- Region
+- Platform-specific metadata (expandable JSON)
+- Connection route: UI → Control Plane → Agent → Session
+
+**Add Actions:**
+- "View Agent" button (opens agent details modal)
+- Show platform-specific details (K8s pod name, Docker container ID, etc.)
+
+#### 6. **Admin Navigation Update** (MODIFY EXISTING)
+
+**Location:** `ui/src/components/AdminLayout.jsx` or similar
+
+**Update Navigation Menu:**
+```javascript
+Admin Portal
+├── Dashboard
+├── Users
+├── Groups
+├── Agents (NEW - replaces or coexists with Controllers)
+│   └── /admin/agents
+├── Controllers (Existing - may deprecate or keep for legacy)
+│   └── /admin/controllers
+├── Sessions
+├── Templates
+├── Audit Logs
+├── System Configuration
+├── License Management
+├── API Keys
+├── Monitoring
+└── Recordings
+```
+
+**Decision Needed:**
+- Keep both "Controllers" (legacy/v1.x) and "Agents" (v2.0)?
+- Or replace "Controllers" with "Agents"?
+- Recommend: Keep both during transition, deprecate Controllers in v2.1
+
+#### 7. **Dashboard Updates** (MODIFY EXISTING)
+
+**Location:** `ui/src/pages/admin/Dashboard.jsx`
+
+**Add Widgets:**
+
+a. **Agent Status Widget**
+   - Total agents count
+   - Online / Offline / Draining counts
+   - Platform distribution (pie chart)
+   - Link to Agents page
+
+b. **Multi-Platform Sessions Widget**
+   - Sessions by platform (K8s, Docker, VM, Cloud)
+   - Sessions by region
+   - Bar chart visualization
+
+c. **Agent Capacity Widget**
+   - Total capacity across all agents
+   - Used vs. Available
+   - Progress bars per platform
+
+**Update Existing Widgets:**
+- Sessions widget: Add platform breakdown
+- Resources widget: Show capacity across all agents
+
+#### 8. **Error Handling & Notifications**
+
+**Add User Notifications:**
+- "No agents available for platform X"
+- "Selected agent is offline"
+- "Session failed to start on agent X"
+- "VNC connection lost - reconnecting through Control Plane"
+- "Agent X has been offline for 5 minutes"
+
+**Fallback Behaviors:**
+- If no agent available: Show helpful message
+- If agent selection fails: Fallback to automatic selection
+- If VNC proxy fails: Show retry button
+
+---
+
+**Phase 8 Implementation Order:**
+
+1. **VNC Viewer Update** (Critical - affects all sessions)
+   - Priority: P0
+   - Duration: 1 day
+   - Blocks: All VNC streaming functionality
+
+2. **Agents Admin Page** (New page for agent management)
+   - Priority: P0
+   - Duration: 2-3 days
+   - Provides: Agent visibility and management
+
+3. **Session List/Details Updates** (Show agent/platform info)
+   - Priority: P1
+   - Duration: 1 day
+   - Provides: Session-agent visibility
+
+4. **Session Creation Updates** (Platform/agent selection)
+   - Priority: P1
+   - Duration: 1-2 days
+   - Provides: User control over placement
+
+5. **Dashboard Updates** (Agent widgets)
+   - Priority: P2
+   - Duration: 1 day
+   - Provides: Overview metrics
+
+**Testing Requirements:**
+- Unit tests for all new components (Agents.test.jsx, etc.)
+- Integration tests for VNC proxy connection
+- E2E tests for session creation with agent selection
+- Test agent filtering and sorting
+- Test auto-refresh functionality
+- Test multi-platform session display
+
+**Acceptance Criteria:**
+- ✅ Admin can view all agents with real-time status
+- ✅ Admin can manage agents (drain, remove)
+- ✅ Users can see which agent/platform is running their session
+- ✅ Users can optionally select platform/agent when creating sessions
+- ✅ VNC viewer connects through Control Plane proxy (not direct to pods)
+- ✅ Dashboard shows multi-platform metrics
+- ✅ All UI components have >70% test coverage
+- ✅ Error handling provides helpful feedback
+- ✅ UI works with no agents (graceful degradation)
+
+**Reference Files:**
+- Existing Admin Pages: `ui/src/pages/admin/*.jsx`
+- Existing Session Components: `ui/src/pages/sessions/*.jsx`
+- Admin Layout: `ui/src/components/AdminLayout.jsx`
+- VNC Viewer: `ui/src/components/VNCViewer.jsx`
+- Test Patterns: `ui/src/pages/admin/*.test.tsx`
+
+**Dependencies:**
+- Phase 2: Agent Registration API (provides /api/v1/agents endpoints)
+- Phase 4: VNC Proxy (provides /vnc/{session_id} WebSocket endpoint)
+
+**Notes for Builder:**
+- Follow existing Material-UI patterns
+- Use existing hooks (useNotification, useAuth, etc.)
+- Maintain responsive design
+- Ensure accessibility (ARIA labels, keyboard navigation)
+- Use existing color scheme and theming
+- Follow existing test patterns (Vitest + React Testing Library)
+
+---
+
+### Architect Notes
+
+**Current Status (2025-11-21):**
+- ✅ Architecture documented
+- ✅ Database schema complete
+- 🔄 Agent registration API in progress (Builder assigned)
+- ⏳ Awaiting Builder completion
+
+**Next Steps:**
+1. Builder completes Phase 2 (Agent Registration API)
+2. Validator tests Phase 2
+3. Architect reviews and integrates
+4. Move to Phase 3 (WebSocket Command Channel)
+
+**Coordination:**
+- Builder works on implementation
+- Validator prepares test plans for Phase 2
+- Scribe updates documentation as changes merge
+- Architect coordinates integration
+
+---
