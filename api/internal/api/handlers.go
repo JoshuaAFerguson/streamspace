@@ -115,7 +115,6 @@ import (
 	"github.com/streamspace-dev/streamspace/api/internal/tracker"
 	"github.com/streamspace-dev/streamspace/api/internal/websocket"
 	"gopkg.in/yaml.v3"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -613,25 +612,48 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	}
 
 	// Step 5: Check user quota before creating session
-	// Get current resource usage by listing all pods belonging to this user
-	podList, err := h.k8sClient.GetPods(ctx, h.namespace)
+	// v2.0-beta: Query DATABASE for current usage (NOT Kubernetes directly)
+	// The database is the source of truth for session resource tracking
+	sessions, err := h.sessionDB.ListSessionsByUser(ctx, req.User)
 	if err != nil {
-		log.Printf("Failed to get pods for quota check: %v", err)
-		// Continue with empty usage if we can't get pods (fail-open for availability)
-		podList = &corev1.PodList{}
+		log.Printf("Failed to get sessions for quota check: %v", err)
+		// Continue with empty usage if we can't get sessions (fail-open for availability)
+		sessions = []*db.Session{}
 	}
 
-	// Filter to only this user's pods based on the "user" label
-	userPods := make([]corev1.Pod, 0)
-	for _, pod := range podList.Items {
-		if user, ok := pod.Labels["user"]; ok && user == req.User {
-			userPods = append(userPods, pod)
+	// Calculate current usage from database sessions
+	// Only count sessions in active states (running, starting, hibernated, waking)
+	var activeSessionCount int
+	var totalCPU, totalMemory int64
+	for _, session := range sessions {
+		if session.State == "running" || session.State == "starting" || session.State == "hibernated" || session.State == "waking" {
+			activeSessionCount++
+
+			// Parse CPU and memory from session
+			if session.CPU != "" {
+				sessionCPU, err := quota.ParseResourceQuantity(session.CPU, "cpu")
+				if err == nil {
+					totalCPU += sessionCPU
+				}
+			}
+			if session.Memory != "" {
+				sessionMemory, err := quota.ParseResourceQuantity(session.Memory, "memory")
+				if err == nil {
+					totalMemory += sessionMemory
+				}
+			}
 		}
 	}
 
-	// Calculate current usage and check if new session would exceed quota
-	currentUsage := h.quotaEnforcer.CalculateUsage(userPods)
+	currentUsage := &quota.Usage{
+		ActiveSessions: activeSessionCount,
+		TotalCPU:       totalCPU,
+		TotalMemory:    totalMemory,
+		TotalStorage:   0, // TODO: Calculate from PVC data in database
+		TotalGPU:       0, // TODO: Add GPU tracking to sessions table
+	}
 
+	// Check if new session would exceed quota
 	if err := h.quotaEnforcer.CheckSessionCreation(ctx, req.User, requestedCPU, requestedMemory, 0, currentUsage); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error":   "Quota exceeded",
