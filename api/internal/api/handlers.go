@@ -686,16 +686,17 @@ func (h *Handler) CreateSession(c *gin.Context) {
 
 	// 2. Select an agent to handle this session (load-balanced by active sessions)
 	// Calculate active sessions dynamically from sessions table for accurate load balancing
+	// Note: sessions.controller_id maps to agents.agent_id in v2.0-beta architecture
 	var agentID string
 	err = h.db.DB().QueryRowContext(ctx, `
 		SELECT a.agent_id
 		FROM agents a
 		LEFT JOIN (
-			SELECT agent_id, COUNT(*) as active_sessions
+			SELECT controller_id, COUNT(*) as active_sessions
 			FROM sessions
-			WHERE status IN ('running', 'starting')
-			GROUP BY agent_id
-		) s ON a.agent_id = s.agent_id
+			WHERE state IN ('running', 'starting')
+			GROUP BY controller_id
+		) s ON a.agent_id = s.controller_id
 		WHERE a.status = 'online' AND a.platform = $1
 		ORDER BY COALESCE(s.active_sessions, 0) ASC
 		LIMIT 1
