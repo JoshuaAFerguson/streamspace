@@ -684,13 +684,20 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	}
 	log.Printf("Created Session CRD: %s in namespace %s", createdSession.Name, createdSession.Namespace)
 
-	// 2. Select an agent to handle this session
-	// Query for an online agent (simple strategy: first available)
+	// 2. Select an agent to handle this session (load-balanced by active sessions)
+	// Calculate active sessions dynamically from sessions table for accurate load balancing
 	var agentID string
 	err = h.db.DB().QueryRowContext(ctx, `
-		SELECT agent_id FROM agents
-		WHERE status = 'online' AND platform = $1
-		ORDER BY active_sessions ASC
+		SELECT a.agent_id
+		FROM agents a
+		LEFT JOIN (
+			SELECT agent_id, COUNT(*) as active_sessions
+			FROM sessions
+			WHERE status IN ('running', 'starting')
+			GROUP BY agent_id
+		) s ON a.agent_id = s.agent_id
+		WHERE a.status = 'online' AND a.platform = $1
+		ORDER BY COALESCE(s.active_sessions, 0) ASC
 		LIMIT 1
 	`, h.platform).Scan(&agentID)
 
