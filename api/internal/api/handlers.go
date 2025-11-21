@@ -748,6 +748,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	commandID := fmt.Sprintf("cmd-%s", uuid.New().String()[:8])
 	now := time.Now()
 	var command models.AgentCommand
+	var errorMessage sql.NullString // Handle NULL error_message column
 	err = h.db.DB().QueryRowContext(ctx, `
 		INSERT INTO agent_commands (command_id, agent_id, session_id, action, payload, status, created_at)
 		VALUES ($1, $2, $3, $4, $5, 'pending', $6)
@@ -760,12 +761,17 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		&command.Action,
 		&command.Payload,
 		&command.Status,
-		&command.ErrorMessage,
+		&errorMessage, // Scan NULL-able column into sql.NullString
 		&command.CreatedAt,
 		&command.SentAt,
 		&command.AcknowledgedAt,
 		&command.CompletedAt,
 	)
+
+	// Assign error_message if it's not NULL
+	if errorMessage.Valid {
+		command.ErrorMessage = errorMessage.String
+	}
 
 	if err != nil {
 		log.Printf("Failed to create agent command: %v", err)
