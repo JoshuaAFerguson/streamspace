@@ -35,33 +35,253 @@
 
 ---
 
-## Current Focus: v1.0.0 Stable Release (APPROVED 2025-11-20)
+## 🎯 CURRENT FOCUS: v2.0 Architecture Completion (UPDATED 2025-11-21)
 
-### Strategic Direction
+### Architect's Strategic Assessment
 
-**Decision:** Focus on stabilizing and completing existing Kubernetes-native platform before architectural changes.
-**Rationale:** Current architecture is production-ready. Build on solid foundation before redesigning.
+**DATE**: 2025-11-21
+**BY**: Agent 1 (Architect)
+**STATUS**: v2.0 Architecture is **60% Complete** - Foundation Ready, Core Features Missing
 
-### v1.0.0 Stable Release Goals
+### Major Discovery from Audit Branch Merge
 
-**Target:** 10-12 weeks to stable release
+After merging `claude/audit-streamspace-codebase-011L9FVvX77mjeHy4j1Guj9B`, I've discovered that **substantial v2.0 architecture work has already been completed**:
+
+**✅ COMPLETED (60%):**
+- ✅ **K8s Agent** - Full implementation (1,904 lines) in `agents/k8s-agent/`
+- ✅ **Control Plane Agent Management** - Complete infrastructure (80K+ lines)
+  - Agent registration API
+  - WebSocket hub and handler
+  - Command dispatcher
+  - Agent models and protocol
+- ✅ **Database Schema** - All tables (agents, agent_commands, platform_controllers)
+- ✅ **Admin UI - Controllers** - Management page (733 lines)
+- ✅ **Testing Infrastructure** - Unit tests for agents, hub, dispatcher
+
+**❌ MISSING (40%):**
+- ❌ **VNC Proxy/Tunnel** - CRITICAL BLOCKER (3-5 days)
+- ❌ **K8s Agent VNC Tunneling** - CRITICAL BLOCKER (3-5 days)
+- ❌ **UI VNC Viewer Update** - CRITICAL (1-2 days)
+- ❌ **Integration Tests** - HIGH PRIORITY (5-7 days)
+- ❌ **Docker Agent** - HIGH PRIORITY (7-10 days)
+
+**📊 DETAILED ASSESSMENT**: See `docs/V2_ARCHITECTURE_STATUS.md` for complete analysis
+
+### Architect's Recommendation: PIVOT TO V2.0 COMPLETION
+
+**DECISION**: Complete v2.0-beta (K8s only) in next 2-3 weeks, defer v1.0 stabilization
+
+**RATIONALE**:
+1. **Foundation is solid**: 60% complete with core infrastructure working
+2. **Clear path forward**: Only VNC proxy + VNC tunneling needed for functional architecture
+3. **High ROI**: 2-3 weeks to multi-platform capability
+4. **Better long-term**: v2.0 architecture is superior to v1.0
+5. **Momentum**: Capitalize on substantial foundation already built
+
+**ESTIMATED COMPLETION**:
+- v2.0-beta (K8s only): 2-3 weeks (10-17 days)
+- v2.0-full (K8s + Docker): 4-6 weeks (27-46 days)
+
+---
+
+## 🚀 Active Tasks - v2.0-beta Completion
+
+### Task: VNC Proxy/Tunnel Implementation ⚡ CRITICAL BLOCKER
+
+- **Assigned To**: Builder (Agent 2)
+- **Status**: Not Started
+- **Priority**: P0 - CRITICAL BLOCKER
+- **Dependencies**: Agent Hub (✅ complete), K8s Agent (✅ complete)
+- **Estimated Effort**: 3-5 days (400-600 lines)
+- **Target**: Week 1 of v2.0-beta sprint
+- **Description**:
+  - Implement WebSocket endpoint `/vnc/{session_id}` in Control Plane
+  - Accept VNC client connections from UI
+  - Route VNC traffic to appropriate agent via WebSocket
+  - Bidirectional binary data forwarding
+  - Connection lifecycle management
+  - Handle agent disconnection/reconnection
+- **Files to Create**:
+  - `api/internal/handlers/vnc_proxy.go` (400-600 lines)
+  - `api/internal/handlers/vnc_proxy_test.go` (200-300 lines)
+- **Acceptance Criteria**:
+  - [ ] VNC WebSocket endpoint implemented
+  - [ ] Traffic routing to agents working
+  - [ ] Binary data forwarding functional
+  - [ ] Connection errors handled gracefully
+  - [ ] Unit tests passing
+- **Blocker For**: K8s Agent VNC Tunneling, UI VNC Viewer Update
+
+### Task: K8s Agent VNC Tunneling ⚡ CRITICAL BLOCKER
+
+- **Assigned To**: Builder (Agent 2)
+- **Status**: Not Started
+- **Priority**: P0 - CRITICAL BLOCKER
+- **Dependencies**: K8s Agent (✅ complete), VNC Proxy (❌ pending)
+- **Estimated Effort**: 3-5 days (300-500 lines)
+- **Target**: Week 1 of v2.0-beta sprint (parallel with VNC Proxy)
+- **Description**:
+  - Add VNC tunneling to K8s Agent
+  - Port-forward to pod VNC port (5900)
+  - Accept VNC data from Control Plane via WebSocket
+  - Forward VNC data to/from pod
+  - Handle pod restarts and reconnection
+- **Files to Create**:
+  - `agents/k8s-agent/vnc_tunnel.go` (300-500 lines)
+  - Update `agents/k8s-agent/message_handler.go` (add VNC message handling)
+- **Acceptance Criteria**:
+  - [ ] Port-forwarding to pod:5900 working
+  - [ ] VNC data forwarding functional
+  - [ ] Pod restart handling works
+  - [ ] Reconnection logic tested
+  - [ ] Integration with Control Plane VNC proxy successful
+- **Blocker For**: UI VNC Viewer Update, Integration Tests
+
+### Task: UI VNC Viewer Update ⚡ CRITICAL
+
+- **Assigned To**: Builder (Agent 2)
+- **Status**: Not Started
+- **Priority**: P0 - CRITICAL
+- **Dependencies**: VNC Proxy (❌ pending), K8s Agent VNC Tunneling (❌ pending)
+- **Estimated Effort**: 1-2 days (100-200 lines of changes)
+- **Target**: Week 2 of v2.0-beta sprint
+- **Description**:
+  - Update VNC viewer to use Control Plane proxy
+  - Change WebSocket URL from `ws://{podIP}:5900` to `/vnc/{session_id}`
+  - Add connection error handling
+  - Test VNC streaming through proxy
+- **Files to Update**:
+  - `ui/src/components/VNCViewer.tsx` (or similar component)
+  - `ui/src/pages/SessionViewer.tsx` (if exists)
+- **Acceptance Criteria**:
+  - [ ] VNC viewer connects to Control Plane proxy
+  - [ ] VNC streaming functional
+  - [ ] Error messages clear to users
+  - [ ] Performance acceptable (< 100ms latency)
+- **Blocker For**: Integration Tests, User testing
+
+### Task: Integration Tests - v2.0 Architecture 📋 HIGH PRIORITY
+
+- **Assigned To**: Validator (Agent 3)
+- **Status**: Not Started
+- **Priority**: P1 - HIGH PRIORITY
+- **Dependencies**: VNC Proxy (❌ pending), K8s Agent VNC Tunneling (❌ pending), UI Update (❌ pending)
+- **Estimated Effort**: 5-7 days
+- **Target**: Week 2-3 of v2.0-beta sprint
+- **Description**:
+  - Test K8s Agent → Control Plane communication
+  - Test session lifecycle via agent (start → VNC → stop)
+  - Test VNC streaming end-to-end (UI → Control Plane → Agent → Pod)
+  - Test agent reconnection and failover
+  - Test command queue persistence
+- **Files to Create**:
+  - `tests/integration/v2_architecture_test.go`
+  - `tests/integration/vnc_streaming_test.go`
+  - `tests/integration/agent_failover_test.go`
+- **Acceptance Criteria**:
+  - [ ] K8s Agent registration and communication tested
+  - [ ] Session lifecycle via agent validated
+  - [ ] VNC streaming end-to-end tested
+  - [ ] Agent failover scenarios covered
+  - [ ] All tests passing
+
+### Task: Docker Agent Implementation 🐳 HIGH PRIORITY (v2.1)
+
+- **Assigned To**: Builder (Agent 2)
+- **Status**: Deferred to v2.1 (after v2.0-beta)
+- **Priority**: P1 - HIGH PRIORITY (but deferred)
+- **Dependencies**: K8s Agent validation (v2.0-beta)
+- **Estimated Effort**: 7-10 days (1,500-2,000 lines)
+- **Target**: v2.1 release (4-6 weeks after v2.0-beta)
+- **Description**:
+  - Create Docker agent (similar to K8s Agent)
+  - Use Docker SDK for container management
+  - Translate session spec → Docker container
+  - Implement VNC tunneling for containers
+  - Add volume management
+- **Files to Create**:
+  - `agents/docker-agent/main.go`
+  - `agents/docker-agent/connection.go`
+  - `agents/docker-agent/docker_operations.go`
+  - `agents/docker-agent/vnc_tunnel.go`
+  - (Similar structure to K8s Agent)
+- **Acceptance Criteria**:
+  - [ ] Docker Agent connects to Control Plane
+  - [ ] Container lifecycle managed
+  - [ ] VNC streaming from containers works
+  - [ ] Volume mounting for user storage
+  - [ ] Unit and integration tests passing
+
+---
+
+## 📅 v2.0 Roadmap
+
+### v2.0-beta (K8s Only) - Target: 2-3 Weeks
+
+**Week 1: Critical Implementation**
+- [ ] VNC Proxy/Tunnel (Builder)
+- [ ] K8s Agent VNC Tunneling (Builder)
+- [ ] Daily testing and debugging
+
+**Week 2: UI and Integration**
+- [ ] UI VNC Viewer Update (Builder)
+- [ ] Integration Tests (Validator)
+- [ ] Bug fixes and refinement
+
+**Week 3: Testing and Documentation**
+- [ ] E2E testing (Validator)
+- [ ] Documentation updates (Scribe)
+- [ ] Release preparation
+
+**Deliverables:**
+- ✅ Control Plane with agent management
+- ✅ K8s Agent with full VNC streaming
+- ✅ UI with proxy-based VNC viewer
+- ✅ Integration tests passing
+- ✅ v2.0-beta release
+
+### v2.1 (Multi-Platform) - Target: 4-6 Weeks after v2.0-beta
+
+**Week 1-2: Docker Agent**
+- [ ] Docker Agent implementation (Builder)
+- [ ] Docker VNC tunneling (Builder)
+
+**Week 3: Docker Testing**
+- [ ] Docker Agent integration tests (Validator)
+- [ ] Multi-agent scenarios (Validator)
+
+**Week 4: Polish and Documentation**
+- [ ] E2E tests with both agents (Validator)
+- [ ] Migration guide (Scribe)
+- [ ] Performance tuning
+
+**Deliverables:**
+- ✅ Docker Agent with full VNC streaming
+- ✅ Multi-platform UI support
+- ✅ Comprehensive test suite
+- ✅ Migration guide from v1.0
+- ✅ v2.1 stable release
+
+---
+
+## 📋 Previous Focus: v1.0.0 Stable Release (DEFERRED)
+
+### Strategic Direction (Previous)
+
+**Decision (2025-11-20):** Focus on stabilizing v1.0.0 before architectural changes
+**Updated Decision (2025-11-21):** Pivot to v2.0-beta completion (foundation 60% complete)
+
+### v1.0.0 Stable Release Goals (DEFERRED)
+
+**Status**: Deferred pending v2.0-beta completion
 
 - [ ] **Priority 1**: Increase test coverage from 15% to 70%+ (6-8 weeks)
-- [ ] **Priority 2**: Complete critical admin UI features (4-6 weeks) - **NEWLY IDENTIFIED**
+- [ ] **Priority 2**: Complete critical admin UI features (4-6 weeks) - **MOSTLY COMPLETE**
 - [ ] **Priority 3**: Implement top 10 plugins by extracting handler logic (4-6 weeks)
 - [ ] **Priority 4**: Verify and fix template repository sync (1-2 weeks)
 - [ ] **Priority 5**: Fix critical bugs discovered during testing
 
-### v1.1 Multi-Platform (DEFERRED - Documented for Future)
-
-**Note:** Architecture redesign plans preserved for v1.1 release after v1.0.0 stable.
-
-- [ ] **Phase 1**: Control Plane Decoupling (Database-backed models, Controller API)
-- [ ] **Phase 2**: K8s Agent Adaptation (Refactor k8s-controller to Agent)
-- [ ] **Phase 3**: Docker Controller Completion
-- [ ] **Phase 4**: UI Updates (Terminology, Admin Views)
-
-See "Deferred Tasks (v1.1+)" section below for detailed plans.
+**Note**: These goals may be revisited if v2.0 hits major blockers. However, v2.0 architecture is superior and 60% complete.
 
 ---
 
