@@ -4301,9 +4301,9 @@ You can start your refactor work right now. The codebase is well-tested, well-do
 4. ✅ Phase 3: WebSocket Command Channel (COMPLETE 2025-11-21)
 5. ✅ Phase 5: K8s Agent Conversion (COMPLETE 2025-11-21) 🎉
 6. ✅ Phase 6: K8s Agent VNC Tunneling (COMPLETE)
-7. ⏳ Phase 4: VNC Proxy/Tunnel (MERGED with Phase 6)
-8. 🎯 Phase 8: UI Updates (NEXT - Admin UI for agents)
-9. ⏳ Phase 7: Docker Agent
+7. ✅ Phase 4: VNC Proxy/Tunnel (MERGED with Phase 6 - COMPLETE)
+8. ✅ Phase 8: UI Updates (COMPLETE - Admin Agents page + Session UI)
+9. 🎯 Phase 7: Docker Agent (NEXT - or proceed with testing)
 10. ⏳ Phase 10: Testing & Migration
 
 ---
@@ -5222,18 +5222,102 @@ Implement VNC traffic tunneling through the Control Plane. The K8s Agent will po
 
 ---
 
-### Phase 8: UI Updates - Admin UI & Session Management 🎯
+### Phase 8: UI Updates - Admin UI & Session Management ✅
 
-**Status:** PENDING
+**Status:** COMPLETE
 **Assigned To:** Builder
+**Completed:** 2025-11-21
 **Priority:** HIGH (User Interface Critical)
-**Duration:** 5-7 days (estimated)
-**Dependencies:** Phase 2 (Agent Registration API), Phase 4 (VNC Proxy)
+**Duration:** 3 hours (actual, estimated 5-7 days)
+**Dependencies:** Phase 2 (Agent Registration API) ✅, Phase 6 (VNC Proxy) ✅
 
 **Objective:**
 Update all UI components to support multi-platform agents and Control Plane VNC proxying.
 
-**Critical Admin UI Updates:**
+**Completed Components:**
+
+#### 1. ✅ Admin - Agents Management Page (ui/src/pages/admin/Agents.tsx - 629 lines)
+
+**Implemented Features:**
+- Agent list with filtering (platform, status, region)
+- Real-time status monitoring (online/warning/offline based on heartbeat)
+- Platform icons (Kubernetes, Docker, VM, Cloud)
+- Summary cards:
+  - Total Agents
+  - Online Agents
+  - Total Sessions
+  - Platforms count
+- Agent Details Modal:
+  - Full metadata display
+  - Capacity information
+  - Platform-specific metadata (JSON formatted)
+  - Created/Updated timestamps
+- Agent removal with confirmation dialog
+- Auto-refresh every 10 seconds (React Query)
+- Search functionality
+- Responsive Material-UI design
+
+**Agent Status Indicators:**
+- 🟢 Online: Last heartbeat < 30 seconds
+- 🟡 Warning: Last heartbeat 30-60 seconds
+- 🔴 Offline: Last heartbeat > 60 seconds
+
+**API Integration:**
+- GET /api/v1/agents?platform=&status=&region= (with auto-refresh)
+- DELETE /api/v1/agents/:agent_id
+
+**Commit:** `5f583ff` - feat(admin-ui): Create Agents management page for v2.0 architecture
+
+#### 2. ✅ Session Interface & SessionCard Updates
+
+**Changes to ui/src/lib/api.ts:**
+- Added `agent_id?: string` field to Session interface
+- Added `platform?: string` field (kubernetes/docker/vm/cloud)
+- Added `region?: string` field
+
+**Changes to ui/src/components/SessionCard.tsx:**
+- Added platform icons (K8sIcon, DockerIcon, VMIcon, CloudIcon)
+- Display platform with icon
+- Display agent_id (monospace font for readability)
+- Display region
+- Helper function `getPlatformIcon()` for icon selection
+- Conditional display (only show if fields present)
+
+**Visual Updates:**
+- Platform: Icon + capitalized platform name
+- Agent: agent_id in monospace font (0.75rem)
+- Region: region name
+- Positioned between Active Connections and URL fields
+
+**Commit:** `533ff8f` - feat(ui): Add v2.0 agent/platform information to Session interface and SessionCard
+
+#### 3. ✅ SessionViewer Updates
+
+**Changes to ui/src/pages/SessionViewer.tsx:**
+- Added platform field to Session Info dialog
+- Added agent_id field (monospace font, 0.875rem)
+- Added region field
+- Positioned after resource usage, before active connections
+- Conditional display (only if present)
+
+**Session Info Dialog now shows:**
+- Platform: Capitalized platform name
+- Agent ID: agent_id in monospace font
+- Region: region name
+
+**Commit:** `64385cb` - feat(ui): Add v2.0 agent/platform info to SessionViewer dialog
+
+**Summary:**
+- ✅ Created new Agents admin page (629 lines TypeScript/React)
+- ✅ Updated Session interface with v2.0 fields
+- ✅ Updated SessionCard to display agent information
+- ✅ Updated SessionViewer info dialog
+- ✅ All UI components support multi-platform architecture
+- ✅ Consistent platform icon usage across all components
+
+**Note:** VNC viewer already uses iframe with session.status.url. For v2.0, the backend should ensure this URL points to noVNC viewer configured to connect through Control Plane VNC proxy endpoint (/api/v1/vnc/:sessionId) instead of directly to pod.
+
+**Original Requirements (for reference):**
 
 #### 1. **Admin - Agents Management Page** (NEW PAGE)
 
