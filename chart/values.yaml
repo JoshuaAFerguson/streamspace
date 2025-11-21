@@ -93,6 +93,124 @@ controller:
     minAvailable: 1
     # maxUnavailable: 1
 
+## K8s Agent (v2.0-beta)
+# The K8s Agent connects to the Control Plane and manages sessions on Kubernetes
+k8sAgent:
+  # Enable K8s Agent deployment
+  enabled: true
+
+  # Number of agent replicas (recommended: 1 per cluster)
+  replicaCount: 1
+
+  image:
+    registry: ghcr.io
+    repository: streamspace-dev/streamspace-k8s-agent
+    tag: "v2.0"
+    pullPolicy: IfNotPresent
+
+  # ServiceAccount for K8s Agent
+  # The agent needs permissions to create/manage deployments, services, pods, PVCs
+  serviceAccount:
+    create: true
+    name: streamspace-agent
+    annotations: {}
+
+  # Agent configuration
+  config:
+    # Unique identifier for this agent (must be unique across all agents)
+    # Format: <platform>-<environment>-<region>
+    # Example: k8s-prod-us-east-1, k8s-staging-eu-west-1
+    agentId: "k8s-prod-cluster"
+
+    # Control Plane URL (WebSocket endpoint)
+    # If empty, will auto-detect from API service: ws://<release-name>-api:8080
+    controlPlaneUrl: ""
+
+    # Platform identifier (should always be "kubernetes" for k8s-agent)
+    platform: "kubernetes"
+
+    # Region or datacenter identifier (optional, for multi-region deployments)
+    region: "default"
+
+    # Namespace where sessions will be created
+    # If empty, uses the same namespace as the agent
+    sessionNamespace: ""
+
+    # Capacity limits for this agent
+    capacity:
+      # Maximum number of concurrent sessions this agent can manage
+      maxSessions: 100
+      # Maximum CPU cores this agent can allocate (0 = unlimited)
+      maxCPU: 0
+      # Maximum memory this agent can allocate (0 = unlimited, format: 100Gi)
+      maxMemory: "0"
+
+    # Health check settings
+    health:
+      # How often to send health checks to Control Plane
+      checkInterval: "30s"
+      # Timeout for health check responses
+      timeout: "10s"
+
+    # Reconnection settings
+    reconnect:
+      # Initial delay before first reconnection attempt
+      initialDelay: "1s"
+      # Maximum delay between reconnection attempts
+      maxDelay: "5m"
+      # Multiplier for exponential backoff
+      multiplier: 2
+
+  # Resource limits for the agent itself
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+  # Health probes for the agent pod
+  livenessProbe:
+    exec:
+      command:
+        - pgrep
+        - -f
+        - k8s-agent
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    exec:
+      command:
+        - pgrep
+        - -f
+        - k8s-agent
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Node selection
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Affinity rules
+  affinity: {}
+
+  # Additional environment variables
+  extraEnv: []
+    # - name: LOG_LEVEL
+    #   value: debug
+
+  # Additional volumes
+  extraVolumes: []
+  extraVolumeMounts: []
+
 ## API Backend
 api:
   enabled: true

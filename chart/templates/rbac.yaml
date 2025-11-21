@@ -103,4 +103,66 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "streamspace.api.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+---
+{{- if .Values.k8sAgent.enabled }}
+# K8s Agent RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "streamspace.fullname" . }}-k8s-agent
+  namespace: {{ if .Values.k8sAgent.config.sessionNamespace }}{{ .Values.k8sAgent.config.sessionNamespace }}{{ else }}{{ .Release.Namespace }}{{ end }}
+  labels:
+    {{- include "streamspace.k8sAgent.labels" . | nindent 4 }}
+rules:
+  # Deployments for session pods
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Services for session access
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Pods for session management and logs
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # PVCs for persistent home directories
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # ConfigMaps for session configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Secrets for session credentials
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Events for status reporting
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "streamspace.fullname" . }}-k8s-agent
+  namespace: {{ if .Values.k8sAgent.config.sessionNamespace }}{{ .Values.k8sAgent.config.sessionNamespace }}{{ else }}{{ .Release.Namespace }}{{ end }}
+  labels:
+    {{- include "streamspace.k8sAgent.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "streamspace.fullname" . }}-k8s-agent
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "streamspace.k8sAgent.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}
