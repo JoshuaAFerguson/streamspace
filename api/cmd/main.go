@@ -23,6 +23,7 @@ import (
 	"github.com/streamspace/streamspace/api/internal/k8s"
 	"github.com/streamspace/streamspace/api/internal/middleware"
 	"github.com/streamspace/streamspace/api/internal/quota"
+	"github.com/streamspace/streamspace/api/internal/services"
 	"github.com/streamspace/streamspace/api/internal/sync"
 	"github.com/streamspace/streamspace/api/internal/tracker"
 	internalWebsocket "github.com/streamspace/streamspace/api/internal/websocket"
@@ -168,6 +169,21 @@ func main() {
 	log.Println("Initializing WebSocket manager...")
 	wsManager := internalWebsocket.NewManager(database, k8sClient)
 	wsManager.Start()
+
+	// Initialize Agent Hub for v2.0 multi-platform architecture
+	log.Println("Initializing Agent Hub...")
+	agentHub := internalWebsocket.NewAgentHub(database)
+	go agentHub.Run()
+
+	// Initialize Command Dispatcher for agent commands
+	log.Println("Initializing Command Dispatcher...")
+	commandDispatcher := services.NewCommandDispatcher(database, agentHub)
+	go commandDispatcher.Start()
+
+	// Queue any pending commands on startup
+	if err := commandDispatcher.DispatchPendingCommands(); err != nil {
+		log.Printf("Warning: Failed to dispatch pending commands: %v", err)
+	}
 
 	// Initialize activity tracker
 	log.Println("Initializing activity tracker...")
@@ -334,7 +350,8 @@ func main() {
 	licenseHandler := handlers.NewLicenseHandler(database)
 	controllerHandler := handlers.NewControllerHandler(database)
 	recordingHandler := handlers.NewRecordingHandler(database)
-	agentHandler := handlers.NewAgentHandler(database)
+	agentHandler := handlers.NewAgentHandler(database, agentHub, commandDispatcher)
+	agentWebSocketHandler := handlers.NewAgentWebSocketHandler(agentHub, database)
 
 	// SECURITY: Initialize webhook authentication
 	webhookSecret := os.Getenv("WEBHOOK_SECRET")
@@ -344,7 +361,7 @@ func main() {
 	}
 
 	// Setup routes
-	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, nodeHandler, wsManager, consoleHandler, collaborationHandler, integrationsHandler, loadBalancingHandler, schedulingHandler, securityHandler, templateVersioningHandler, setupHandler, applicationHandler, auditHandler, configurationHandler, licenseHandler, controllerHandler, recordingHandler, agentHandler, jwtManager, userDB, redisCache, webhookSecret)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, nodeHandler, wsManager, consoleHandler, collaborationHandler, integrationsHandler, loadBalancingHandler, schedulingHandler, securityHandler, templateVersioningHandler, setupHandler, applicationHandler, auditHandler, configurationHandler, licenseHandler, controllerHandler, recordingHandler, agentHandler, agentWebSocketHandler, jwtManager, userDB, redisCache, webhookSecret)
 
 	// Create HTTP server with security timeouts
 	srv := &http.Server{
@@ -425,7 +442,7 @@ func main() {
 	log.Println("Graceful shutdown completed")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, nodeHandler *handlers.NodeHandler, wsManager *internalWebsocket.Manager, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, integrationsHandler *handlers.IntegrationsHandler, loadBalancingHandler *handlers.LoadBalancingHandler, schedulingHandler *handlers.SchedulingHandler, securityHandler *handlers.SecurityHandler, templateVersioningHandler *handlers.TemplateVersioningHandler, setupHandler *handlers.SetupHandler, applicationHandler *handlers.ApplicationHandler, auditHandler *handlers.AuditHandler, configurationHandler *handlers.ConfigurationHandler, licenseHandler *handlers.LicenseHandler, controllerHandler *handlers.ControllerHandler, recordingHandler *handlers.RecordingHandler, agentHandler *handlers.AgentHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, nodeHandler *handlers.NodeHandler, wsManager *internalWebsocket.Manager, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, integrationsHandler *handlers.IntegrationsHandler, loadBalancingHandler *handlers.LoadBalancingHandler, schedulingHandler *handlers.SchedulingHandler, securityHandler *handlers.SecurityHandler, templateVersioningHandler *handlers.TemplateVersioningHandler, setupHandler *handlers.SetupHandler, applicationHandler *handlers.ApplicationHandler, auditHandler *handlers.AuditHandler, configurationHandler *handlers.ConfigurationHandler, licenseHandler *handlers.LicenseHandler, controllerHandler *handlers.ControllerHandler, recordingHandler *handlers.RecordingHandler, agentHandler *handlers.AgentHandler, agentWebSocketHandler *handlers.AgentWebSocketHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
 	// SECURITY: Create authentication middleware
 	authMiddleware := auth.Middleware(jwtManager, userDB)
 	adminMiddleware := auth.RequireRole("admin")
@@ -892,6 +909,9 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 
 				// v2.0 Agent management (admin only - multi-platform architecture)
 				agentHandler.RegisterRoutes(v1)
+
+				// v2.0 Agent WebSocket connections (agents connect here)
+				agentWebSocketHandler.RegisterRoutes(v1)
 			}
 
 			// NOTE: Billing is now handled by the streamspace-billing plugin
