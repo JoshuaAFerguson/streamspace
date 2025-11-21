@@ -158,7 +158,8 @@ type Agent struct {
 
 	// WebSocketID is the internal identifier for the active WebSocket connection.
 	// Used by the Control Plane to route commands to the correct connection.
-	WebSocketID string `json:"websocketId,omitempty" db:"websocket_id"`
+	// Can be nil if the agent is not currently connected.
+	WebSocketID *string `json:"websocketId,omitempty" db:"websocket_id"`
 
 	// Metadata contains arbitrary platform-specific or deployment-specific data.
 	// Stored as JSONB in the database.
