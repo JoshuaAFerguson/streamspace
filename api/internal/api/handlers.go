@@ -502,84 +502,12 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	// Step 2: Verify Kubernetes Template CRD exists
-	// The template must be created during application installation (see handlers/applications.go)
-	// Without a valid template, the session cannot be created
-	template, err := h.k8sClient.GetTemplate(ctx, h.namespace, templateName)
-	if err != nil {
-		// Template is missing - trigger reinstallation if applicationId was provided
-		if req.ApplicationId != "" {
-			// Query application details for reinstall
-			var (
-				installID         string
-				catalogTemplateID int
-				displayName       string
-				description       string
-				category          string
-				iconURL           string
-				manifest          string
-				installedBy       string
-			)
-			reinstallErr := h.db.DB().QueryRowContext(ctx, `
-				SELECT
-					ia.id,
-					ia.catalog_template_id,
-					ia.display_name,
-					COALESCE(ct.description, ''),
-					COALESCE(ct.category, ''),
-					COALESCE(ct.icon_url, ''),
-					COALESCE(ct.manifest, '{}'),
-					ia.created_by
-				FROM installed_applications ia
-				LEFT JOIN catalog_templates ct ON ia.catalog_template_id = ct.id
-				WHERE ia.id = $1
-			`, req.ApplicationId).Scan(
-				&installID, &catalogTemplateID, &displayName, &description,
-				&category, &iconURL, &manifest, &installedBy,
-			)
-
-			if reinstallErr == nil {
-				// Publish AppInstallEvent to trigger controller to create template
-				if err := h.publisher.PublishAppInstall(ctx, &events.AppInstallEvent{
-					InstallID:         installID,
-					CatalogTemplateID: catalogTemplateID,
-					TemplateName:      templateName,
-					DisplayName:       displayName,
-					Description:       description,
-					Category:          category,
-					IconURL:           iconURL,
-					Manifest:          manifest,
-					InstalledBy:       installedBy,
-					Platform:          h.platform,
-				}); err != nil {
-					log.Printf("Failed to publish app reinstall event for %s: %v", templateName, err)
-				} else {
-					log.Printf("Triggered reinstall for missing template %s (app: %s)", templateName, installID)
-					// Update status to creating
-					h.db.DB().ExecContext(ctx, `
-						UPDATE installed_applications
-						SET install_status = 'creating', install_message = 'Reinstalling missing template', updated_at = NOW()
-						WHERE id = $1
-					`, installID)
-				}
-			}
-
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"error":   "Template reinstalling",
-				"message": fmt.Sprintf("The template for '%s' was missing and is being reinstalled. Please try again in a few seconds.", displayName),
-			})
-			return
-		}
-
-		// No applicationId provided - provide generic error
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": fmt.Sprintf("Template not found: %s. Please ensure the application is properly installed.", templateName),
-		})
-		return
-	}
+	// Step 2: v2.0-beta - Template validation handled by agent
+	// Agent will fetch template from Kubernetes and validate it exists
+	// API just passes template name to agent in command payload
 
 	// Step 3: Determine resource allocation (memory/CPU)
-	// Priority: request > template defaults > system defaults
+	// Priority: request > system defaults
 	memory := "2Gi"   // System default
 	cpu := "1000m"    // System default (1 core)
 	if req.Resources != nil {
@@ -589,14 +517,6 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		}
 		if req.Resources.CPU != "" {
 			cpu = req.Resources.CPU
-		}
-	} else if template.DefaultResources.Memory != "" || template.DefaultResources.CPU != "" {
-		// Fall back to template-defined defaults
-		if template.DefaultResources.Memory != "" {
-			memory = template.DefaultResources.Memory
-		}
-		if template.DefaultResources.CPU != "" {
-			cpu = template.DefaultResources.CPU
 		}
 	}
 
@@ -662,52 +582,21 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	// Generate session name: {user}-{template}-{random}
+	// Step 5: Generate session name: {user}-{template}-{random}
 	// Use resolved templateName (from applicationId lookup or req.Template)
 	sessionName := fmt.Sprintf("%s-%s-%s", req.User, templateName, uuid.New().String()[:8])
 
-	session := &k8s.Session{
-		Name:      sessionName,
-		Namespace: h.namespace,
-		User:      req.User,
-		Template:  templateName,
-		State:     "running",
-	}
-
-	session.Resources.Memory = memory
-	session.Resources.CPU = cpu
-
+	// Step 6: Determine session configuration
+	persistentHome := true // Default
 	if req.PersistentHome != nil {
-		session.PersistentHome = *req.PersistentHome
-	} else {
-		session.PersistentHome = true // Default
+		persistentHome = *req.PersistentHome
 	}
 
-	if req.IdleTimeout != "" {
-		session.IdleTimeout = req.IdleTimeout
-	}
+	idleTimeout := req.IdleTimeout
+	maxSessionDuration := req.MaxSessionDuration
+	tags := req.Tags
 
-	if req.MaxSessionDuration != "" {
-		session.MaxSessionDuration = req.MaxSessionDuration
-	}
-
-	if len(req.Tags) > 0 {
-		session.Tags = req.Tags
-	}
-
-	// v2.0-beta Architecture: Create Session CRD directly and dispatch command to agent
-	// 1. Create Session CRD in Kubernetes
-	createdSession, err := h.k8sClient.CreateSession(ctx, session)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to create session CRD",
-			"message": fmt.Sprintf("Failed to create Session CRD in Kubernetes: %v", err),
-		})
-		return
-	}
-	log.Printf("Created Session CRD: %s in namespace %s", createdSession.Name, createdSession.Namespace)
-
-	// 2. Select an agent to handle this session (load-balanced by active sessions)
+	// Step 7: v2.0-beta - Select an agent to handle this session (load-balanced by active sessions)
 	// Calculate active sessions dynamically from sessions table for accurate load balancing
 	// v2.0-beta: Use agent_id column (not controller_id which is legacy v1.x)
 	var agentID string
@@ -726,12 +615,8 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	`, h.platform).Scan(&agentID)
 
 	if err != nil {
-		// No agents available - update Session status to reflect this
-		session.Status.Phase = "Failed"
-		if updateErr := h.k8sClient.UpdateSessionStatus(ctx, session); updateErr != nil {
-			log.Printf("Failed to update Session status after agent selection failure: %v", updateErr)
-		}
-
+		// No agents available - v2.0-beta: Just return error, no K8s updates
+		log.Printf("No agents available for session %s", sessionName)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "No agents available",
 			"message": "No online agents are currently available to handle this session. Please try again later.",
@@ -740,31 +625,44 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	}
 	log.Printf("Selected agent %s for session %s", agentID, sessionName)
 
-	// 3. Build command payload with session and template details
-	vncPort := 3000 // Default VNC port
-	if template != nil && template.VNC != nil && template.VNC.Port > 0 {
-		vncPort = int(template.VNC.Port)
+	// Step 8: Create session in DATABASE first (source of truth for v2.0-beta)
+	dbSession := &db.Session{
+		ID:                 sessionName,
+		UserID:             req.User,
+		TemplateName:       templateName,
+		State:              "pending",
+		Namespace:          h.namespace,
+		Platform:           h.platform,
+		AgentID:            agentID, // v2.0-beta: Track which agent is managing this session
+		Memory:             memory,
+		CPU:                cpu,
+		PersistentHome:     persistentHome,
+		IdleTimeout:        idleTimeout,
+		MaxSessionDuration: maxSessionDuration,
 	}
-
-	envMap := make(map[string]string)
-	if template != nil {
-		for _, env := range template.Env {
-			envMap[env.Name] = env.Value
-		}
+	if err := h.sessionDB.CreateSession(ctx, dbSession); err != nil {
+		log.Printf("Failed to create session %s in database: %v", sessionName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to create session",
+			"message": fmt.Sprintf("Failed to create session in database: %v", err),
+		})
+		return
 	}
+	log.Printf("Created session %s in database with state=pending", sessionName)
 
+	// Step 9: Build command payload
+	// Agent will fetch template details from K8s (image, vncPort, env, etc.)
 	payload := models.CommandPayload{
-		"sessionId":      sessionName,
-		"user":           req.User,
-		"template":       templateName,
-		"namespace":      h.namespace,
-		"image":          template.BaseImage,
-		"vncPort":        vncPort,
-		"memory":         memory,
-		"cpu":            cpu,
-		"persistentHome": session.PersistentHome,
-		"idleTimeout":    session.IdleTimeout,
-		"env":            envMap,
+		"sessionId":           sessionName,
+		"user":                req.User,
+		"template":            templateName,
+		"namespace":           h.namespace,
+		"memory":              memory,
+		"cpu":                 cpu,
+		"persistentHome":      persistentHome,
+		"idleTimeout":         idleTimeout,
+		"maxSessionDuration":  maxSessionDuration,
+		"tags":                tags,
 	}
 
 	// 4. Create command in database
@@ -818,7 +716,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	}
 	log.Printf("Created agent command %s for session %s", commandID, sessionName)
 
-	// 5. Dispatch command to agent via WebSocket
+	// Step 10: Dispatch command to agent via WebSocket
 	if h.dispatcher != nil {
 		if err := h.dispatcher.DispatchCommand(&command); err != nil {
 			log.Printf("Failed to dispatch command %s: %v", commandID, err)
@@ -833,37 +731,17 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		log.Printf("Warning: CommandDispatcher is nil, command %s not dispatched", commandID)
 	}
 
-	// Cache session in database so status updates can be applied
-	// This is best-effort - failure doesn't block session creation
-	dbSession := &db.Session{
-		ID:                 sessionName,
-		UserID:             req.User,
-		TemplateName:       templateName,
-		State:              "pending",
-		Namespace:          h.namespace,
-		Platform:           h.platform,
-		AgentID:            agentID, // v2.0-beta: Track which agent is managing this session
-		Memory:             memory,
-		CPU:                cpu,
-		PersistentHome:     session.PersistentHome,
-		IdleTimeout:        session.IdleTimeout,
-		MaxSessionDuration: session.MaxSessionDuration,
-	}
-	if err := h.sessionDB.CreateSession(ctx, dbSession); err != nil {
-		log.Printf("Failed to cache session %s in database (non-fatal): %v", sessionName, err)
-	}
-
-	// Return the session info immediately
-	// The agent will provision the pod and update the Session CRD status
+	// Step 11: Return the session info immediately
+	// Agent will create K8s resources (Deployment, Service, Session CRD) and update database
 	response := map[string]interface{}{
 		"name":               sessionName,
 		"namespace":          h.namespace,
 		"user":               req.User,
 		"template":           templateName,
 		"state":              "pending",
-		"persistentHome":     session.PersistentHome,
-		"idleTimeout":        session.IdleTimeout,
-		"maxSessionDuration": session.MaxSessionDuration,
+		"persistentHome":     persistentHome,
+		"idleTimeout":        idleTimeout,
+		"maxSessionDuration": maxSessionDuration,
 		"resources": map[string]string{
 			"memory": memory,
 			"cpu":    cpu,
@@ -872,9 +750,10 @@ func (h *Handler) CreateSession(c *gin.Context) {
 			"phase":   "Pending",
 			"message": fmt.Sprintf("Session provisioning in progress (agent: %s, command: %s)", agentID, commandID),
 		},
+		"tags": tags,
 	}
 
-	log.Printf("Session %s created successfully - CRD created, command %s dispatched to agent %s", sessionName, commandID, agentID)
+	log.Printf("Session %s created successfully - saved to database, command %s dispatched to agent %s", sessionName, commandID, agentID)
 	c.JSON(http.StatusAccepted, response)
 }
 
