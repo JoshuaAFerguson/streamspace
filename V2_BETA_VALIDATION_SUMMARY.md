@@ -3,215 +3,37 @@
 **Validator**: Claude Code
 **Date**: 2025-11-21
 **Branch**: claude/v2-validator
-**Status**: Builder's Session Creation Fix - VERIFIED ✅
+**Status**: CSRF Fix ✅ | P0 Bug Discovered ❌ | Session Creation BROKEN
 
 ---
 
 ## Executive Summary
 
-Builder's v2.0-beta session creation architecture has been **verified via code review and deployment testing**. The implementation is complete and correct. End-to-end API testing is blocked by the P2 CSRF bug, but the code logic and deployment have been validated.
+Builder's CSRF fix (commit a9238a3) **works correctly** - JWT-authenticated requests are now exempted from CSRF protection. However, integration testing revealed a **critical P0 bug** in Builder's session creation implementation: the SQL query references a non-existent `active_sessions` column, causing all session creation attempts to fail with "No agents available" even when agents are online.
 
-### Key Finding: Controller Is Intentionally Removed
-
-**The "missing controller" reported in BUG_REPORT_P0_MISSING_CONTROLLER.md is NOT A BUG** - it's the correct v2.0-beta architecture. The API now handles Session CRD creation and command dispatching directly, eliminating the need for a Kubernetes controller.
-
----
-
-## Bugs Fixed by Builder
-
-### 1. P0: K8s Agent Crash (FIXED ✅)
-- **Commit**: 22a39d8
-- **Fix**: Properly load HeartbeatInterval from environment variable
-- **Status**: Agent now runs stable (verified in deployment)
-
-### 2. P1: Admin Authentication Failure (FIXED ✅)
-- **Commit**: 6c22c96
-- **Fix**: Make ADMIN_PASSWORD secret required (optional: false)
-- **Status**: Admin login works (verified with JWT token generation)
-
-### 3. Session Creation Architecture (IMPLEMENTED ✅)
-- **Commit**: 3284bdf - "fix(api): Implement v2.0-beta session creation architecture - NO CONTROLLER NEEDED"
-- **Implementation**: Complete 445-line CreateSession handler
-- **Status**: Code reviewed and verified, deployment successful
+**Key Findings**:
+1. ✅ **CSRF Fix Verified**: JWT authentication works without CSRF tokens
+2. ❌ **P0 Bug Discovered**: Missing `active_sessions` column breaks agent selection
+3. ✅ **Agent Connectivity Works**: Agents register, connect, and send heartbeats successfully
+4. ❌ **Session Creation Broken**: 100% failure rate due to invalid SQL query
 
 ---
 
-## v2.0-beta Architecture Verification
+## Validation Timeline
 
-### Session Creation Flow (api/internal/api/handlers.go:384-828)
+### Previous Session (2025-11-21 17:00-19:00)
+- ✅ Code reviewed Builder's session creation fix (commit 3284bdf)
+- ✅ Verified deployment with correct images
+- ✅ Agent online and connected via WebSocket
+- ❌ API testing blocked by P2 CSRF bug
 
-```
-User → POST /api/v1/sessions (with JWT token)
-  ↓
-API: Validate template, check quota (lines 384-641)
-  ↓
-API: Create Session CRD in Kubernetes (line 677)
-  ↓
-API: Select online agent (load-balanced, lines 689-710)
-  ↓
-API: Build command payload with session details (lines 712-737)
-  ↓
-API: Insert AgentCommand into database (status='pending', lines 740-770)
-  ↓
-CommandDispatcher: Dispatch to agent via WebSocket (lines 773-785)
-  ↓
-API: Cache session in database for status tracking (lines 789-804)
-  ↓
-API: Return HTTP 202 Accepted (asynchronous provisioning, line 828)
-  ↓
-Agent: Receives command, provisions pod, updates Session status
-```
-
-### Code Review Verification ✅
-
-**CreateSession Handler** (api/internal/api/handlers.go:384-828):
-
-1. **Template Resolution** (lines 407-579):
-   - Supports both `template` and `applicationId` parameters
-   - Validates Template CRD exists in Kubernetes
-   - Self-healing: Checks K8s if status shows "pending"
-   - Triggers reinstall for missing templates
-
-2. **Resource Management** (lines 581-641):
-   - Priority: User request > Template defaults > System defaults
-   - Validates resource specifications (CPU, memory)
-   - Enforces user quotas before session creation
-   - Calculates current usage from user's existing pods
-
-3. **Session CRD Creation** (lines 646-686):
-   - Generates unique session name: `{user}-{template}-{random}`
-   - Creates Session CRD via k8sClient
-   - Logs success with full details
-
-4. **Agent Selection** (lines 687-710):
-   - Queries database for online agents
-   - Load-balancing: `ORDER BY active_sessions ASC`
-   - Falls back to Session status update if no agents
-
-5. **Command Dispatching** (lines 712-785):
-   - Builds payload with image, resources, env vars
-   - Inserts AgentCommand record (status='pending')
-   - Dispatches via CommandDispatcher/WebSocket
-   - Comprehensive error handling
-
-6. **Response** (line 828):
-   - Returns HTTP 202 Accepted (async)
-   - Includes session details and provisioning status
-
-### Deployment Verification ✅
-
-**1. Images Built and Deployed:**
-```bash
-$ docker images | grep streamspace.*local
-streamspace/streamspace-api:local           0901b010f60a   168MB   
-streamspace/streamspace-k8s-agent:local     9146c3735175   87.5MB  
-streamspace/streamspace-ui:local            7ee6c9a21612   85.6MB  
-```
-
-**2. Pods Running with Correct Images:**
-```bash
-$ kubectl get pods -n streamspace -l app.kubernetes.io/component=api
-NAME                               READY   STATUS    RESTARTS   AGE
-streamspace-api-7b45cd4b79-dchp9   1/1     Running   0          23s
-streamspace-api-7b45cd4b79-ltrfm   1/1     Running   0          36s
-
-$ kubectl get pods -n streamspace -l app.kubernetes.io/component=api -o jsonpath='{.items[0].spec.containers[0].image}'
-streamspace/streamspace-api:local
-```
-
-**3. CommandDispatcher Initialized:**
-```bash
-$ kubectl logs -n streamspace deploy/streamspace-api | grep CommandDispatcher
-2025/11/21 19:43:36 Initializing Command Dispatcher...
-2025/11/21 19:43:36 [CommandDispatcher] Starting with 10 workers
-2025/11/21 19:43:36 [CommandDispatcher] Worker 0 started
-... (Workers 1-9 started)
-```
-
-**4. Agent Online and Connected:**
-```bash
-$ kubectl logs -n streamspace deploy/streamspace-api | grep AgentWebSocket
-2025/11/21 19:48:05 [AgentWebSocket] Heartbeat from agent k8s-prod-cluster (status: online, activeSessions: 0)
-```
-
-**5. Controller Deprecated:**
-```yaml
-# chart/values.yaml
-controller:
-  enabled: false
-  # v2.0-beta DEPRECATION: Controller no longer used
-  # API creates Session CRDs directly and dispatches commands via WebSocket
-```
-
----
-
-## Testing Status
-
-### ✅ What Was Verified
-
-1. **Code Implementation**:
-   - ✅ Complete 445-line CreateSession handler
-   - ✅ All 5 steps implemented correctly
-   - ✅ Proper error handling and logging
-   - ✅ Quota enforcement, template validation
-   - ✅ Self-healing logic for missing templates
-
-2. **Deployment**:
-   - ✅ Images built with Builder's fixes
-   - ✅ Pods deployed with correct images
-   - ✅ CommandDispatcher running (10 workers)
-   - ✅ Agent online and connected via WebSocket
-   - ✅ Controller disabled (by design)
-
-3. **Authentication**:
-   - ✅ Admin login works
-   - ✅ JWT token generated successfully
-   - ✅ ADMIN_PASSWORD fix deployed
-
-### ❌ What Cannot Be Tested (Blocked by P2 CSRF Bug)
-
-1. **End-to-End Session Creation**:
-   - ❌ POST /api/v1/sessions blocked by CSRF middleware
-   - ❌ Login endpoint doesn't set CSRF cookies
-   - ❌ Cannot verify agent receives command
-   - ❌ Cannot verify pod provisioning
-   - ❌ Cannot test full workflow
-
-**Blocker**: BUG_REPORT_P2_CSRF_PROTECTION.md
-
-**Evidence**:
-```bash
-$ curl -s -X POST http://localhost:8000/api/v1/sessions \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"user":"admin","template":"firefox-browser",...}'
-{
-  "error": "CSRF token missing",
-  "message": "CSRF cookie not found"
-}
-```
-
----
-
-## Architectural Differences: v1.0 vs v2.0-beta
-
-| Component | v1.0 (Controller-Based) | v2.0-beta (API-Direct) |
-|-----------|-------------------------|------------------------|
-| **Session CRD Creation** | Controller watches and creates | API creates directly on POST /sessions |
-| **Command Generation** | Controller reconciles CRDs | API generates on session creation |
-| **Agent Communication** | NATS event bus | WebSocket (CommandDispatcher) |
-| **Session Lifecycle** | Controller manages reconciliation | API + Agent manage directly |
-| **External CRD Support** | Yes (kubectl apply triggers controller) | No (only API endpoint creates sessions) |
-| **Architecture Pattern** | Kubernetes-native (controller reconciliation) | API-centric (direct command dispatch) |
-
-### Why External CRDs Don't Work in v2.0-beta
-
-Sessions created via `kubectl apply` are **intentionally not processed**:
-1. No CRD watcher (controller removed)
-2. API only acts when POST /api/v1/sessions is called
-3. Ensures validation, quota enforcement, command dispatching
-
-**If external CRD creation is needed**, use the API endpoint instead.
+### Current Session (2025-11-21 19:00-20:15)
+- ✅ Merged Builder's CSRF fix (commit a9238a3)
+- ✅ Rebuilt images with CSRF fix
+- ✅ Redeployed with updated images
+- ✅ Verified CSRF fix works (JWT requests accepted)
+- ❌ Discovered P0 bug: Missing `active_sessions` column
+- ✅ Created detailed bug report (BUG_REPORT_P0_ACTIVE_SESSIONS_COLUMN.md)
 
 ---
 
@@ -219,10 +41,227 @@ Sessions created via `kubectl apply` are **intentionally not processed**:
 
 | Bug ID | Component | Severity | Status | Notes |
 |--------|-----------|----------|--------|-------|
-| P0-001 | K8s Agent | P0 | **FIXED ✅** | HeartbeatInterval env loading fixed |
-| P1-002 | Admin Auth | P1 | **FIXED ✅** | ADMIN_PASSWORD secret required |
+| P0-001 | K8s Agent | P0 | **FIXED ✅** | HeartbeatInterval env loading fixed (commit 22a39d8) |
+| P1-002 | Admin Auth | P1 | **FIXED ✅** | ADMIN_PASSWORD secret required (commit 6c22c96) |
 | P0-003 | Controller | ~~P0~~ | **INVALID ❌** | Controller intentionally removed (v2.0-beta design) |
-| P2-004 | CSRF | P2 | **OPEN ⏳** | Login doesn't set CSRF cookies, blocks API testing |
+| P2-004 | CSRF | P2 | **FIXED ✅** | JWT requests exempted from CSRF (commit a9238a3) |
+| **P0-005** | **Session Creation** | **P0** | **OPEN ⚠️** | **Missing active_sessions column breaks agent selection** |
+
+---
+
+## P2-004: CSRF Fix Verification ✅
+
+### Builder's Fix (Commit a9238a3)
+
+```
+fix(csrf): exempt JWT-authenticated requests from CSRF protection
+
+- Modified CSRFProtection middleware to skip validation for Bearer token requests
+- Programmatic API clients (curl, scripts, CI/CD) can now use JWT authentication
+- CSRF protection still active for cookie-based session authentication
+```
+
+### Test Results
+
+**Before Fix**:
+```json
+{
+  "error": "CSRF token missing",
+  "message": "CSRF cookie not found"
+}
+```
+
+**After Fix**:
+```json
+{
+  "error": "No agents available",
+  "message": "No online agents are currently available to handle this session. Please try again later."
+}
+```
+
+**Status**: ✅ CSRF fix works! The error changed from CSRF to a business logic error, proving JWT authentication now bypasses CSRF.
+
+### Test Command
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<password>"}' | jq -r '.token')
+
+curl -s -X POST http://localhost:8000/api/v1/sessions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"user":"admin","template":"firefox-browser","resources":{"memory":"1Gi","cpu":"500m"},"persistentHome":false}'
+```
+
+**Result**: HTTP 503 Service Unavailable (not HTTP 403 Forbidden)
+
+---
+
+## P0-005: Missing active_sessions Column ❌
+
+### Root Cause
+
+**File**: `api/internal/api/handlers.go:690-695`
+
+```go
+err = h.db.DB().QueryRowContext(ctx, `
+    SELECT agent_id FROM agents
+    WHERE status = 'online' AND platform = $1
+    ORDER BY active_sessions ASC    // ❌ Column doesn't exist!
+    LIMIT 1
+`, h.platform).Scan(&agentID)
+```
+
+The query attempts to `ORDER BY active_sessions ASC`, but the `agents` table has **no such column**.
+
+### Agents Table Schema
+
+```sql
+streamspace=# \d agents
+                     Column     |            Type
+--------------------------------+-----------------------------
+ id                             | uuid
+ agent_id                       | character varying(255)
+ platform                       | character varying(50)
+ region                         | character varying(100)
+ status                         | character varying(50)
+ capacity                       | jsonb
+ last_heartbeat                 | timestamp without time zone
+ websocket_id                   | character varying(255)
+ metadata                       | jsonb
+ created_at                     | timestamp without time zone
+ updated_at                     | timestamp without time zone
+
+❌ NO active_sessions COLUMN
+```
+
+### Error Flow
+
+1. User calls POST /api/v1/sessions with valid JWT token ✅
+2. API creates Session CRD successfully ✅
+3. API queries agents table with invalid SQL ❌
+4. PostgreSQL returns error (column doesn't exist) ❌
+5. Go returns `sql.ErrNoRows` ❌
+6. Handler treats this as "no agents available" ❌
+7. API returns HTTP 503 Service Unavailable ❌
+
+### Evidence
+
+**Agent is Online**:
+```bash
+$ kubectl exec -n streamspace streamspace-postgres-0 -- psql -U streamspace -d streamspace -c \
+  "SELECT agent_id, status, platform, last_heartbeat FROM agents;"
+
+     agent_id     | status |  platform  |       last_heartbeat
+------------------+--------+------------+----------------------------
+ k8s-prod-cluster | online | kubernetes | 2025-11-21 20:14:10.671964
+```
+
+**Agent Connected via WebSocket**:
+```bash
+$ kubectl logs -n streamspace deploy/streamspace-api | grep k8s-prod-cluster | tail -3
+2025/11/21 20:12:10 [AgentWebSocket] Agent k8s-prod-cluster connected (platform: kubernetes)
+2025/11/21 20:12:40 [AgentWebSocket] Heartbeat from agent k8s-prod-cluster (status: online, activeSessions: 0)
+2025/11/21 20:13:40 [AgentWebSocket] Heartbeat from agent k8s-prod-cluster (status: online, activeSessions: 0)
+```
+
+**Session Creation Fails**:
+```bash
+$ curl -s -X POST http://localhost:8000/api/v1/sessions -H "Authorization: Bearer $TOKEN" ...
+{
+  "error": "No agents available",
+  "message": "No online agents are currently available to handle this session. Please try again later."
+}
+```
+
+**API Logs Show Error**:
+```bash
+$ kubectl logs -n streamspace deploy/streamspace-api | grep ERROR | tail -2
+2025/11/21 20:12:13 ERROR map[method:POST path:/api/v1/sessions status:503 user_id:admin]
+2025/11/21 20:13:42 ERROR map[method:POST path:/api/v1/sessions status:503 user_id:admin]
+```
+
+---
+
+## Recommended Solution
+
+### Option 1: Calculate Active Sessions with Subquery (Recommended)
+
+```go
+err = h.db.DB().QueryRowContext(ctx, `
+    SELECT a.agent_id
+    FROM agents a
+    LEFT JOIN (
+        SELECT agent_id, COUNT(*) as active_sessions
+        FROM sessions
+        WHERE status IN ('running', 'starting')
+        GROUP BY agent_id
+    ) s ON a.agent_id = s.agent_id
+    WHERE a.status = 'online' AND a.platform = $1
+    ORDER BY COALESCE(s.active_sessions, 0) ASC
+    LIMIT 1
+`, h.platform).Scan(&agentID)
+```
+
+**Pros**:
+- No schema changes required
+- Dynamically calculates active sessions
+- Accurate load balancing
+
+**Cons**:
+- Slightly more complex query
+- Requires JOIN on every session creation
+
+### Option 2: Remove ORDER BY (Quick Fix)
+
+```go
+err = h.db.DB().QueryRowContext(ctx, `
+    SELECT agent_id FROM agents
+    WHERE status = 'online' AND platform = $1
+    LIMIT 1
+`, h.platform).Scan(&agentID)
+```
+
+**Pros**:
+- Immediate fix
+- Unblocks testing
+
+**Cons**:
+- No load balancing
+- Not a proper solution
+
+---
+
+## Impact Assessment
+
+### What Works ✅
+
+1. **Authentication & Authorization**:
+   - ✅ Admin login works
+   - ✅ JWT token generation succeeds
+   - ✅ JWT tokens accepted without CSRF
+
+2. **Agent Connectivity**:
+   - ✅ Agent registers successfully
+   - ✅ Agent connects via WebSocket
+   - ✅ Heartbeats sent and received
+   - ✅ Agent marked as `online` in database
+
+3. **CSRF Protection**:
+   - ✅ JWT requests exempted from CSRF
+   - ✅ Programmatic API access unblocked
+
+### What's Broken ❌
+
+1. **Session Creation**:
+   - ❌ All POST /api/v1/sessions requests fail
+   - ❌ 100% failure rate
+   - ❌ Agent selection query fails due to missing column
+   - ❌ No sessions can be created via API
+   - ❌ Web UI session creation broken
+   - ❌ Cannot test pod provisioning
+   - ❌ Cannot verify full v2.0-beta workflow
 
 ---
 
@@ -231,73 +270,110 @@ Sessions created via `kubectl apply` are **intentionally not processed**:
 | Scenario | Status | Notes |
 |----------|--------|-------|
 | 1. Agent Registration | ✅ PASS | Agent online, heartbeats working |
-| 2. Session Creation | ⏳ BLOCKED | CSRF protection blocks API access |
-| 3. VNC Connection | ⏳ BLOCKED | Depends on scenario 2 |
-| 4. VNC Streaming | ⏳ BLOCKED | Depends on scenario 2 |
-| 5. Session Lifecycle | ⏳ BLOCKED | Depends on scenario 2 |
-| 6. Agent Failover | ⏳ BLOCKED | Depends on scenario 2 |
-| 7. Concurrent Sessions | ⏳ BLOCKED | Depends on scenario 2 |
-| 8. Error Handling | ⏳ BLOCKED | Depends on scenario 2 |
+| 2. Authentication | ✅ PASS | Login and JWT generation work |
+| 3. CSRF Protection | ✅ PASS | JWT requests bypass CSRF |
+| 4. Session Creation | ❌ FAIL | P0 bug: missing active_sessions column |
+| 5. Agent Selection | ❌ FAIL | SQL query fails |
+| 6. Command Dispatching | ⏳ BLOCKED | Depends on scenario 4 |
+| 7. Pod Provisioning | ⏳ BLOCKED | Depends on scenario 4 |
+| 8. VNC Connection | ⏳ BLOCKED | Depends on scenario 4 |
 
-**Test Coverage**: 1/8 scenarios = 12.5%
-**Blocking Issue**: P2 CSRF protection
+**Test Coverage**: 3/8 scenarios = 37.5%
+**Blocking Issue**: P0 bug in agent selection query
+
+---
+
+## Deployment Status
+
+### Images Built and Deployed ✅
+
+```bash
+$ docker images | grep streamspace.*local
+streamspace/streamspace-api:local           f810f0e059a5   168MB   (with CSRF fix)
+streamspace/streamspace-ui:local            7ee6c9a21612   85.6MB
+streamspace/streamspace-k8s-agent:local     9146c3735175   87.5MB
+```
+
+### Pods Running ✅
+
+```bash
+$ kubectl get pods -n streamspace
+NAME                                      READY   STATUS    RESTARTS   AGE
+streamspace-api-5bd97c787c-sfqtp          1/1     Running   0          15m
+streamspace-api-5bd97c787c-7wk9l          1/1     Running   0          15m
+streamspace-k8s-agent-75fb565575-pwqrv    1/1     Running   1          25m
+streamspace-postgres-0                    1/1     Running   1          3h
+```
+
+### Services ✅
+
+```bash
+$ kubectl get svc -n streamspace
+NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)
+streamspace-api        ClusterIP   10.43.104.32    <none>        8000/TCP
+streamspace-postgres   ClusterIP   10.43.51.201    <none>        5432/TCP
+```
 
 ---
 
 ## Recommendations
 
-### Immediate Actions
+### Immediate Actions (P0)
 
-1. **Fix P2 CSRF Bug** (Priority: High):
-   - Add CSRF token to login response
-   - Or exempt JWT-authenticated requests from CSRF
-   - See BUG_REPORT_P2_CSRF_PROTECTION.md for solutions
+1. **Fix P0-005 Bug** (Builder, ETA: 30 minutes):
+   - Implement Option 1 (subquery) or Option 2 (remove ORDER BY)
+   - Test query directly in PostgreSQL first
+   - Rebuild API image
+   - Redeploy to k3s
+   - Retest session creation
 
-2. **Complete Integration Testing**:
-   - Once CSRF is fixed, run full test suite
-   - Verify agent command reception
-   - Verify pod provisioning
-   - Test all 8 scenarios
-
-3. **Document v2.0-beta Architecture**:
-   - Update ARCHITECTURE.md with controller removal
-   - Explain API-direct session creation
-   - Document external CRD limitation
+2. **Complete Integration Testing** (Validator, ETA: 1 hour):
+   - Verify session creation succeeds
+   - Confirm agent receives command
+   - Check pod is provisioned
+   - Test full workflow end-to-end
 
 ### Production Readiness
 
 **Status**: NOT READY for production
 
 **Reasons**:
-- ❌ P2 CSRF bug blocks programmatic API access
-- ❌ Integration testing incomplete (12.5% coverage)
-- ⚠️ External CRD creation not supported (design choice)
+- ❌ **P0 Bug**: Session creation completely broken
+- ❌ Integration testing incomplete (37.5% coverage)
+- ⚠️ No load balancing without active_sessions column
 
 **Required Before v2.0-beta Release**:
-1. Fix P2 CSRF bug
+1. Fix P0-005 bug (missing active_sessions column)
 2. Complete integration testing (all 8 scenarios)
-3. Document architectural changes
-4. Verify production deployment
+3. Verify pod provisioning end-to-end
+4. Test VNC connectivity
 
 ---
 
 ## Conclusion
 
-Builder's v2.0-beta session creation implementation is **architecturally sound and correctly implemented**. The code has been reviewed, the deployment is successful, and the CommandDispatcher is running. However, end-to-end validation is blocked by the P2 CSRF bug.
+Builder's CSRF fix (commit a9238a3) **works correctly** and unblocked programmatic API access. However, integration testing immediately revealed a **critical P0 bug** in the session creation handler: the SQL query references a non-existent `active_sessions` column, causing 100% failure rate for session creation.
 
 **Key Achievements**:
-- ✅ All 3 critical bugs fixed by Builder (P0 agent crash, P1 auth, session creation)
-- ✅ v2.0-beta architecture fully implemented
-- ✅ Controller successfully deprecated
-- ✅ Deployment verified with correct images
+- ✅ P2 CSRF bug fixed (commit a9238a3)
+- ✅ JWT authentication works without CSRF
+- ✅ Agent connectivity fully functional
+- ✅ Deployment successful with updated images
+
+**Critical Blocker**:
+- ❌ **P0-005**: Missing `active_sessions` column breaks all session creation attempts
+- ❌ Session creation has **never worked** since Builder's implementation (commit 3284bdf)
+- ❌ Code review was insufficient - integration testing caught the bug
 
 **Next Steps**:
-1. Escalate P2 CSRF bug to Builder
-2. Complete integration testing after CSRF fix
-3. Document v2.0-beta architectural changes
+1. Escalate P0-005 to Builder for immediate fix
+2. Retest session creation after fix
+3. Complete full integration test suite
+4. Update validation report with final results
 
 ---
 
 **Validator**: Claude Code
 **Date**: 2025-11-21
-**Branch**: claude/v2-validator
+**Branch**: `claude/v2-validator`
+**Bug Report**: BUG_REPORT_P0_ACTIVE_SESSIONS_COLUMN.md
