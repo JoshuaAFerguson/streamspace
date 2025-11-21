@@ -620,6 +620,129 @@ agents/k8s-agent/
 
 ---
 
+## 📦 Integration Update - Wave 7 (2025-11-21)
+
+### Architect → Team Integration Summary
+
+**Integration Date:** 2025-11-21 (Wave 7)
+**Integrated By:** Agent 1 (Architect)
+**Status:** ✅ Successfully integrated Validator deployment testing + Scribe website updates
+
+**Integrated Changes:**
+
+### Validator (Agent 3) - v2.0-beta Deployment Testing + Helm Fixes ✅
+
+**Commits Integrated:** 2 commits (f611b65, 62d09a1)
+**Files Changed:** 9 files (+1,540 lines, -148 lines)
+
+**Work Completed:**
+
+**1. Helm Chart Fixes (Commit f611b65):**
+- **Removed chart/templates/nats.yaml** - Deleted entire NATS configuration (v1.x legacy)
+- **Added JWT_SECRET** to api-deployment.yaml (line 68) - Fixed missing environment variable
+- **Removed NATS env vars** from api-deployment.yaml (lines 84-96)
+- **Removed NATS env vars** from controller-deployment.yaml (lines 67-79)
+- **Result**: `helm lint ./chart` passes with zero errors/warnings ✅
+
+**2. Deployment Testing (Commit 62d09a1):**
+Created comprehensive deployment documentation (1,404 lines across 3 files):
+
+**DEPLOYMENT_SUMMARY_V2_BETA.md (515 lines):**
+- Complete deployment timeline and procedures
+- Docker Desktop Kubernetes deployment (successful)
+- Built images: API (171 MB), UI (85.6 MB), K8s Agent (87.4 MB)
+- Deployed Control Plane successfully (API + UI + PostgreSQL)
+- Admin credentials auto-generated and verified
+- Documented deployment commands and validation steps
+
+**BUG_REPORT_P0_HELM_CHART_v2.md (624 lines):**
+- Documented NATS and JWT_SECRET issues (now RESOLVED)
+- Complete root cause analysis and fixes
+- Before/after diffs showing all changes
+- Validation procedures and testing results
+
+**BUG_REPORT_P0_HELM_v4.md (265 lines):**
+- Discovered Helm v4.0.0 regression bug
+- Blocks chart loading from directories
+- Documented symptoms, reproduction steps
+- Workaround: Downgrade to Helm v3 for now
+- External blocker (not StreamSpace issue)
+
+**Deployment Status:**
+- ✅ Control Plane: OPERATIONAL (API, UI, Database)
+- ✅ Admin Access: Working (credentials generated)
+- ⚠️ K8s Agent: Missing from Helm chart (requires Builder fix)
+- ⚠️ Integration Testing: Blocked until K8s Agent deployed
+
+**Impact:**
+- First successful v2.0-beta deployment completed!
+- Discovered and fixed 2 P0 Helm chart bugs
+- Validated Docker Desktop deployment path
+- Identified K8s Agent missing from Helm chart (new P0 blocker)
+- Comprehensive deployment documentation for users
+
+### Scribe (Agent 4) - Website Updates for v2.0-beta ✅
+
+**Commits Integrated:** 1 commit (373bd5e)
+**Files Changed:** 6 files (+375 lines, -283 lines)
+
+**Work Completed:**
+
+Updated all website pages for v2.0-beta architecture and streamspace-dev organization:
+
+**site/index.html:**
+- Updated architecture description (Control Plane + Agent model)
+- Removed LinuxServer.io references
+- Added v2.0-beta status badge
+- Updated repository links to streamspace-dev
+
+**site/docs.html:**
+- Reorganized for v2.0 architecture (Control Plane, Agents, Deployment)
+- Added Agent deployment documentation links
+- Updated migration guide references
+- Removed v1.x controller documentation
+
+**site/features.html:**
+- Added multi-platform agent architecture
+- Updated VNC proxy description (end-to-end through Control Plane)
+- Removed direct-to-pod streaming references
+- Updated for agent-based deployment model
+
+**site/getting-started.html:**
+- Complete rewrite for v2.0-beta installation
+- Added Helm chart instructions for Control Plane
+- Added K8s Agent deployment steps
+- Updated repository URLs to streamspace-dev
+- Added agent registration workflow
+
+**site/plugins.html + site/templates.html:**
+- Updated repository references
+- Minor branding updates
+
+**Impact:**
+- Website now accurately reflects v2.0-beta architecture
+- All links point to streamspace-dev organization
+- Installation guides updated for agent-based deployment
+- Marketing copy emphasizes multi-platform capability
+
+**Integration Summary:**
+- **Total Lines Changed**: 1,784 (1,540 deployment docs/fixes + 375 website - 431 deletions)
+- **Validator**: First successful deployment! Control Plane operational ✅
+- **Validator**: Discovered K8s Agent missing from Helm chart (P0 blocker for integration tests)
+- **Scribe**: Website fully updated for v2.0-beta and streamspace-dev
+- **Zero Conflicts**: Clean merges on both integrations
+
+**🎉 MAJOR MILESTONE: First v2.0-beta Deployment Success! Control Plane Operational!**
+
+**📋 NEW P0 BLOCKER DISCOVERED:**
+- K8s Agent configuration missing from Helm chart
+- Requires Builder (Agent 2) to add k8sAgent deployment template
+- Blocks all 8 integration test scenarios (agent required for sessions)
+
+All changes committed and merged to `feature/streamspace-v2-agent-refactor` ✅
+
+---
+
 ## 🚀 Active Tasks - v2.0-beta Release (Phase 10)
 
 ### 🎯 Current Sprint: Testing & Documentation (Week 1-2)
