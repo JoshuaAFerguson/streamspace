@@ -1798,6 +1798,7 @@ All changes committed and merged to `feature/streamspace-v2-agent-refactor` ✅
   - Verify agent reconnection handling
   - Test session creation via UI and API
   - Performance testing (latency, throughput)
+  - **UI Testing with Playwright**: Automated browser testing of React UI
 - **Test Scenarios**:
   1. **Agent Registration**: K8s agent connects to Control Plane
   2. **Session Creation**: User creates session via UI
@@ -1807,6 +1808,13 @@ All changes committed and merged to `feature/streamspace-v2-agent-refactor` ✅
   6. **Agent Failover**: Kill agent, verify reconnection
   7. **Concurrent Sessions**: Multiple users, multiple sessions
   8. **Error Handling**: Network failures, pod crashes, resource limits
+  9. **UI Testing (Playwright)**: Automated web UI testing
+     - Login flow testing
+     - Session creation via UI
+     - Session list and management
+     - Navigation and routing
+     - Error message display
+     - Responsive design validation
 - **Acceptance Criteria**:
   - [ ] K8s agent registration working
   - [ ] Session creation via UI functional
@@ -1817,11 +1825,17 @@ All changes committed and merged to `feature/streamspace-v2-agent-refactor` ✅
   - [ ] Multi-session concurrency validated
   - [ ] Error scenarios documented
   - [ ] Performance benchmarks recorded
+  - [ ] **Playwright UI tests created and passing**
+  - [ ] **UI screenshots captured for documentation**
+  - [ ] **Login and authentication flow validated via UI**
+  - [ ] **Session management workflows tested in browser**
 - **Deliverables**:
   - Test report documenting all scenarios
   - Bug list (if any discovered)
   - Performance metrics
   - Integration test suite (automated tests)
+  - **Playwright UI test suite** (automated browser tests)
+  - **UI test screenshots** (visual validation)
 
 ---
 
