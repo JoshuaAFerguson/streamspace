@@ -65,6 +65,11 @@ spec:
                 key: {{ include "streamspace.postgresql.secretKey" . }}
           - name: DB_SSLMODE
             value: disable
+          - name: JWT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "streamspace.fullname" . }}-secrets
+                key: jwt-secret
           - name: API_PORT
             value: {{ .Values.api.config.port | quote }}
           - name: GIN_MODE
@@ -81,19 +86,6 @@ spec:
                 fieldPath: metadata.namespace
           - name: PLATFORM
             value: kubernetes
-          {{- if .Values.nats.enabled }}
-          - name: NATS_URL
-            value: {{ include "streamspace.nats.url" . }}
-          {{- if and .Values.nats.external.enabled .Values.nats.external.user }}
-          - name: NATS_USER
-            value: {{ .Values.nats.external.user }}
-          - name: NATS_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: {{ .Values.nats.external.existingSecret }}
-                key: {{ .Values.nats.external.existingSecretPasswordKey }}
-          {{- end }}
-          {{- end }}
           {{- if .Values.redis.enabled }}
           - name: CACHE_ENABLED
             value: "true"
