@@ -3826,9 +3826,9 @@ You can start your refactor work right now. The codebase is well-tested, well-do
 2. ✅ Phase 9: Database Schema
 3. ✅ Phase 2: Agent Registration (COMPLETE 2025-11-21)
 4. ✅ Phase 3: WebSocket Command Channel (COMPLETE 2025-11-21)
-5. 🔄 Phase 5: K8s Agent Conversion (IN PROGRESS)
-6. ⏳ Phase 4: VNC Proxy/Tunnel
-7. ⏳ Phase 6: K8s Agent VNC Tunneling
+5. ✅ Phase 5: K8s Agent Conversion (COMPLETE 2025-11-21) 🎉
+6. 🔄 Phase 6: K8s Agent VNC Tunneling (IN PROGRESS)
+7. ⏳ Phase 4: VNC Proxy/Tunnel
 8. ⏳ Phase 8: UI Updates
 9. ⏳ Phase 7: Docker Agent
 10. ⏳ Phase 10: Testing & Migration
@@ -4308,13 +4308,14 @@ Implement WebSocket hub for bidirectional agent communication. Agents connect TO
 
 ---
 
-### Phase 5: K8s Agent - Convert Controller to Agent 🔄
+### Phase 5: K8s Agent - Convert Controller to Agent ✅
 
-**Status:** IN PROGRESS
+**Status:** COMPLETE
 **Assigned To:** Builder
 **Started:** 2025-11-21
+**Completed:** 2025-11-21
 **Priority:** CRITICAL
-**Duration:** 7-10 days (estimated)
+**Duration:** 7-10 days (estimated) → 1 day (actual)
 **Dependencies:** Phase 2 (Agent Registration) ✅, Phase 3 (WebSocket) ✅
 
 **Objective:**
@@ -4323,6 +4324,25 @@ Convert the existing Kubernetes controller (`k8s-controller/`) to a Kubernetes A
 **Key Architectural Change:**
 - **Old (v1.0):** Controller runs inside cluster, watches CRDs, creates pods directly
 - **New (v2.0):** Agent runs inside cluster, connects TO Control Plane WebSocket, receives commands, creates pods
+
+**Completion Summary:**
+- ✅ main.go (230 lines) - Agent entry point and lifecycle
+- ✅ connection.go (270 lines) - WebSocket connection and reconnection
+- ✅ message_handler.go (150 lines) - Message routing and responses
+- ✅ handlers.go (300 lines) - Command handlers (start/stop/hibernate/wake)
+- ✅ k8s_operations.go (370 lines) - Kubernetes resource management
+- ✅ config.go (90 lines) - Configuration and validation
+- ✅ errors.go (50 lines) - Error definitions
+- ✅ agent_test.go (280 lines, 14 test cases)
+- ✅ README.md (220 lines) - Complete documentation
+- ✅ Dockerfile (45 lines) - Container build
+- ✅ k8s/rbac.yaml (80 lines) - RBAC permissions
+- ✅ k8s/deployment.yaml (85 lines) - Deployment manifest
+- ✅ k8s/configmap.yaml (25 lines) - Configuration
+- ✅ go.mod (40 lines) - Dependencies
+
+**Total Implementation:** ~2,300 lines (code + tests + docs)
+**Test Coverage:** 14 test cases covering all major functionality
 
 **Tasks for Builder:**
 
@@ -4627,6 +4647,48 @@ Convert the existing Kubernetes controller (`k8s-controller/`) to a Kubernetes A
 - Notify Validator for testing
 - Notify Scribe for documentation
 - Prepare for Phase 6 (VNC Tunneling)
+
+---
+
+### Phase 6: K8s Agent - VNC Tunneling 🔄
+
+**Status:** IN PROGRESS
+**Assigned To:** Builder
+**Started:** 2025-11-21
+**Priority:** CRITICAL
+**Duration:** 3-5 days (estimated)
+**Dependencies:** Phase 3 (WebSocket) ✅, Phase 5 (K8s Agent) ✅
+
+**Objective:**
+Implement VNC traffic tunneling through the Control Plane. The K8s Agent will port-forward to local pods and tunnel VNC traffic back to the Control Plane, which proxies it to the UI.
+
+**Key Architecture:**
+- **Old (v1.0):** UI → Direct WebSocket → Pod IP:5900
+- **New (v2.0):** UI → Control Plane `/vnc/{sessionId}` → Agent WebSocket → Port-Forward → Pod
+
+**Tasks for Builder:**
+
+See `.claude/multi-agent/MULTI_AGENT_PLAN.md` for complete Phase 6 specifications (implementation patterns, acceptance criteria, and testing requirements).
+
+**Critical Files to Create:**
+1. `agents/k8s-agent/vnc_tunnel.go` - Port-forward tunnel manager
+2. `agents/k8s-agent/vnc_handler.go` - VNC message handlers
+3. `api/internal/handlers/vnc_proxy.go` - Control Plane VNC proxy
+4. Update `api/internal/models/agent_protocol.go` - Add VNC messages
+5. Tests for all components
+
+**Acceptance Criteria:**
+- ✅ Agent creates port-forward to pod VNC port (5900)
+- ✅ Agent relays VNC traffic via WebSocket
+- ✅ Control Plane VNC proxy endpoint works
+- ✅ UI connects to VNC via Control Plane proxy
+- ✅ Bidirectional VNC traffic flows correctly
+- ✅ Multiple concurrent VNC sessions supported
+- ✅ Unit tests >70% coverage
+
+**After Completion:**
+- Notify Architect for integration
+- VNC tunneling across networks will be operational!
 
 ---
 
