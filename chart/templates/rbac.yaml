@@ -114,6 +114,19 @@ metadata:
   labels:
     {{- include "streamspace.k8sAgent.labels" . | nindent 4 }}
 rules:
+  # StreamSpace CRDs - Templates and Sessions
+  - apiGroups: ["stream.space"]
+    resources: ["templates"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["stream.space"]
+    resources: ["sessions"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - apiGroups: ["stream.space"]
+    resources: ["sessions/status"]
+    verbs: ["get", "update", "patch"]
+
   # Deployments for session pods
   - apiGroups: ["apps"]
     resources: ["deployments"]
