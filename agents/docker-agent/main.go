@@ -63,7 +63,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -391,8 +390,11 @@ func (a *DockerAgent) sendMessage(message interface{}) error {
 }
 
 // writePump handles WebSocket writes (single goroutine, single writer).
+//
+// FIX: Align with k8s-agent implementation - use pingPeriod for WebSocket pings.
+// This is separate from application heartbeats (sent by SendHeartbeats goroutine).
 func (a *DockerAgent) writePump() {
-	ticker := time.NewTicker(time.Duration(a.config.HeartbeatInterval) * time.Second)
+	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
 	for {
