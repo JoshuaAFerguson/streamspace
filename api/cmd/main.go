@@ -281,7 +281,8 @@ func main() {
 	}
 
 	// Initialize API handlers
-	apiHandler := api.NewHandler(database, k8sClient, eventPublisher, commandDispatcher, connTracker, syncService, wsManager, quotaEnforcer, platform)
+	// v2.0-beta: k8sClient is now OPTIONAL (last parameter) - can be nil for standalone API
+	apiHandler := api.NewHandler(database, eventPublisher, commandDispatcher, connTracker, syncService, wsManager, quotaEnforcer, platform, k8sClient)
 	userHandler := handlers.NewUserHandler(userDB, groupDB)
 	groupHandler := handlers.NewGroupHandler(groupDB, userDB)
 	authHandler := auth.NewAuthHandler(userDB, jwtManager, samlAuth)
