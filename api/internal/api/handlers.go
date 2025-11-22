@@ -547,6 +547,47 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	}
 	log.Printf("Fetched template %s from database (ID: %d)", template.Name, template.ID)
 
+	// v2.0-beta FIX: Ensure template manifest is valid for agent
+	// If manifest is empty/invalid, construct a basic Template CRD spec
+	if len(template.Manifest) == 0 {
+		log.Printf("Warning: Template %s has empty manifest, constructing basic Template CRD", template.Name)
+		// Create a minimal valid Template CRD manifest
+		basicManifest := map[string]interface{}{
+			"apiVersion": "stream.space/v1alpha1",
+			"kind":       "Template",
+			"metadata": map[string]interface{}{
+				"name":      template.Name,
+				"namespace": "streamspace",
+			},
+			"spec": map[string]interface{}{
+				"displayName": template.DisplayName,
+				"description": template.Description,
+				"category":    template.Category,
+				"appType":     template.AppType,
+				// Use a sensible default image for testing if we don't have one
+				"baseImage": "lscr.io/linuxserver/firefox:latest",
+				"ports": []map[string]interface{}{
+					{
+						"name":          "vnc",
+						"containerPort": 3000,
+						"protocol":      "TCP",
+					},
+				},
+				"defaultResources": map[string]interface{}{
+					"memory": "2Gi",
+					"cpu":    "1000m",
+				},
+			},
+		}
+		manifestJSON, err := json.Marshal(basicManifest)
+		if err != nil {
+			log.Printf("Failed to marshal basic manifest: %v", err)
+		} else {
+			template.Manifest = manifestJSON
+			log.Printf("Constructed basic manifest for template %s", template.Name)
+		}
+	}
+
 	// Step 3: Determine resource allocation (memory/CPU)
 	// Priority: request > system defaults
 	memory := "2Gi"   // System default
