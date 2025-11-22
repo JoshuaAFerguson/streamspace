@@ -17,12 +17,20 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// templateGVR is the GroupVersionResource for Template CRDs
-var templateGVR = schema.GroupVersionResource{
-	Group:    "stream.space",
-	Version:  "v1alpha1",
-	Resource: "templates",
-}
+// GVR definitions for StreamSpace CRDs
+var (
+	templateGVR = schema.GroupVersionResource{
+		Group:    "stream.space",
+		Version:  "v1alpha1",
+		Resource: "templates",
+	}
+
+	sessionGVR = schema.GroupVersionResource{
+		Group:    "stream.space",
+		Version:  "v1alpha1",
+		Resource: "sessions",
+	}
+)
 
 // Template represents a StreamSpace Template CRD
 type Template struct {
@@ -196,6 +204,71 @@ func parseTemplateCRD(obj *unstructured.Unstructured) (*Template, error) {
 	}
 
 	return template, nil
+}
+
+// createSessionCRD creates a Session Custom Resource in Kubernetes.
+//
+// This creates the Session CRD after Deployment/Service/PVC are created,
+// establishing the session record in Kubernetes.
+func createSessionCRD(dynamicClient dynamic.Interface, namespace string, spec *SessionSpec, podName, podIP string) error {
+	ctx := context.Background()
+
+	// Determine VNC port (default 3000)
+	vncPort := int32(3000)
+
+	// Build Session CRD object
+	obj := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "stream.space/v1alpha1",
+			"kind":       "Session",
+			"metadata": map[string]interface{}{
+				"name":      spec.SessionID,
+				"namespace": namespace,
+				"labels": map[string]interface{}{
+					"app":      "streamspace-session",
+					"session":  spec.SessionID,
+					"user":     spec.User,
+					"template": spec.Template,
+				},
+			},
+			"spec": map[string]interface{}{
+				"user":           spec.User,
+				"template":       spec.Template,
+				"state":          "running",
+				"persistentHome": spec.PersistentHome,
+			},
+		},
+	}
+
+	// Add optional spec fields
+	sessionSpec := obj.Object["spec"].(map[string]interface{})
+
+	if spec.Memory != "" || spec.CPU != "" {
+		resources := make(map[string]interface{})
+		if spec.Memory != "" {
+			resources["memory"] = spec.Memory
+		}
+		if spec.CPU != "" {
+			resources["cpu"] = spec.CPU
+		}
+		sessionSpec["resources"] = resources
+	}
+
+	// Add status subresource
+	obj.Object["status"] = map[string]interface{}{
+		"phase":   "Running",
+		"podName": podName,
+		"url":     fmt.Sprintf("http://%s:%d", podIP, vncPort),
+	}
+
+	// Create the Session CRD
+	_, err := dynamicClient.Resource(sessionGVR).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Session CRD: %w", err)
+	}
+
+	log.Printf("[K8sOps] Created Session CRD: %s (pod: %s, url: http://%s:%d)", spec.SessionID, podName, podIP, vncPort)
+	return nil
 }
 
 // createSessionDeployment creates a Kubernetes Deployment for a session.
@@ -462,7 +535,7 @@ func createSessionPVC(client *kubernetes.Clientset, namespace string, spec *Sess
 // waitForPodReady waits for a pod to reach Running state.
 //
 // It polls the pod status every 2 seconds until the pod is ready or timeout occurs.
-func waitForPodReady(client *kubernetes.Clientset, namespace, sessionID string, timeoutSeconds int) (string, error) {
+func waitForPodReady(client *kubernetes.Clientset, namespace, sessionID string, timeoutSeconds int) (podName string, podIP string, err error) {
 	ctx := context.Background()
 	timeout := time.After(time.Duration(timeoutSeconds) * time.Second)
 	ticker := time.NewTicker(2 * time.Second)
@@ -473,14 +546,14 @@ func waitForPodReady(client *kubernetes.Clientset, namespace, sessionID string, 
 	for {
 		select {
 		case <-timeout:
-			return "", fmt.Errorf("timeout waiting for pod to be ready")
+			return "", "", fmt.Errorf("timeout waiting for pod to be ready")
 
 		case <-ticker.C:
 			pods, err := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 				LabelSelector: labelSelector,
 			})
 			if err != nil {
-				return "", err
+				return "", "", err
 			}
 
 			if len(pods.Items) == 0 {
@@ -494,7 +567,7 @@ func waitForPodReady(client *kubernetes.Clientset, namespace, sessionID string, 
 				for _, condition := range pod.Status.Conditions {
 					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
 						log.Printf("[K8sOps] Pod ready: %s (IP: %s)", pod.Name, pod.Status.PodIP)
-						return pod.Status.PodIP, nil
+						return pod.Name, pod.Status.PodIP, nil
 					}
 				}
 			}

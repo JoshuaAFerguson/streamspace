@@ -120,12 +120,18 @@ func (h *StartSessionHandler) Handle(cmd *CommandMessage) (*CommandResult, error
 	}
 
 	// Wait for pod to be ready
-	podIP, err := waitForPodReady(h.kubeClient, h.config.Namespace, sessionID, 120)
+	podName, podIP, err := waitForPodReady(h.kubeClient, h.config.Namespace, sessionID, 120)
 	if err != nil {
 		return nil, fmt.Errorf("pod not ready: %w", err)
 	}
 
-	log.Printf("[StartSessionHandler] Session %s started successfully (pod IP: %s)", sessionID, podIP)
+	log.Printf("[StartSessionHandler] Session %s started successfully (pod: %s, IP: %s)", sessionID, podName, podIP)
+
+	// Create Session CRD in Kubernetes (v2.0: Agent creates Session CRD)
+	if err := createSessionCRD(h.dynamicClient, h.config.Namespace, spec, podName, podIP); err != nil {
+		log.Printf("[StartSessionHandler] Warning: Failed to create Session CRD: %v", err)
+		// Don't fail the command - Session CRD is informational
+	}
 
 	// Initialize VNC tunnel for this session
 	if h.agent != nil {
@@ -143,6 +149,7 @@ func (h *StartSessionHandler) Handle(cmd *CommandMessage) (*CommandResult, error
 			"deployment": deployment.Name,
 			"service":    service.Name,
 			"pvc":        pvcName,
+			"podName":    podName,
 			"podIP":      podIP,
 			"vncPort":    3000, // Default VNC port
 			"state":      "running",
@@ -308,17 +315,18 @@ func (h *WakeSessionHandler) Handle(cmd *CommandMessage) (*CommandResult, error)
 	}
 
 	// Wait for pod to be ready
-	podIP, err := waitForPodReady(h.kubeClient, h.config.Namespace, sessionID, 120)
+	podName, podIP, err := waitForPodReady(h.kubeClient, h.config.Namespace, sessionID, 120)
 	if err != nil {
 		return nil, fmt.Errorf("pod not ready after wake: %w", err)
 	}
 
-	log.Printf("[WakeSessionHandler] Session %s woke successfully (pod IP: %s)", sessionID, podIP)
+	log.Printf("[WakeSessionHandler] Session %s woke successfully (pod: %s, IP: %s)", sessionID, podName, podIP)
 
 	return &CommandResult{
 		Success: true,
 		Data: map[string]interface{}{
 			"sessionId": sessionID,
+			"podName":   podName,
 			"podIP":     podIP,
 			"vncPort":   3000,
 			"state":     "running",
