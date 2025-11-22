@@ -156,14 +156,15 @@ var (
 type Handler struct {
 	db             *db.Database                 // Database for caching and metadata
 	sessionDB      *db.SessionDB                // Session database operations
-	k8sClient      *k8s.Client                  // Kubernetes client for CRD operations
+	templateDB     *db.TemplateDB               // Template database operations
+	k8sClient      *k8s.Client                  // DEPRECATED: Will be removed (v2.0-beta uses database only)
 	publisher      *events.Publisher            // DEPRECATED: NATS event publisher (stub, no-op)
 	dispatcher     CommandDispatcher            // Command dispatcher for agent WebSocket commands
 	connTracker    *tracker.ConnectionTracker   // Active connection tracking
 	syncService    *sync.SyncService            // Repository synchronization
 	wsManager      *websocket.Manager           // WebSocket connection manager
 	quotaEnforcer  *quota.Enforcer              // Resource quota enforcement
-	namespace      string                       // Kubernetes namespace for resources
+	namespace      string                       // DEPRECATED: K8s-specific (v2.0-beta: agent handles namespaces)
 	platform       string                       // Target platform (kubernetes, docker, etc.)
 }
 
@@ -208,6 +209,7 @@ func NewHandler(database *db.Database, k8sClient *k8s.Client, publisher *events.
 	return &Handler{
 		db:            database,
 		sessionDB:     db.NewSessionDB(database.DB()),
+		templateDB:    db.NewTemplateDB(database),
 		k8sClient:     k8sClient,
 		publisher:     publisher,
 		dispatcher:    dispatcher,
@@ -436,12 +438,12 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		}
 
 		if installStatus == "pending" || installStatus == "creating" {
-			// Self-healing: Check if the Template CRD actually exists in Kubernetes
-			// This handles cases where the controller created the template but status wasn't updated
+			// v2.0-beta: Check if template exists in database (catalog_templates)
+			// This handles cases where the template was synced but status wasn't updated
 			if appTemplateName != "" {
-				_, templateErr := h.k8sClient.GetTemplate(ctx, h.namespace, appTemplateName)
+				_, templateErr := h.templateDB.GetTemplateByName(ctx, appTemplateName)
 				if templateErr == nil {
-					// Template exists! Update status in database and continue
+					// Template exists in database! Update status and continue
 					_, updateErr := h.db.DB().ExecContext(ctx, `
 						UPDATE installed_applications
 						SET install_status = 'installed', install_message = 'Template ready (self-healed)', updated_at = NOW()
@@ -450,7 +452,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 					if updateErr != nil {
 						log.Printf("Failed to update install status for %s: %v", req.ApplicationId, updateErr)
 					} else {
-						log.Printf("Self-healed application %s status to installed (template found)", req.ApplicationId)
+						log.Printf("Self-healed application %s status to installed (template found in database)", req.ApplicationId)
 					}
 					// Continue with session creation - don't reject
 					installStatus = "installed"
@@ -486,9 +488,25 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	// Step 2: v2.0-beta - Template validation handled by agent
-	// Agent will fetch template from Kubernetes and validate it exists
-	// API just passes template name to agent in command payload
+	// Step 2: v2.0-beta - Fetch template from database (catalog_templates)
+	// API includes full template manifest in command payload for agent
+	template, err := h.templateDB.GetTemplateByName(ctx, templateName)
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":   "Template not found",
+			"message": fmt.Sprintf("Template '%s' does not exist in the catalog", templateName),
+		})
+		return
+	}
+	if err != nil {
+		log.Printf("Failed to fetch template %s: %v", templateName, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to fetch template",
+			"message": fmt.Sprintf("Database error: %v", err),
+		})
+		return
+	}
+	log.Printf("Fetched template %s from database (ID: %d)", template.Name, template.ID)
 
 	// Step 3: Determine resource allocation (memory/CPU)
 	// Priority: request > system defaults
@@ -635,12 +653,13 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	log.Printf("Created session %s in database with state=pending", sessionName)
 
 	// Step 9: Build command payload
-	// Agent will fetch template details from K8s (image, vncPort, env, etc.)
+	// v2.0-beta: Include full template manifest in payload (agent doesn't fetch from K8s)
 	payload := models.CommandPayload{
 		"sessionId":           sessionName,
 		"user":                req.User,
 		"template":            templateName,
-		"namespace":           h.namespace,
+		"templateManifest":    template.Manifest, // Full Template CRD spec from database
+		"namespace":           h.namespace, // TODO: Remove (agent determines namespace from config)
 		"memory":              memory,
 		"cpu":                 cpu,
 		"persistentHome":      persistentHome,
