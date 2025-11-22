@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -61,9 +62,54 @@ type VNCConfig struct {
 	Protocol string
 }
 
+// parseTemplateFromPayload parses template manifest from command payload.
+//
+// v2.0-beta: API sends full template manifest (from database) in command payload,
+// eliminating need for agent to fetch Template CRD from Kubernetes.
+// This allows API to run outside K8s cluster.
+func parseTemplateFromPayload(payload map[string]interface{}, namespace string) (*Template, error) {
+	// Get templateManifest from payload
+	manifestInterface, ok := payload["templateManifest"]
+	if !ok {
+		return nil, fmt.Errorf("templateManifest not found in payload")
+	}
+
+	// Convert to map[string]interface{} (unstructured format)
+	var manifestMap map[string]interface{}
+	switch v := manifestInterface.(type) {
+	case map[string]interface{}:
+		manifestMap = v
+	case []byte:
+		// If it's JSON bytes, unmarshal it
+		if err := json.Unmarshal(v, &manifestMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal templateManifest bytes: %w", err)
+		}
+	default:
+		return nil, fmt.Errorf("templateManifest has invalid type: %T", manifestInterface)
+	}
+
+	// Create unstructured object
+	obj := &unstructured.Unstructured{Object: manifestMap}
+
+	// Use existing parseTemplateCRD to convert to Template struct
+	template, err := parseTemplateCRD(obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse template manifest: %w", err)
+	}
+
+	// Override namespace if not set
+	if template.Namespace == "" {
+		template.Namespace = namespace
+	}
+
+	log.Printf("[K8sOps] Parsed template from payload: %s (image: %s, ports: %d)", template.Name, template.BaseImage, len(template.Ports))
+	return template, nil
+}
+
 // fetchTemplateCRD fetches a Template CRD from Kubernetes.
 //
-// This replaces the hardcoded getTemplateImage() function with dynamic template fetching.
+// v2.0-beta: This is now a FALLBACK for backwards compatibility.
+// Normally, template manifest is sent in command payload.
 func fetchTemplateCRD(dynamicClient dynamic.Interface, namespace, templateName string) (*Template, error) {
 	ctx := context.Background()
 
@@ -79,7 +125,7 @@ func fetchTemplateCRD(dynamicClient dynamic.Interface, namespace, templateName s
 		return nil, fmt.Errorf("failed to parse template %s: %w", templateName, err)
 	}
 
-	log.Printf("[K8sOps] Fetched template: %s (image: %s, ports: %d)", template.Name, template.BaseImage, len(template.Ports))
+	log.Printf("[K8sOps] Fetched template from K8s: %s (image: %s, ports: %d)", template.Name, template.BaseImage, len(template.Ports))
 	return template, nil
 }
 

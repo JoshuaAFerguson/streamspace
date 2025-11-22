@@ -53,7 +53,7 @@ func NewStartSessionHandler(kubeClient *kubernetes.Clientset, dynamicClient dyna
 //
 // Steps:
 //  1. Parse session spec from command payload
-//  2. Fetch Template CRD from Kubernetes
+//  2. Parse template manifest from payload (v2.0-beta: API sends full manifest, no K8s fetch)
 //  3. Create Deployment (using template)
 //  4. Create Service (ClusterIP)
 //  5. Create PVC (if persistentHome enabled)
@@ -91,10 +91,16 @@ func (h *StartSessionHandler) Handle(cmd *CommandMessage) (*CommandResult, error
 	log.Printf("[StartSessionHandler] Session spec: user=%s, template=%s, persistent=%v",
 		spec.User, spec.Template, spec.PersistentHome)
 
-	// Fetch Template CRD from Kubernetes (v2.0: Agent fetches template, not API)
-	template, err := fetchTemplateCRD(h.dynamicClient, h.config.Namespace, templateName)
+	// v2.0-beta: Parse template manifest from payload (API sends full manifest from database)
+	// This eliminates the need for agent to have read access to Template CRDs
+	template, err := parseTemplateFromPayload(cmd.Payload, h.config.Namespace)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch template %s: %w", templateName, err)
+		// Fallback: Try fetching from Kubernetes for backwards compatibility
+		log.Printf("[StartSessionHandler] Warning: No templateManifest in payload, falling back to K8s fetch: %v", err)
+		template, err = fetchTemplateCRD(h.dynamicClient, h.config.Namespace, templateName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get template %s: %w", templateName, err)
+		}
 	}
 
 	log.Printf("[StartSessionHandler] Using template: %s (image: %s)", template.DisplayName, template.BaseImage)
