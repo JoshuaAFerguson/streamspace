@@ -115,7 +115,6 @@ import (
 	"github.com/streamspace-dev/streamspace/api/internal/tracker"
 	"github.com/streamspace-dev/streamspace/api/internal/websocket"
 	"gopkg.in/yaml.v3"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -763,8 +762,8 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 		return
 	}
 
-	// Get current session info for the event
-	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
+	// v2.0-beta: Get current session info from database (no K8s access)
+	session, err := h.sessionDB.GetSession(ctx, sessionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
@@ -776,21 +775,21 @@ func (h *Handler) UpdateSession(c *gin.Context) {
 	case "hibernated":
 		event := &events.SessionHibernateEvent{
 			SessionID: sessionID,
-			UserID:    session.User,
+			UserID:    session.UserID,
 			Platform:  h.platform,
 		}
 		publishErr = h.publisher.PublishSessionHibernate(ctx, event)
 	case "running":
 		event := &events.SessionWakeEvent{
 			SessionID: sessionID,
-			UserID:    session.User,
+			UserID:    session.UserID,
 			Platform:  h.platform,
 		}
 		publishErr = h.publisher.PublishSessionWake(ctx, event)
 	case "terminated":
 		event := &events.SessionDeleteEvent{
 			SessionID: sessionID,
-			UserID:    session.User,
+			UserID:    session.UserID,
 			Platform:  h.platform,
 		}
 		publishErr = h.publisher.PublishSessionDelete(ctx, event)
@@ -1229,8 +1228,8 @@ func (h *Handler) ConnectSession(c *gin.Context) {
 		return
 	}
 
-	// Verify session exists
-	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
+	// v2.0-beta: Verify session exists in database (no K8s access)
+	session, err := h.sessionDB.GetSession(ctx, sessionID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
@@ -1253,7 +1252,7 @@ func (h *Handler) ConnectSession(c *gin.Context) {
 	}
 
 	// Determine session readiness and URL availability
-	sessionUrl := session.Status.URL
+	sessionUrl := session.URL
 	message := "Connection established."
 	ready := true
 
@@ -1363,37 +1362,24 @@ func (h *Handler) UpdateSessionTags(c *gin.Context) {
 		return
 	}
 
-	// Get the session first
-	obj, err := h.k8sClient.GetDynamicClient().Resource(sessionGVR).Namespace(h.namespace).Get(ctx, sessionID, metav1.GetOptions{})
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+	// v2.0-beta: Update tags in database only (no K8s access)
+	if err := h.sessionDB.UpdateSessionTags(ctx, sessionID, req.Tags); err != nil {
+		if err.Error() == fmt.Sprintf("session not found: %s", sessionID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Update the tags in spec
-	spec, ok := obj.Object["spec"].(map[string]interface{})
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid session spec"})
-		return
-	}
-
-	spec["tags"] = req.Tags
-
-	// Update the session
-	_, err = h.k8sClient.GetDynamicClient().Resource(sessionGVR).Namespace(h.namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	// Get the updated session from database
+	session, err := h.sessionDB.GetSession(ctx, sessionID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Get the updated session using the k8s client
-	session, err := h.k8sClient.GetSession(ctx, h.namespace, sessionID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, h.enrichSessionWithDBInfo(ctx, session))
+	c.JSON(http.StatusOK, session)
 }
 
 // ListSessionsByTags returns sessions filtered by tags
@@ -1407,43 +1393,16 @@ func (h *Handler) ListSessionsByTags(c *gin.Context) {
 		return
 	}
 
-	// Build label selector for tags
-	// Multiple tags are OR'd together
-	labelSelectors := make([]string, 0, len(tags))
-	for _, tag := range tags {
-		if tag != "" {
-			labelSelectors = append(labelSelectors, fmt.Sprintf("tag.stream.space/%s=true", tag))
-		}
-	}
-
-	// Note: Kubernetes label selectors with comma are AND not OR
-	// For OR logic, we need to list all sessions and filter in code
-	allSessions, err := h.k8sClient.ListSessions(ctx, h.namespace)
+	// v2.0-beta: Query database directly for sessions with tags (no K8s access)
+	sessions, err := h.sessionDB.ListSessionsByTags(ctx, tags)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Filter sessions that have any of the requested tags
-	filtered := make([]*k8s.Session, 0)
-	for _, session := range allSessions {
-		for _, sessionTag := range session.Tags {
-			for _, requestedTag := range tags {
-				if sessionTag == requestedTag {
-					filtered = append(filtered, session)
-					goto nextSession
-				}
-			}
-		}
-	nextSession:
-	}
-
-	// Enrich with database info
-	enriched := h.enrichSessionsWithDBInfo(ctx, filtered)
-
 	c.JSON(http.StatusOK, gin.H{
-		"sessions": enriched,
-		"total":    len(enriched),
+		"sessions": sessions,
+		"total":    len(sessions),
 		"tags":     tags,
 	})
 }
@@ -2377,36 +2336,12 @@ func (h *Handler) convertDBSessionsToResponse(sessions []*db.Session) []map[stri
 }
 
 // convertDBSessionToResponse converts a database session to API response format.
-// If the database doesn't have the session URL, it fetches the status from Kubernetes.
+// v2.0-beta: Database is the single source of truth, no K8s fallback.
 func (h *Handler) convertDBSessionToResponse(session *db.Session) map[string]interface{} {
-	// Fetch Kubernetes status if database is missing URL or phase is empty
-	// This handles the case where the controller hasn't yet communicated status back to API
+	// v2.0-beta: Use database values directly (agent updates database)
 	url := session.URL
 	podName := session.PodName
 	phase := session.State
-
-	if (url == "" || phase == "") && h.k8sClient != nil {
-		ctx := context.Background()
-		k8sSession, err := h.k8sClient.GetSession(ctx, h.namespace, session.ID)
-		if err == nil && k8sSession != nil {
-			if k8sSession.Status.URL != "" {
-				url = k8sSession.Status.URL
-			}
-			if k8sSession.Status.PodName != "" {
-				podName = k8sSession.Status.PodName
-			}
-			if k8sSession.Status.Phase != "" {
-				phase = k8sSession.Status.Phase
-			}
-			// Also update resources from Kubernetes if missing
-			if session.Memory == "" && k8sSession.Resources.Memory != "" {
-				session.Memory = k8sSession.Resources.Memory
-			}
-			if session.CPU == "" && k8sSession.Resources.CPU != "" {
-				session.CPU = k8sSession.Resources.CPU
-			}
-		}
-	}
 
 	// Capitalize phase for status.phase (UI expects "Running" not "running")
 	capitalizedPhase := phase

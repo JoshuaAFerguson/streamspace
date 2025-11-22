@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq" // PostgreSQL array support
 )
 
 // Session represents a StreamSpace session in the database.
@@ -33,6 +34,7 @@ type Session struct {
 	PersistentHome     bool       `json:"persistent_home"`
 	IdleTimeout        string     `json:"idle_timeout,omitempty"`
 	MaxSessionDuration string     `json:"max_session_duration,omitempty"`
+	Tags               []string   `json:"tags,omitempty"` // Session tags for filtering and organization
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 	LastConnection     *time.Time `json:"last_connection,omitempty"`
@@ -65,14 +67,15 @@ func (s *SessionDB) CreateSession(ctx context.Context, session *Session) error {
 			id, user_id, team_id, template_name, state, app_type,
 			active_connections, url, namespace, platform, agent_id, pod_name,
 			memory, cpu, persistent_home, idle_timeout, max_session_duration,
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			tags, created_at, updated_at, last_connection, last_disconnect, last_activity
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
 		ON CONFLICT (id) DO UPDATE SET
 			state = EXCLUDED.state,
 			url = EXCLUDED.url,
 			agent_id = EXCLUDED.agent_id,
 			pod_name = EXCLUDED.pod_name,
+			tags = EXCLUDED.tags,
 			updated_at = EXCLUDED.updated_at
 	`
 
@@ -80,7 +83,7 @@ func (s *SessionDB) CreateSession(ctx context.Context, session *Session) error {
 		session.ID, session.UserID, nullString(session.TeamID), session.TemplateName, session.State, session.AppType,
 		session.ActiveConnections, session.URL, session.Namespace, session.Platform, nullString(session.AgentID), session.PodName,
 		session.Memory, session.CPU, session.PersistentHome, session.IdleTimeout, session.MaxSessionDuration,
-		session.CreatedAt, session.UpdatedAt, session.LastConnection, session.LastDisconnect, session.LastActivity,
+		pq.Array(session.Tags), session.CreatedAt, session.UpdatedAt, session.LastConnection, session.LastDisconnect, session.LastActivity,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create session %s for user %s: %w", session.ID, session.UserID, err)
@@ -99,6 +102,7 @@ func (s *SessionDB) GetSession(ctx context.Context, sessionID string) (*Session,
 			COALESCE(platform, 'kubernetes'), COALESCE(pod_name, ''),
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
+			COALESCE(tags, ARRAY[]::TEXT[]),
 			created_at, updated_at, last_connection, last_disconnect, last_activity
 		FROM sessions
 		WHERE id = $1
@@ -108,6 +112,7 @@ func (s *SessionDB) GetSession(ctx context.Context, sessionID string) (*Session,
 		&session.ID, &session.UserID, &session.TeamID, &session.TemplateName, &session.State, &session.AppType,
 		&session.ActiveConnections, &session.URL, &session.Namespace, &session.Platform, &session.PodName,
 		&session.Memory, &session.CPU, &session.PersistentHome, &session.IdleTimeout, &session.MaxSessionDuration,
+		pq.Array(&session.Tags),
 		&session.CreatedAt, &session.UpdatedAt, &session.LastConnection, &session.LastDisconnect, &session.LastActivity,
 	)
 	if err != nil {
@@ -129,6 +134,7 @@ func (s *SessionDB) ListSessions(ctx context.Context) ([]*Session, error) {
 			COALESCE(platform, 'kubernetes'), COALESCE(pod_name, ''),
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
+			COALESCE(tags, ARRAY[]::TEXT[]),
 			created_at, updated_at, last_connection, last_disconnect, last_activity
 		FROM sessions
 		WHERE state != 'deleted'
@@ -147,6 +153,7 @@ func (s *SessionDB) ListSessionsByUser(ctx context.Context, userID string) ([]*S
 			COALESCE(platform, 'kubernetes'), COALESCE(pod_name, ''),
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
+			COALESCE(tags, ARRAY[]::TEXT[]),
 			created_at, updated_at, last_connection, last_disconnect, last_activity
 		FROM sessions
 		WHERE user_id = $1 AND state != 'deleted'
@@ -175,6 +182,7 @@ func (s *SessionDB) ListSessionsByState(ctx context.Context, state string) ([]*S
 			COALESCE(platform, 'kubernetes'), COALESCE(pod_name, ''),
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
+			COALESCE(tags, ARRAY[]::TEXT[]),
 			created_at, updated_at, last_connection, last_disconnect, last_activity
 		FROM sessions
 		WHERE state = $1
@@ -328,6 +336,7 @@ func (s *SessionDB) GetIdleSessions(ctx context.Context) ([]*Session, error) {
 			COALESCE(platform, 'kubernetes'), COALESCE(pod_name, ''),
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
+			COALESCE(tags, ARRAY[]::TEXT[]),
 			created_at, updated_at, last_connection, last_disconnect, last_activity
 		FROM sessions
 		WHERE state = 'running'
@@ -365,6 +374,7 @@ func (s *SessionDB) scanSessions(rows *sql.Rows) ([]*Session, error) {
 			&session.ID, &session.UserID, &session.TeamID, &session.TemplateName, &session.State, &session.AppType,
 			&session.ActiveConnections, &session.URL, &session.Namespace, &session.Platform, &session.PodName,
 			&session.Memory, &session.CPU, &session.PersistentHome, &session.IdleTimeout, &session.MaxSessionDuration,
+			pq.Array(&session.Tags),
 			&session.CreatedAt, &session.UpdatedAt, &session.LastConnection, &session.LastDisconnect, &session.LastActivity,
 		)
 		if err != nil {
@@ -377,6 +387,56 @@ func (s *SessionDB) scanSessions(rows *sql.Rows) ([]*Session, error) {
 		return nil, fmt.Errorf("error iterating session rows: %w", err)
 	}
 
+	return sessions, nil
+}
+
+// UpdateSessionTags updates the tags for a session.
+func (s *SessionDB) UpdateSessionTags(ctx context.Context, sessionID string, tags []string) error {
+	query := `
+		UPDATE sessions
+		SET tags = $1, updated_at = $2
+		WHERE id = $3
+	`
+
+	result, err := s.db.ExecContext(ctx, query, pq.Array(tags), time.Now(), sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to update tags for session %s: %w", sessionID, err)
+	}
+
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	return nil
+}
+
+// ListSessionsByTags retrieves sessions that have ANY of the specified tags.
+func (s *SessionDB) ListSessionsByTags(ctx context.Context, tags []string) ([]*Session, error) {
+	query := `
+		SELECT
+			id, user_id, COALESCE(team_id, ''), template_name, state, COALESCE(app_type, 'desktop'),
+			active_connections, COALESCE(url, ''), COALESCE(namespace, 'streamspace'),
+			COALESCE(platform, 'kubernetes'), COALESCE(pod_name, ''),
+			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
+			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
+			COALESCE(tags, ARRAY[]::TEXT[]),
+			created_at, updated_at, last_connection, last_disconnect, last_activity
+		FROM sessions
+		WHERE tags && $1 AND state != 'deleted'
+		ORDER BY created_at DESC
+	`
+
+	rows, err := s.db.QueryContext(ctx, query, pq.Array(tags))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sessions by tags: %w", err)
+	}
+	defer rows.Close()
+
+	sessions, err := s.scanSessions(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan sessions: %w", err)
+	}
 	return sessions, nil
 }
 
