@@ -10,6 +10,7 @@ DROP INDEX IF EXISTS idx_agents_cluster_status;
 DROP INDEX IF EXISTS idx_agents_cluster_id;
 
 -- Drop columns
+ALTER TABLE agents
 DROP COLUMN IF EXISTS cluster_name;
 
 ALTER TABLE agents

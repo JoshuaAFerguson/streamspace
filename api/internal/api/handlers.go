@@ -111,6 +111,7 @@ import (
 	"github.com/streamspace-dev/streamspace/api/internal/k8s"
 	"github.com/streamspace-dev/streamspace/api/internal/models"
 	"github.com/streamspace-dev/streamspace/api/internal/quota"
+	"github.com/streamspace-dev/streamspace/api/internal/services"
 	"github.com/streamspace-dev/streamspace/api/internal/sync"
 	"github.com/streamspace-dev/streamspace/api/internal/tracker"
 	"github.com/streamspace-dev/streamspace/api/internal/websocket"
@@ -163,6 +164,7 @@ type Handler struct {
 	db             *db.Database                 // Database for caching and metadata
 	sessionDB      *db.SessionDB                // Session database operations
 	templateDB     *db.TemplateDB               // Template database operations
+	agentSelector  *services.AgentSelector      // Agent selection for multi-agent routing
 	k8sClient      *k8s.Client                  // OPTIONAL: K8s client for cluster management endpoints only
 	namespace      string                       // OPTIONAL: K8s namespace for cluster management
 	publisher      *events.Publisher            // DEPRECATED: NATS event publisher (stub, no-op)
@@ -200,6 +202,7 @@ type CommandDispatcher interface {
 // - wsManager: Manager for WebSocket connections and real-time updates
 // - quotaEnforcer: Enforcer for validating resource quotas
 // - platform: Target platform (kubernetes, docker, hyperv, vcenter)
+// - agentHub: Agent hub for tracking connected agents (required for multi-agent routing)
 // - k8sClient: OPTIONAL Kubernetes client for cluster management endpoints (can be nil)
 //
 // v2.0-beta ARCHITECTURE:
@@ -209,6 +212,12 @@ type CommandDispatcher interface {
 // endpoints (ListNodes, ListPods, GetMetrics, etc.). When nil, these endpoints
 // return stub data.
 //
+// MULTI-AGENT ROUTING:
+//
+// The agentHub is required to enable multi-agent routing and load balancing.
+// AgentSelector uses agentHub to check which agents are connected and healthy
+// before routing session creation requests.
+//
 // NAMESPACE RESOLUTION:
 //
 // The Kubernetes namespace is read from NAMESPACE environment variable.
@@ -217,11 +226,11 @@ type CommandDispatcher interface {
 // EXAMPLE USAGE:
 //
 //   // API running in Kubernetes with cluster management
-//   handler := NewHandler(db, publisher, dispatcher, connTracker, syncService, wsManager, quotaEnforcer, "kubernetes", k8sClient)
+//   handler := NewHandler(db, publisher, dispatcher, connTracker, syncService, wsManager, quotaEnforcer, "kubernetes", agentHub, k8sClient)
 //
 //   // API running standalone (no K8s dependencies)
-//   handler := NewHandler(db, publisher, dispatcher, connTracker, syncService, wsManager, quotaEnforcer, "kubernetes", nil)
-func NewHandler(database *db.Database, publisher *events.Publisher, dispatcher CommandDispatcher, connTracker *tracker.ConnectionTracker, syncService *sync.SyncService, wsManager *websocket.Manager, quotaEnforcer *quota.Enforcer, platform string, k8sClient *k8s.Client) *Handler {
+//   handler := NewHandler(db, publisher, dispatcher, connTracker, syncService, wsManager, quotaEnforcer, "kubernetes", agentHub, nil)
+func NewHandler(database *db.Database, publisher *events.Publisher, dispatcher CommandDispatcher, connTracker *tracker.ConnectionTracker, syncService *sync.SyncService, wsManager *websocket.Manager, quotaEnforcer *quota.Enforcer, platform string, agentHub *websocket.AgentHub, k8sClient *k8s.Client) *Handler {
 	if platform == "" {
 		platform = events.PlatformKubernetes // Default platform
 	}
@@ -232,10 +241,14 @@ func NewHandler(database *db.Database, publisher *events.Publisher, dispatcher C
 		namespace = DefaultNamespace
 	}
 
+	// Create AgentSelector for multi-agent routing and load balancing
+	agentSelector := services.NewAgentSelector(database.DB(), agentHub)
+
 	return &Handler{
 		db:            database,
 		sessionDB:     db.NewSessionDB(database.DB()),
 		templateDB:    db.NewTemplateDB(database),
+		agentSelector: agentSelector,
 		k8sClient:     k8sClient, // Can be nil for standalone API
 		namespace:     namespace,
 		publisher:     publisher,
@@ -624,34 +637,34 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	maxSessionDuration := req.MaxSessionDuration
 	tags := req.Tags
 
-	// Step 7: v2.0-beta - Select an agent to handle this session (load-balanced by active sessions)
-	// Calculate active sessions dynamically from sessions table for accurate load balancing
-	// v2.0-beta: Use agent_id column (not controller_id which is legacy v1.x)
-	var agentID string
-	err = h.db.DB().QueryRowContext(ctx, `
-		SELECT a.agent_id
-		FROM agents a
-		LEFT JOIN (
-			SELECT agent_id, COUNT(*) as active_sessions
-			FROM sessions
-			WHERE state IN ('running', 'starting')
-			GROUP BY agent_id
-		) s ON a.agent_id = s.agent_id
-		WHERE a.status = 'online' AND a.platform = $1
-		ORDER BY COALESCE(s.active_sessions, 0) ASC
-		LIMIT 1
-	`, h.platform).Scan(&agentID)
+	// Step 7: v2.0-beta - Select an agent to handle this session using AgentSelector
+	// AgentSelector implements intelligent routing with:
+	//   - Load balancing (by active session count)
+	//   - Health filtering (only online agents with WebSocket connections)
+	//   - Platform filtering (kubernetes, docker, etc.)
+	//   - Optional cluster/region affinity
+	criteria := &services.SelectionCriteria{
+		Platform:         h.platform,
+		PreferLowLoad:    true,
+		RequireConnected: true,
+	}
 
+	selectedAgent, err := h.agentSelector.SelectAgent(ctx, criteria)
 	if err != nil {
 		// No agents available - v2.0-beta: Just return error, no K8s updates
-		log.Printf("No agents available for session %s", sessionName)
+		log.Printf("No agents available for session %s: %v", sessionName, err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"error":   "No agents available",
-			"message": "No online agents are currently available to handle this session. Please try again later.",
+			"message": fmt.Sprintf("No online agents are currently available: %v", err),
 		})
 		return
 	}
-	log.Printf("Selected agent %s for session %s", agentID, sessionName)
+
+	agentID := selectedAgent.AgentID
+	clusterID := selectedAgent.ClusterID
+
+	log.Printf("Selected agent %s (cluster: %s, load: %d sessions) for session %s",
+		agentID, clusterID, selectedAgent.SessionCount, sessionName)
 
 	// Step 8: Create session in DATABASE first (source of truth for v2.0-beta)
 	dbSession := &db.Session{
@@ -661,7 +674,8 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		State:              "pending",
 		Namespace:          DefaultNamespace,
 		Platform:           h.platform,
-		AgentID:            agentID, // v2.0-beta: Track which agent is managing this session
+		AgentID:            agentID,    // v2.0-beta: Track which agent is managing this session
+		ClusterID:          clusterID,  // v2.0-beta: Track which cluster the session runs on
 		Memory:             memory,
 		CPU:                cpu,
 		PersistentHome:     persistentHome,
