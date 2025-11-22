@@ -125,6 +125,12 @@ import (
 //
 // Format: {group}/{version}/namespaces/{namespace}/{resource}
 // Example: stream.space/v1alpha1/namespaces/streamspace/sessions
+const (
+	// DefaultNamespace is the default Kubernetes namespace for resources
+	// v2.0-beta: API doesn't create K8s resources, but passes namespace to agent in payloads
+	DefaultNamespace = "streamspace"
+)
+
 var (
 	sessionGVR = schema.GroupVersionResource{
 		Group:    "stream.space",
@@ -157,16 +163,25 @@ type Handler struct {
 	db             *db.Database                 // Database for caching and metadata
 	sessionDB      *db.SessionDB                // Session database operations
 	templateDB     *db.TemplateDB               // Template database operations
-	k8sClient      *k8s.Client                  // DEPRECATED: Will be removed (v2.0-beta uses database only)
+	k8sClient      *k8s.Client                  // OPTIONAL: K8s client for cluster management endpoints only
+	namespace      string                       // OPTIONAL: K8s namespace for cluster management
 	publisher      *events.Publisher            // DEPRECATED: NATS event publisher (stub, no-op)
 	dispatcher     CommandDispatcher            // Command dispatcher for agent WebSocket commands
 	connTracker    *tracker.ConnectionTracker   // Active connection tracking
 	syncService    *sync.SyncService            // Repository synchronization
 	wsManager      *websocket.Manager           // WebSocket connection manager
 	quotaEnforcer  *quota.Enforcer              // Resource quota enforcement
-	namespace      string                       // DEPRECATED: K8s-specific (v2.0-beta: agent handles namespaces)
 	platform       string                       // Target platform (kubernetes, docker, etc.)
 }
+
+// NOTE ON K8S CLIENT (v2.0-beta):
+//
+// The k8sClient and namespace fields are OPTIONAL and ONLY used for cluster management
+// admin endpoints (ListNodes, ListPods, GetMetrics, etc.).
+//
+// Session and template operations NEVER use k8sClient - they use database + agent pattern.
+// When API runs outside Kubernetes cluster, k8sClient is nil and cluster management
+// endpoints return stub data or "not available" responses.
 
 // CommandDispatcher interface for dispatching commands to agents
 type CommandDispatcher interface {
@@ -178,46 +193,57 @@ type CommandDispatcher interface {
 // PARAMETERS:
 //
 // - database: PostgreSQL database connection for caching and metadata
-// - k8sClient: Kubernetes client for Session/Template CRD operations
 // - publisher: NATS event publisher for platform-agnostic operations
+// - dispatcher: Command dispatcher for sending commands to agents
 // - connTracker: Connection tracker for active session monitoring
 // - syncService: Service for syncing external template repositories
 // - wsManager: Manager for WebSocket connections and real-time updates
 // - quotaEnforcer: Enforcer for validating resource quotas
 // - platform: Target platform (kubernetes, docker, hyperv, vcenter)
+// - k8sClient: OPTIONAL Kubernetes client for cluster management endpoints (can be nil)
+//
+// v2.0-beta ARCHITECTURE:
+//
+// Session and template operations use database + agent pattern (NO K8s dependencies).
+// The k8sClient parameter is OPTIONAL and only used for cluster management admin
+// endpoints (ListNodes, ListPods, GetMetrics, etc.). When nil, these endpoints
+// return stub data.
 //
 // NAMESPACE RESOLUTION:
 //
 // The Kubernetes namespace is read from NAMESPACE environment variable.
-// If not set, defaults to "streamspace".
+// If not set, defaults to "streamspace". Only used when k8sClient is provided.
 //
 // EXAMPLE USAGE:
 //
-//   handler := NewHandler(db, k8sClient, publisher, connTracker, syncService, wsManager, quotaEnforcer, "kubernetes")
-//   router := gin.Default()
-//   router.GET("/api/sessions", handler.ListSessions)
-//   router.POST("/api/sessions", handler.CreateSession)
-func NewHandler(database *db.Database, k8sClient *k8s.Client, publisher *events.Publisher, dispatcher CommandDispatcher, connTracker *tracker.ConnectionTracker, syncService *sync.SyncService, wsManager *websocket.Manager, quotaEnforcer *quota.Enforcer, platform string) *Handler {
-	// Read namespace from environment variable for deployment flexibility
-	namespace := os.Getenv("NAMESPACE")
-	if namespace == "" {
-		namespace = "streamspace" // Default namespace
-	}
+//   // API running in Kubernetes with cluster management
+//   handler := NewHandler(db, publisher, dispatcher, connTracker, syncService, wsManager, quotaEnforcer, "kubernetes", k8sClient)
+//
+//   // API running standalone (no K8s dependencies)
+//   handler := NewHandler(db, publisher, dispatcher, connTracker, syncService, wsManager, quotaEnforcer, "kubernetes", nil)
+func NewHandler(database *db.Database, publisher *events.Publisher, dispatcher CommandDispatcher, connTracker *tracker.ConnectionTracker, syncService *sync.SyncService, wsManager *websocket.Manager, quotaEnforcer *quota.Enforcer, platform string, k8sClient *k8s.Client) *Handler {
 	if platform == "" {
 		platform = events.PlatformKubernetes // Default platform
 	}
+
+	// Read namespace from environment (only used when k8sClient is provided)
+	namespace := os.Getenv("NAMESPACE")
+	if namespace == "" {
+		namespace = DefaultNamespace
+	}
+
 	return &Handler{
 		db:            database,
 		sessionDB:     db.NewSessionDB(database.DB()),
 		templateDB:    db.NewTemplateDB(database),
-		k8sClient:     k8sClient,
+		k8sClient:     k8sClient, // Can be nil for standalone API
+		namespace:     namespace,
 		publisher:     publisher,
 		dispatcher:    dispatcher,
 		connTracker:   connTracker,
 		syncService:   syncService,
 		wsManager:     wsManager,
 		quotaEnforcer: quotaEnforcer,
-		namespace:     namespace,
 		platform:      platform,
 	}
 }
@@ -633,7 +659,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		UserID:             req.User,
 		TemplateName:       templateName,
 		State:              "pending",
-		Namespace:          h.namespace,
+		Namespace:          DefaultNamespace,
 		Platform:           h.platform,
 		AgentID:            agentID, // v2.0-beta: Track which agent is managing this session
 		Memory:             memory,
@@ -659,7 +685,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 		"user":                req.User,
 		"template":            templateName,
 		"templateManifest":    template.Manifest, // Full Template CRD spec from database
-		"namespace":           h.namespace, // TODO: Remove (agent determines namespace from config)
+		"namespace":           DefaultNamespace, // TODO: Remove (agent determines namespace from config)
 		"memory":              memory,
 		"cpu":                 cpu,
 		"persistentHome":      persistentHome,
@@ -738,7 +764,7 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	// Agent will create K8s resources (Deployment, Service, Session CRD) and update database
 	response := map[string]interface{}{
 		"name":               sessionName,
-		"namespace":          h.namespace,
+		"namespace":          DefaultNamespace,
 		"user":               req.User,
 		"template":           templateName,
 		"state":              "pending",
@@ -886,7 +912,7 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 	now := time.Now()
 	payload := map[string]interface{}{
 		"sessionId": sessionID,
-		"namespace": h.namespace,
+		"namespace": DefaultNamespace,
 	}
 
 	// Marshal payload to JSON for database insertion (JSONB column)
@@ -1021,7 +1047,7 @@ func (h *Handler) HibernateSession(c *gin.Context) {
 	now := time.Now()
 	payload := map[string]interface{}{
 		"sessionId": sessionID,
-		"namespace": h.namespace,
+		"namespace": DefaultNamespace,
 	}
 
 	// Marshal payload to JSON for database insertion (JSONB column)
@@ -1156,7 +1182,7 @@ func (h *Handler) WakeSession(c *gin.Context) {
 	now := time.Now()
 	payload := map[string]interface{}{
 		"sessionId": sessionID,
-		"namespace": h.namespace,
+		"namespace": DefaultNamespace,
 	}
 
 	// Marshal payload to JSON for database insertion (JSONB column)
@@ -1440,16 +1466,16 @@ func (h *Handler) ListTemplates(c *gin.Context) {
 	search := c.Query("search")        // Search in name, description, tags
 	sortBy := c.Query("sort")          // name, popularity, created (default: name)
 	tags := c.QueryArray("tags")       // Filter by tags
-	featured := c.Query("featured")    // Filter featured templates
+	featured := c.Query("featured")    // Filter featured templates (TODO: implement with featured_templates join)
 
-	// Get all templates first
-	var templates []*k8s.Template
+	// v2.0-beta: Get templates from database (catalog_templates)
+	var templates []*db.Template
 	var err error
 
 	if category != "" {
-		templates, err = h.k8sClient.ListTemplatesByCategory(ctx, h.namespace, category)
+		templates, err = h.templateDB.ListTemplatesByCategory(ctx, category)
 	} else {
-		templates, err = h.k8sClient.ListTemplates(ctx, h.namespace)
+		templates, err = h.templateDB.ListTemplates(ctx)
 	}
 
 	if err != nil {
@@ -1459,7 +1485,7 @@ func (h *Handler) ListTemplates(c *gin.Context) {
 
 	// Apply search filter
 	if search != "" {
-		filtered := make([]*k8s.Template, 0)
+		filtered := make([]*db.Template, 0)
 		searchLower := strings.ToLower(search)
 
 		for _, tmpl := range templates {
@@ -1486,7 +1512,7 @@ func (h *Handler) ListTemplates(c *gin.Context) {
 
 	// Apply tag filter
 	if len(tags) > 0 {
-		filtered := make([]*k8s.Template, 0)
+		filtered := make([]*db.Template, 0)
 		for _, tmpl := range templates {
 			hasAllTags := true
 			for _, requiredTag := range tags {
@@ -1509,23 +1535,18 @@ func (h *Handler) ListTemplates(c *gin.Context) {
 		templates = filtered
 	}
 
-	// Apply featured filter
+	// Apply featured filter (TODO: join with featured_templates table)
 	if featured == "true" {
-		filtered := make([]*k8s.Template, 0)
-		for _, tmpl := range templates {
-			if tmpl.Featured {
-				filtered = append(filtered, tmpl)
-			}
-		}
-		templates = filtered
+		// Temporarily skip - requires database join with featured_templates
+		log.Printf("Featured filter requested but not yet implemented with database")
 	}
 
 	// Sort templates
 	switch sortBy {
 	case "popularity":
-		// Sort by usage count (if tracked)
+		// Sort by install count
 		sort.Slice(templates, func(i, j int) bool {
-			return templates[i].UsageCount > templates[j].UsageCount
+			return templates[i].InstallCount > templates[j].InstallCount
 		})
 	case "created":
 		// Sort by creation time (newest first)
@@ -1540,7 +1561,7 @@ func (h *Handler) ListTemplates(c *gin.Context) {
 	}
 
 	// Group templates by category for UI
-	categories := make(map[string][]*k8s.Template)
+	categories := make(map[string][]*db.Template)
 	for _, tmpl := range templates {
 		cat := tmpl.Category
 		if cat == "" {
@@ -1569,9 +1590,14 @@ func (h *Handler) GetTemplate(c *gin.Context) {
 	ctx := c.Request.Context()
 	templateID := c.Param("id")
 
-	template, err := h.k8sClient.GetTemplate(ctx, h.namespace, templateID)
-	if err != nil {
+	// v2.0-beta: Get template from database (catalog_templates)
+	template, err := h.templateDB.GetTemplateByName(ctx, templateID)
+	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Template not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -1583,33 +1609,21 @@ func (h *Handler) CreateTemplate(c *gin.Context) {
 	// SECURITY FIX: Use request context for proper cancellation and timeout handling
 	ctx := c.Request.Context()
 
-	var template k8s.Template
+	var template db.Template
 	if err := c.ShouldBindJSON(&template); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	template.Namespace = h.namespace
-
-	created, err := h.k8sClient.CreateTemplate(ctx, &template)
-	if err != nil {
+	// v2.0-beta: Create template in database (catalog_templates)
+	if err := h.templateDB.CreateTemplate(ctx, &template); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Publish template create event for controllers
-	createEvent := &events.TemplateCreateEvent{
-		TemplateID:  created.Name,
-		DisplayName: created.DisplayName,
-		Category:    created.Category,
-		BaseImage:   created.BaseImage,
-		Platform:    h.platform,
-	}
-	if err := h.publisher.PublishTemplateCreate(ctx, createEvent); err != nil {
-		log.Printf("Warning: Failed to publish template create event: %v", err)
-	}
+	log.Printf("Created template %s in database (ID: %d)", template.Name, template.ID)
 
-	c.JSON(http.StatusCreated, created)
+	c.JSON(http.StatusCreated, template)
 }
 
 // DeleteTemplate deletes a template (admin only)
@@ -1618,19 +1632,16 @@ func (h *Handler) DeleteTemplate(c *gin.Context) {
 	ctx := c.Request.Context()
 	templateID := c.Param("id")
 
-	if err := h.k8sClient.DeleteTemplate(ctx, h.namespace, templateID); err != nil {
+	// v2.0-beta: Delete template from database (catalog_templates)
+	if err := h.templateDB.DeleteTemplate(ctx, templateID); err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Template not found"})
+		return
+	} else if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Publish template delete event for controllers
-	deleteEvent := &events.TemplateDeleteEvent{
-		TemplateName: templateID,
-		Platform:     h.platform,
-	}
-	if err := h.publisher.PublishTemplateDelete(ctx, deleteEvent); err != nil {
-		log.Printf("Warning: Failed to publish template delete event: %v", err)
-	}
+	log.Printf("Deleted template %s from database", templateID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Template deleted"})
 }
@@ -1680,10 +1691,14 @@ func (h *Handler) AddTemplateFavorite(c *gin.Context) {
 		return
 	}
 
-	// Verify template exists
-	_, err := h.k8sClient.GetTemplate(ctx, h.namespace, templateID)
-	if err != nil {
+	// v2.0-beta: Verify template exists in database
+	_, err := h.templateDB.GetTemplateByName(ctx, templateID)
+	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Template not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -1800,12 +1815,12 @@ func (h *Handler) ListUserFavoriteTemplates(c *gin.Context) {
 		templateNames = append(templateNames, entry.Name)
 	}
 
-	// Fetch full template details from Kubernetes
-	templates := make([]*k8s.Template, 0, len(templateNames))
+	// v2.0-beta: Fetch full template details from database (catalog_templates)
+	templates := make([]*db.Template, 0, len(templateNames))
 	for _, name := range templateNames {
-		template, err := h.k8sClient.GetTemplate(ctx, h.namespace, name)
+		template, err := h.templateDB.GetTemplateByName(ctx, name)
 		if err != nil {
-			log.Printf("Warning: Favorite template %s not found in cluster: %v", name, err)
+			log.Printf("Warning: Favorite template %s not found in database: %v", name, err)
 			continue
 		}
 		templates = append(templates, template)
@@ -1819,7 +1834,7 @@ func (h *Handler) ListUserFavoriteTemplates(c *gin.Context) {
 			"displayName": tmpl.DisplayName,
 			"description": tmpl.Description,
 			"category":    tmpl.Category,
-			"icon":        tmpl.Icon,
+			"icon":        tmpl.IconURL,
 			"tags":        tmpl.Tags,
 			"favorited":   true,
 			"favoritedAt": favorites[i].FavoritedAt,
@@ -2033,7 +2048,7 @@ func (h *Handler) InstallCatalogTemplate(c *gin.Context) {
 	// Build Template struct from manifest
 	template := &k8s.Template{
 		Name:        name,
-		Namespace:   h.namespace,
+		Namespace:   DefaultNamespace,
 		DisplayName: displayName,
 		Description: description,
 		Category:    category,
@@ -2076,10 +2091,12 @@ func (h *Handler) InstallCatalogTemplate(c *gin.Context) {
 		}
 	}
 
-	// Create Template CRD in Kubernetes
-	createdTemplate, err := h.k8sClient.CreateTemplate(ctx, template)
+	// v2.0-beta: Template already exists in database (catalog_templates)
+	// "Installing" just increments the install count
+	// Agent will fetch template from database when creating sessions
+	err = h.templateDB.IncrementInstallCount(ctx, name)
 	if err != nil {
-		log.Printf("Error creating template in Kubernetes: %v", err)
+		log.Printf("Error incrementing install count: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to install template",
 			"message": err.Error(),
@@ -2087,20 +2104,11 @@ func (h *Handler) InstallCatalogTemplate(c *gin.Context) {
 		return
 	}
 
-	// Increment install count (best effort, don't fail the request if this fails)
-	_, err = h.db.DB().ExecContext(ctx, `
-		UPDATE catalog_templates SET install_count = install_count + 1 WHERE id = $1
-	`, catalogID)
-	if err != nil {
-		// Log error but don't fail the request - install count is not critical
-		log.Printf("Warning: Failed to increment install count for template %s: %v", catalogID, err)
-	}
+	log.Printf("Template %s installed successfully (incremented install_count)", name)
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message":  "Template installed successfully",
-		"template": createdTemplate,
-		"name":     createdTemplate.Name,
-		"namespace": createdTemplate.Namespace,
+		"message": "Template installed successfully",
+		"name":    name,
 	})
 }
 
