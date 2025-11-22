@@ -100,8 +100,17 @@ k8sAgent:
   # Enable K8s Agent deployment
   enabled: true
 
-  # Number of agent replicas (recommended: 1 per cluster)
+  # Number of agent replicas
+  # - For single-pod mode (ha.enabled=false): Set to 1
+  # - For HA mode (ha.enabled=true): Set to 2+ for high availability
   replicaCount: 1
+
+  # High Availability configuration
+  ha:
+    # Enable leader election for agent HA
+    # When enabled, multiple replicas can run but only one will be active (leader)
+    # Standby replicas automatically take over if the leader fails
+    enabled: false
 
   image:
     registry: ghcr.io
