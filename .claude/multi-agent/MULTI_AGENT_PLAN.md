@@ -36,6 +36,86 @@
 
 ---
 
+## 📂 Agent Work Standards
+
+**CRITICAL**: All agents MUST follow these standards when creating reports and documentation.
+
+### Report Location Requirements
+
+**ALL bug reports, test reports, validation reports, and analysis documents MUST be placed in `.claude/reports/`**
+
+#### ✅ Correct Locations
+
+```
+.claude/reports/BUG_REPORT_P0_*.md
+.claude/reports/BUG_REPORT_P1_*.md
+.claude/reports/INTEGRATION_TEST_*.md
+.claude/reports/VALIDATION_RESULTS_*.md
+.claude/reports/*_ANALYSIS.md
+.claude/reports/*_SUMMARY.md
+```
+
+#### ❌ NEVER Put Reports In
+
+```
+BUG_REPORT_*.md         (project root - WRONG)
+TEST_*.md               (project root - WRONG)
+VALIDATION_*.md         (project root - WRONG)
+docs/BUG_REPORT_*.md    (docs/ directory - WRONG)
+```
+
+### Documentation Organization
+
+#### Project Root (`/`)
+
+**ONLY essential, user-facing documentation:**
+- `README.md` - Project overview
+- `FEATURES.md` - Feature status
+- `CONTRIBUTING.md` - Contribution guidelines
+- `CHANGELOG.md` - Version history
+- `DEPLOYMENT.md` - Quick deployment instructions
+
+#### docs/ Directory
+
+**Permanent reference documentation:**
+- `docs/ARCHITECTURE.md` - System design
+- `docs/SCALABILITY.md` - Scaling guide
+- `docs/TROUBLESHOOTING.md` - Common issues
+- `docs/V2_DEPLOYMENT_GUIDE.md` - Detailed deployment
+- `docs/V2_BETA_RELEASE_NOTES.md` - Release notes
+
+#### .claude/reports/ Directory
+
+**ALL agent-generated reports:**
+- Bug reports: `BUG_REPORT_P[0-2]_*.md`
+- Test reports: `INTEGRATION_TEST_*.md`, `*_TEST_REPORT.md`
+- Validation: `*_VALIDATION_RESULTS.md`
+- Analysis: `*_ANALYSIS.md`, `*_AUDIT.md`
+- Summaries: `SESSION_SUMMARY_*.md`
+
+### Why This Matters
+
+1. **Clean Root Directory**: Users browsing the repo see only essential docs
+2. **Organized Work**: All agent reports tracked in one location
+3. **Git History**: Cleaner commits without report clutter
+4. **Discoverability**: Easy to find specific reports by category
+5. **Professional Image**: Organized repo structure for contributors
+
+### Agent Checklist Before Committing
+
+Before creating a commit, ALWAYS verify:
+
+- [ ] Bug reports are in `.claude/reports/`
+- [ ] Test reports are in `.claude/reports/`
+- [ ] Validation reports are in `.claude/reports/`
+- [ ] Only essential docs in project root
+- [ ] Permanent docs in `docs/` directory
+- [ ] Multi-agent coordination in `.claude/multi-agent/`
+
+**If any report is in the wrong location, move it with `git mv` before committing.**
+
+---
+
 ## 🌿 Current Agent Branches (v2.0 Development)
 
 **Updated:** 2025-11-22
