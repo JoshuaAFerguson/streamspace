@@ -52,7 +52,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/streamspace-dev/streamspace/agents/k8s-agent/internal/config"
-	"github.com/streamspace-dev/streamspace/agents/k8s-agent/internal/errors"
 )
 
 // K8sAgent represents a Kubernetes agent instance.
@@ -80,6 +79,10 @@ type K8sAgent struct {
 
 	// connMutex protects wsConn access
 	connMutex sync.RWMutex
+
+	// writeChan queues messages for WebSocket transmission
+	// FIX P0-AGENT-001: Single-writer pattern to prevent concurrent write panics
+	writeChan chan []byte
 
 	// stopChan signals the agent to stop
 	stopChan chan struct{}
@@ -112,6 +115,7 @@ func NewK8sAgent(config *config.AgentConfig) (*K8sAgent, error) {
 		kubeClient:    kubeClient,
 		dynamicClient: dynamicClient,
 		restConfig:    restConfig,
+		writeChan:     make(chan []byte, 256), // FIX P0-AGENT-001: Buffered channel for WebSocket writes
 		stopChan:      make(chan struct{}),
 		doneChan:      make(chan struct{}),
 	}
@@ -207,6 +211,9 @@ func (a *K8sAgent) WaitForShutdown() {
 }
 
 // shutdown performs graceful shutdown of the agent.
+// shutdown performs graceful shutdown of agent resources.
+//
+// FIX P0-AGENT-001: Properly closes write channel to prevent goroutine leaks.
 func (a *K8sAgent) shutdown() {
 	// Close all VNC tunnels
 	if a.vncManager != nil {
@@ -214,15 +221,18 @@ func (a *K8sAgent) shutdown() {
 		a.vncManager.CloseAll()
 	}
 
+	// Close write channel to signal writePump to drain and exit
+	// Note: stopChan was already closed by caller, so writePump will exit
+	close(a.writeChan)
+
+	// Wait briefly for writePump to finish draining write channel
+	time.Sleep(100 * time.Millisecond)
+
 	a.connMutex.Lock()
 	defer a.connMutex.Unlock()
 
 	if a.wsConn != nil {
-		// Send close message
-		a.wsConn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Agent shutting down"))
-
-		// Close connection
+		// Close connection (writePump already stopped, safe to close directly)
 		a.wsConn.Close()
 		a.wsConn = nil
 	}
@@ -529,26 +539,24 @@ func (a *K8sAgent) sendHeartbeat() error {
 }
 
 // sendMessage sends a JSON message over the WebSocket connection.
+//
+// FIX P0-AGENT-001: Uses write channel to prevent concurrent write panics.
+// All WebSocket writes MUST go through writePump goroutine.
 func (a *K8sAgent) sendMessage(message interface{}) error {
-	a.connMutex.RLock()
-	conn := a.wsConn
-	a.connMutex.RUnlock()
-
-	if conn == nil {
-		return errors.ErrNotConnected
-	}
-
 	jsonData, err := json.Marshal(message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	conn.SetWriteDeadline(time.Now().Add(writeWait))
-	if err := conn.WriteMessage(websocket.TextMessage, jsonData); err != nil {
-		return fmt.Errorf("failed to write message: %w", err)
+	// Send via write channel with timeout to prevent blocking
+	select {
+	case a.writeChan <- jsonData:
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("write channel send timeout (channel may be full or blocked)")
+	case <-a.stopChan:
+		return fmt.Errorf("agent is shutting down")
 	}
-
-	return nil
 }
 
 // readPump reads messages from the WebSocket connection.
@@ -596,6 +604,16 @@ func (a *K8sAgent) readPump() {
 // writePump handles periodic ping messages to keep the connection alive.
 //
 // This runs in a dedicated goroutine.
+// writePump handles all WebSocket writes from write channel.
+//
+// FIX P0-AGENT-001: Single-writer pattern to prevent concurrent write panics.
+// This is the ONLY goroutine allowed to write to the WebSocket connection.
+// All other code must send messages via the writeChan channel.
+//
+// Responsibilities:
+//   - Read messages from writeChan and write to WebSocket
+//   - Send periodic ping messages to keep connection alive
+//   - Handle write errors and shutdown gracefully
 func (a *K8sAgent) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -605,7 +623,25 @@ func (a *K8sAgent) writePump() {
 
 	for {
 		select {
+		case message := <-a.writeChan:
+			// Write message from channel to WebSocket
+			a.connMutex.RLock()
+			conn := a.wsConn
+			a.connMutex.RUnlock()
+
+			if conn == nil {
+				log.Println("[K8sAgent] Warning: Dropped message (connection is nil)")
+				continue
+			}
+
+			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				log.Printf("[K8sAgent] Write error: %v", err)
+				return
+			}
+
 		case <-ticker.C:
+			// Send periodic ping to keep connection alive
 			a.connMutex.RLock()
 			conn := a.wsConn
 			a.connMutex.RUnlock()
