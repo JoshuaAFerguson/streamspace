@@ -454,20 +454,20 @@ type UpdateUserRequest struct {
 //	  "parentID": null
 //	}
 type CreateGroupRequest struct {
-	Name        string  `json:"name" binding:"required"`
-	DisplayName string  `json:"displayName" binding:"required"`
-	Description string  `json:"description"`
-	Type        string  `json:"type" binding:"required"`
-	ParentID    *string `json:"parentId,omitempty"`
+	Name        string  `json:"name" binding:"required" validate:"required,min=3,max=50,lowercase,alphanum|contains=-"`
+	DisplayName string  `json:"displayName" binding:"required" validate:"required,min=3,max=100"`
+	Description string  `json:"description" validate:"omitempty,max=500"`
+	Type        string  `json:"type" binding:"required" validate:"required,oneof=team department project"`
+	ParentID    *string `json:"parentId,omitempty" validate:"omitempty,uuid"`
 }
 
 // UpdateGroupRequest represents a request to update an existing group.
 //
 // All fields are optional (pointer types) - only provided fields are updated.
 type UpdateGroupRequest struct {
-	DisplayName *string `json:"displayName,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Type        *string `json:"type,omitempty"`
+	DisplayName *string `json:"displayName,omitempty" validate:"omitempty,min=3,max=100"`
+	Description *string `json:"description,omitempty" validate:"omitempty,max=500"`
+	Type        *string `json:"type,omitempty" validate:"omitempty,oneof=team department project"`
 }
 
 // AddGroupMemberRequest represents a request to add a user to a group.
@@ -479,8 +479,8 @@ type UpdateGroupRequest struct {
 //	  "role": "member"
 //	}
 type AddGroupMemberRequest struct {
-	UserID string `json:"userId" binding:"required"`
-	Role   string `json:"role"` // member, admin, owner
+	UserID string `json:"userId" binding:"required" validate:"required,min=1,max=100"`
+	Role   string `json:"role" validate:"omitempty,oneof=member admin owner"`
 }
 
 // SetQuotaRequest represents a request to set or update user/group quotas.
