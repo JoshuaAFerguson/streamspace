@@ -500,9 +500,11 @@ func (a *DockerAgent) SendHeartbeats() {
 	for {
 		select {
 		case <-ticker.C:
+			// BUG FIX P0-001: Use time.Now() instead of time.Now().Unix()
+			// API expects RFC3339 JSON string, not Unix timestamp int64
 			heartbeat := map[string]interface{}{
 				"type":      "heartbeat",
-				"timestamp": time.Now().Unix(),
+				"timestamp": time.Now(), // Marshals to RFC3339 string in JSON
 				"agentId":   a.config.AgentID,
 				"status":    "online",
 				// TODO: Add actual session count
