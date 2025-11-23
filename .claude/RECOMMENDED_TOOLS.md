@@ -20,6 +20,47 @@ This document provides curated recommendations for **Slash Commands**, **Agent S
 
 ## 🎯 Recommended Slash Commands
 
+### Agent Initialization Commands (NEW!)
+
+**Purpose**: Quick-start commands to initialize agent roles with full context
+
+**`/init-architect` - Initialize Architect (Agent 1)**
+- Loads coordination & integration role
+- Queries GitHub for unassigned issues
+- Shows milestone progress
+- Lists available integration tools
+- Provides current priorities
+
+**`/init-builder` - Initialize Builder (Agent 2)**
+- Loads implementation role
+- Queries assigned Builder issues
+- Shows P0/P1 priorities
+- Lists testing and commit tools
+- Asks which issue to work on
+
+**`/init-validator` - Initialize Validator (Agent 3)**
+- Loads testing & QA role
+- Shows test coverage gaps
+- Queries validation issues
+- Lists testing tools and agents
+- Recommends starting point
+
+**`/init-scribe` - Initialize Scribe (Agent 4)**
+- Loads documentation role
+- Checks for CHANGELOG needs
+- Queries documentation issues
+- Shows recent changes to document
+- Lists doc tools and standards
+
+**Why These Help:**
+- Instant role context loading
+- No manual instruction file reading
+- Automatic GitHub issue prioritization
+- Current focus based on MULTI_AGENT_PLAN.md
+- Consistent startup across sessions
+
+---
+
 ### Essential Development Commands
 
 #### 1. Testing & Quality Assurance
