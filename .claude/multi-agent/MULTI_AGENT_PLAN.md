@@ -3,8 +3,103 @@
 **Project:** StreamSpace - Kubernetes-native Container Streaming Platform
 **Repository:** <https://github.com/streamspace-dev/streamspace>
 **Website:** <https://streamspace.dev>
-**Current Version:** v1.0.0 (Production Ready)
-**Next Phase:** v2.0.0 - VNC Independence (TigerVNC + noVNC stack)
+**Current Version:** v2.0-beta (Integration Testing & Production Hardening)
+**Current Phase:** Production Hardening - 57 Tracked Improvements
+
+---
+
+## 📊 CURRENT STATUS: Production Hardening Phase (2025-11-23)
+
+**Updated by:** Agent 1 (Architect)
+**Date:** 2025-11-23
+
+### 🎯 Major Achievement: Comprehensive Roadmap Created
+
+**Work Completed:**
+- ✅ Created 57 new GitHub issues for production hardening and future features
+- ✅ Organized issues across 4 milestones (v2.0-beta.1, beta.2, v2.1.0, v2.2.0)
+- ✅ Created comprehensive roadmap document (`.github/RECOMMENDATIONS_ROADMAP.md`)
+- ✅ Updated README.md to reflect current architecture and roadmap
+- ✅ Established GitHub Project Board for live tracking
+
+### 📋 GitHub Integration
+
+**Project Board:** <https://github.com/orgs/streamspace-dev/projects/2>
+**Total Issues:** 57+ open issues across all milestones
+
+**Milestones:**
+- **v2.0-beta.1** (8 issues): Critical security + observability (Quick wins - ~20 hours)
+- **v2.0-beta.2** (14 issues): Performance + UX improvements (~60 hours)
+- **v2.1.0** (31 issues): Major features + infrastructure (~200 hours)
+- **v2.2.0** (4 issues): Future vision + advanced features (~80 hours)
+
+**Key Documents:**
+- Roadmap: `.github/RECOMMENDATIONS_ROADMAP.md`
+- Project Guide: `.github/PROJECT_MANAGEMENT_GUIDE.md`
+- Saved Queries: `.github/SAVED_QUERIES.md`
+
+### 🔥 Priority Focus: v2.0-beta.1 (Next 1-2 Weeks)
+
+**Security (P0 - CRITICAL):**
+- #163: Rate Limiting (8 hours)
+- #164: API Input Validation (8 hours)
+- #165: Security Headers (1 hour)
+
+**Observability (P1 - HIGH):**
+- #158: Health Check Endpoints (2 hours) ⭐ **START HERE**
+- #159: Structured Logging (6 hours)
+- #160: Prometheus Metrics (6 hours)
+- #161: OpenTelemetry Tracing (1-2 days)
+- #162: Grafana Dashboards (4-8 hours)
+
+**Total Time:** ~31 hours for production-ready platform
+
+### 📈 What Changed Since Last Update
+
+**Documentation:**
+- Updated README.md with current v2.0-beta status
+- Added production hardening section to README
+- Improved architecture diagram (WebSocket Hub, VNC Proxy)
+- Added links to project board and roadmap
+
+**Project Management:**
+- GitHub Actions workflows (auto-label, weekly reports, stale issues)
+- Issue templates (performance, quick bug, sprint planning)
+- Branch protection rules configured
+- CODEOWNERS file created
+- Additional labels for risk management
+
+**Planning:**
+- 4-phase implementation roadmap (beta.1 → beta.2 → v2.1 → v2.2)
+- Time estimates for all 57 improvements
+- Success criteria for each milestone
+- Quick wins identified for immediate impact
+
+### 🚀 Next Steps for Agents
+
+**Builder (Agent 2):**
+1. Start with #158 (Health Check Endpoints) - 2 hours, immediate value
+2. Continue with security P0 issues (#163, #164, #165)
+3. Implement observability features (#159, #160)
+4. Reference roadmap for implementation details
+
+**Validator (Agent 3):**
+1. Monitor Builder's progress on quick wins
+2. Test security implementations as they're deployed
+3. Prepare integration test plans
+4. Continue with existing validation work
+
+**Scribe (Agent 4):**
+1. Document completed features as they land
+2. Prepare for OpenAPI spec creation (#188)
+3. Plan video tutorial content (#189)
+4. Update CHANGELOG.md with new improvements
+
+**Architect (Agent 1):**
+1. Monitor milestone progress
+2. Coordinate agent work across issues
+3. Weekly status reports (automated via GitHub Actions)
+4. Triage new issues as they arrive
 
 ---
 
@@ -137,13 +232,41 @@ Merge To:   feature/streamspace-v2-agent-refactor
 
 ---
 
-## 🎯 CURRENT FOCUS: v2.0-beta.1 Release Testing & Documentation (UPDATED 2025-11-22 12:30)
+## 🎯 CURRENT FOCUS: Validate P1 Fixes & Resume HA Testing (UPDATED 2025-11-22 20:00)
 
 ### Architect's Coordination Update
 
-**DATE**: 2025-11-22 12:30 UTC
+**DATE**: 2025-11-22 20:00 UTC
 **BY**: Agent 1 (Architect)
-**STATUS**: 🚀 **FEATURE COMPLETE + HA READY** - Final testing and documentation sprint for v2.0-beta.1 release!
+**STATUS**: ✅ **P1 FIXES INTEGRATED** - Ready for validation testing!
+
+### ⚡ UPDATE: P1 Bugs FIXED by Builder (Integrated in Wave 17)
+
+**Validator discovered 2 P1 bugs during testing - Builder has ALREADY FIXED both!**
+
+✅ **P1-MULTI-POD-001**: AgentHub Multi-Pod Support - **FIXED**
+- **Fix**: Redis-backed AgentHub with pub/sub routing (commit 4d17bb6 + a625ac5)
+- **Status**: INTEGRATED in Wave 17 - Ready for validation
+- **Builder Implementation**:
+  - Optional Redis integration for multi-pod mode
+  - Agent→pod mapping in Redis with 5min TTL
+  - Cross-pod command routing via Redis pub/sub
+  - Backwards compatible (works without Redis)
+- **Report**: `.claude/reports/BUG_REPORT_P1_MULTI_POD_001.md`
+
+✅ **P1-SCHEMA-002**: Missing updated_at Column - **FIXED**
+- **Fix**: Migration script 004 adds updated_at column (commit dafb7bb)
+- **Status**: INTEGRATED in Wave 17 - Ready for validation
+- **Builder Implementation**:
+  - Migration adds updated_at TIMESTAMP column
+  - Auto-update trigger on row changes
+  - Backfill existing rows with created_at value
+- **Report**: `.claude/reports/BUG_REPORT_P1_SCHEMA_002.md`
+
+**🎯 IMMEDIATE ACTION REQUIRED:**
+- **Validator (P0 URGENT)**: Validate both P1 fixes ASAP
+- **Validator**: After validation, resume HA testing (Wave 18 Task 1)
+- **Release Timeline**: On track if validation passes
 
 ### Phase Status Summary
 
@@ -152,31 +275,39 @@ Merge To:   feature/streamspace-v2-agent-refactor
 - ✅ Phase 4: VNC Proxy/Tunnel Implementation (100%)
 - ✅ Phase 5: K8s Agent Core (100%)
 - ✅ Phase 6: K8s Agent VNC Tunneling (100%)
-- ✅ Phase 7: Bug Fixes (ALL P0/P1 bugs resolved) (100%)
+- ✅ Phase 7: Bug Fixes (100%)
 - ✅ Phase 8: UI Updates (Admin Agents page + Session VNC viewer) (100%)
 - ✅ **Phase 9: Docker Agent** (100%) ⭐ **Delivered ahead of schedule!**
 
 **✅ COMPLETED TESTING:**
 - ✅ Session Lifecycle (E2E validated, 6s pod startup)
 - ✅ Agent Failover (Test 3.1: 23s reconnection, 100% session survival)
-- ✅ Command Retry (Test 3.2: P1-COMMAND-SCAN-001 fix validated)
+- ✅ Command Retry (Test 3.2: 12s processing after reconnect)
 - ✅ VNC Streaming (Port-forward tunneling operational)
 
-**🔥 NEW: High Availability (Wave 17)**
-- ✅ Redis-backed AgentHub (multi-pod API support)
-- ✅ K8s Agent Leader Election (3+ agent replicas)
+**✅ BUGS FIXED:**
+- ✅ P1-COMMAND-SCAN-001 (NULL error_message scan) - FIXED & VALIDATED
+- ✅ P1-AGENT-STATUS-001 (Agent status sync) - FIXED & VALIDATED
+
+**✅ BUGS FIXED (AWAITING VALIDATION):**
+- ✅ P1-MULTI-POD-001 (AgentHub multi-pod support) - FIXED, validation pending
+- ✅ P1-SCHEMA-002 (updated_at column) - FIXED, validation pending
+
+**🔥 High Availability Features (Wave 17 - READY FOR TESTING):**
+- ✅ Redis-backed AgentHub (FIXED P1-MULTI-POD-001 - ready for multi-pod testing)
+- ✅ K8s Agent Leader Election (ready for HA testing)
 - ✅ Docker Agent HA (File, Redis, Swarm backends)
-- ⏳ **TESTING REQUIRED** - HA features not yet validated
+- ✅ P1 Fixes integrated - HA testing can proceed!
 
-**🎯 CURRENT SPRINT: v2.0-beta.1 Release (Wave 18)**
+**🎯 CURRENT SPRINT: Validate P1 Fixes (Wave 20 - URGENT)**
 
-**TARGET RELEASE**: 3-4 days (2025-11-25/26)
+**TARGET**: Validate P1 fixes, then resume HA testing
 
 **CRITICAL PATH:**
-1. **Validator**: HA testing + Multi-user + Performance (P0 - 2-3 days)
-2. **Scribe**: Release docs + HA deployment guide (P0 - 2-3 days)
-3. **Builder**: Standby for bug fixes (P1 - reactive)
-4. **Architect**: Daily integration + release coordination (P0 - ongoing)
+1. **Validator**: Validate P1-MULTI-POD-001 + P1-SCHEMA-002 (P0 URGENT - 2-3 hours)
+2. **Validator**: Resume HA testing after validation (P0 - Wave 18 Task 1)
+3. **Scribe**: Continue docs (P1 - parallel work)
+4. **Architect**: Coordination + integration (P0 - ongoing)
 
 ---
 
@@ -383,6 +514,230 @@ Merge To:   feature/streamspace-v2-agent-refactor
    - Test coverage improvements
 
 **CRITICAL**: All bug reports and fixes must follow `.claude/reports/` standards!
+
+---
+
+## 📋 Wave 20 Task Assignments: URGENT P1 Fix Validation (2025-11-22 → ASAP)
+
+### ✅ UPDATE: Builder Already Fixed Both P1 Bugs!
+
+**Validator discovered 2 P1 bugs - Builder had ALREADY implemented fixes in Wave 17!**
+
+**Timeline**: Validate within 4 hours, resume HA testing
+**Priority**: P0 URGENT - Unblock v2.0-beta.1 release
+
+---
+
+### 🧪 Agent 3: Validator - P1 Fix Validation (P0 URGENT)
+
+**Branch**: `claude/v2-validator`
+**Status**: P0 URGENT - Validation required ASAP
+**Timeline**: 2-3 hours total
+
+#### Task 1: Validate P1-MULTI-POD-001 Fix (P0 - 1.5-2 hours)
+
+**Bug Report**: `.claude/reports/BUG_REPORT_P1_MULTI_POD_001.md`
+**Fix Commits**: 4d17bb6 (AgentHub), a625ac5 (Redis deployment)
+
+**Builder's Implementation** (Already Integrated):
+- ✅ Redis-backed AgentHub with optional multi-pod mode
+- ✅ Agent→pod mapping in Redis (agent:{agentID}:pod)
+- ✅ Connection state tracking (agent:{agentID}:connected, 5min TTL)
+- ✅ Redis pub/sub for cross-pod command routing
+- ✅ Backwards compatible (works without Redis)
+
+**Files Modified by Builder**:
+- `api/cmd/main.go` - Redis initialization, POD_NAME detection
+- `api/internal/websocket/agent_hub.go` - Redis integration
+- `chart/templates/api-deployment.yaml` - POD_NAME env var
+- `chart/values.yaml` - redis.agentHubEnabled config
+
+**Validation Test Plan**:
+
+1. **Enable Redis for AgentHub**:
+   ```bash
+   # Set redis.agentHubEnabled=true in Helm values
+   helm upgrade streamspace ./chart --set redis.enabled=true --set redis.agentHubEnabled=true
+   ```
+
+2. **Deploy API with 2-3 replicas**:
+   ```bash
+   kubectl scale deployment/streamspace-api -n streamspace --replicas=3
+   kubectl rollout status deployment/streamspace-api -n streamspace
+   ```
+
+3. **Test multi-pod session creation** (from bug report Test 1):
+   ```bash
+   # Create 10 sessions - should succeed on all replicas
+   for i in {1..10}; do
+     curl -X POST http://localhost:8000/api/v1/sessions \
+       -H "Authorization: Bearer $TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"user":"admin","template":"firefox-browser","resources":{"memory":"512Mi","cpu":"250m"},"persistentHome":false}'
+   done
+   ```
+
+4. **Verify agent status visible across all pods**:
+   ```bash
+   for pod in $(kubectl get pods -n streamspace -l app.kubernetes.io/component=api -o name); do
+     kubectl exec -n streamspace $pod -- curl -s http://localhost:8000/api/v1/agents
+   done
+   # All pods should return same agent list
+   ```
+
+5. **Test cross-pod command routing**:
+   - Create session via Pod 1
+   - Send termination via Pod 2
+   - Verify command processed successfully
+
+**Expected Outcome**: All tests pass, multi-pod API deployment working
+
+**Documentation**:
+- Create `.claude/reports/P1_MULTI_POD_001_VALIDATION_RESULTS.md`
+- Include test results, performance metrics, any issues found
+
+**Estimated Time**: 1.5-2 hours
+
+---
+
+#### Task 2: Validate P1-SCHEMA-002 Fix (P0 - 30 minutes)
+
+**Bug Report**: `.claude/reports/BUG_REPORT_P1_SCHEMA_002.md`
+**Fix Commit**: dafb7bb
+
+**Builder's Implementation** (Already Integrated):
+- ✅ Migration 004 adds updated_at TIMESTAMP column
+- ✅ DEFAULT CURRENT_TIMESTAMP for new rows
+- ✅ Backfill existing rows with created_at value
+- ✅ Auto-update trigger on row changes
+
+**Files Added by Builder**:
+- `api/migrations/004_add_updated_at_to_agent_commands.sql` - Migration
+- `api/migrations/004_add_updated_at_to_agent_commands_rollback.sql` - Rollback
+
+**Validation Test Plan**:
+
+1. **Verify migration applied**:
+   ```bash
+   kubectl exec -n streamspace streamspace-postgres-0 -- \
+     psql -U streamspace -d streamspace \
+     -c "\d agent_commands" | grep updated_at
+   ```
+   Expected: Column exists with type TIMESTAMP
+
+2. **Verify trigger exists**:
+   ```bash
+   kubectl exec -n streamspace streamspace-postgres-0 -- \
+     psql -U streamspace -d streamspace \
+     -c "\d agent_commands" | grep -i trigger
+   ```
+   Expected: agent_commands_updated_at_trigger listed
+
+3. **Test command status updates work without errors**:
+   ```bash
+   # Stop agent to trigger failed commands
+   kubectl scale deployment/streamspace-k8s-agent -n streamspace --replicas=0
+
+   # Create command (will fail)
+   curl -X POST http://localhost:8000/api/v1/sessions ...
+
+   # Check API logs for errors
+   kubectl logs -n streamspace -l app.kubernetes.io/component=api --tail=50 | grep "updated_at"
+   ```
+   Expected: NO "column does not exist" errors
+
+4. **Verify updated_at timestamps**:
+   ```bash
+   kubectl exec -n streamspace streamspace-postgres-0 -- \
+     psql -U streamspace -d streamspace \
+     -c "SELECT command_id, status, created_at, updated_at FROM agent_commands ORDER BY created_at DESC LIMIT 5;"
+   ```
+   Expected: updated_at populated for all rows
+
+**Expected Outcome**: All tests pass, command status tracking working
+
+**Documentation**:
+- Create `.claude/reports/P1_SCHEMA_002_VALIDATION_RESULTS.md`
+- Include test results, verification steps
+
+**Estimated Time**: 30 minutes
+
+---
+
+#### Task 3: After Validation Complete
+
+**After both P1 fixes validated:**
+
+1. **Commit validation reports to claude/v2-validator**:
+   ```bash
+   git add .claude/reports/P1_MULTI_POD_001_VALIDATION_RESULTS.md
+   git add .claude/reports/P1_SCHEMA_002_VALIDATION_RESULTS.md
+   git commit -m "validate(P1): Both P1 fixes validated - HA testing unblocked"
+   git push origin claude/v2-validator
+   ```
+
+2. **Notify Architect**: Validation complete, ready for HA testing
+
+3. **Resume Wave 18 Task 1**: High Availability Testing
+
+**Expected Output**:
+- `.claude/reports/P1_MULTI_POD_001_VALIDATION_RESULTS.md`
+- `.claude/reports/P1_SCHEMA_002_VALIDATION_RESULTS.md`
+
+---
+
+### 🔨 Agent 2: Builder - Standby (P2)
+
+**Branch**: `claude/v2-builder`
+**Status**: STANDBY - Monitoring for issues
+**Timeline**: Reactive
+
+**Tasks**:
+- Monitor Validator's P1 validation results
+- Standby for any issues discovered during validation
+- Continue Wave 18 reactive bug fix support
+
+---
+
+### 📝 Agent 4: Scribe - Continue Docs (P1)
+
+**Branch**: `claude/v2-scribe`
+**Status**: ACTIVE - Documentation work
+**Timeline**: Parallel with Validator
+
+**Tasks**:
+- Continue Wave 18 documentation tasks
+- Documentation can proceed in parallel with validation
+
+---
+
+### 🏗️ Agent 1: Architect - Coordination (P0)
+
+**Branch**: `feature/streamspace-v2-agent-refactor`
+**Status**: ACTIVE - Coordinating Wave 20
+**Timeline**: Ongoing
+
+**Tasks**:
+1. ✅ Clarified P1 fixes already integrated in Wave 17
+2. ✅ Updated MULTI_AGENT_PLAN with validation tasks
+3. Monitor Validator's P1 validation progress
+4. Integrate validation reports when complete
+5. Coordinate transition back to Wave 18 HA testing
+
+---
+
+## 🕐 Wave 20 Timeline (URGENT)
+
+| Time | Agent | Task | Deliverable |
+|------|-------|------|-------------|
+| **+0h** | Validator | Start P1-MULTI-POD-001 validation | Deploy multi-pod API |
+| **+2h** | Validator | Complete P1-MULTI-POD-001 validation | Validation report |
+| **+2.5h** | Validator | Complete P1-SCHEMA-002 validation | Validation report |
+| **+3h** | Validator | Commit validation reports | Push to branch |
+| **+3.5h** | Architect | Integrate validation results | Wave 20 integration |
+| **+4h** | Validator | Resume Wave 18 HA testing | HA testing begins |
+
+**CRITICAL**: Validator must complete within 4 hours to stay on release timeline!
 
 ---
 
