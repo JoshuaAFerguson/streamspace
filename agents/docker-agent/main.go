@@ -322,7 +322,16 @@ func (a *DockerAgent) registerAgent() error {
 
 	// Send registration request
 	log.Printf("[DockerAgent] Registering agent at: %s", u.String())
-	resp, err := http.Post(u.String(), "application/json", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest("POST", u.String(), bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Agent-API-Key", a.config.APIKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP request failed: %w", err)
 	}
@@ -359,7 +368,12 @@ func (a *DockerAgent) connectWebSocket() error {
 
 	// Connect WebSocket
 	log.Printf("[DockerAgent] Connecting WebSocket to: %s", u.String())
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+
+	// Add API key header for authentication
+	headers := http.Header{}
+	headers.Set("X-Agent-API-Key", a.config.APIKey)
+
+	conn, _, err := websocket.DefaultDialer.Dial(u.String(), headers)
 	if err != nil {
 		return fmt.Errorf("WebSocket dial failed: %w", err)
 	}
@@ -600,6 +614,7 @@ func main() {
 	// Command-line flags
 	agentID := flag.String("agent-id", os.Getenv("AGENT_ID"), "Agent ID (e.g., docker-prod-us-east-1)")
 	controlPlaneURL := flag.String("control-plane-url", os.Getenv("CONTROL_PLANE_URL"), "Control Plane WebSocket URL")
+	apiKey := flag.String("api-key", os.Getenv("AGENT_API_KEY"), "Agent API key for authentication (64 hex chars)")
 	platform := flag.String("platform", getEnvOrDefault("PLATFORM", "docker"), "Platform type")
 	region := flag.String("region", os.Getenv("REGION"), "Deployment region")
 	dockerHost := flag.String("docker-host", getEnvOrDefault("DOCKER_HOST", "unix:///var/run/docker.sock"), "Docker daemon socket")
@@ -630,6 +645,7 @@ func main() {
 	cfg := &config.AgentConfig{
 		AgentID:           *agentID,
 		ControlPlaneURL:   *controlPlaneURL,
+		APIKey:            *apiKey,
 		Platform:          *platform,
 		Region:            *region,
 		DockerHost:        *dockerHost,

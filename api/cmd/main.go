@@ -33,6 +33,8 @@ import (
 func main() {
 	// Configuration from environment
 	port := getEnv("API_PORT", "8000")
+	tlsCertFile := os.Getenv("TLS_CERT_FILE") // Path to TLS certificate file (PEM format)
+	tlsKeyFile := os.Getenv("TLS_KEY_FILE")   // Path to TLS private key file (PEM format)
 	dbHost := getEnv("DB_HOST", "localhost")
 	dbPort := getEnv("DB_PORT", "5432")
 	dbUser := getEnv("DB_USER", "streamspace")
@@ -370,7 +372,7 @@ func main() {
 	}
 
 	// Setup routes
-	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, nodeHandler, wsManager, consoleHandler, collaborationHandler, integrationsHandler, loadBalancingHandler, schedulingHandler, securityHandler, templateVersioningHandler, setupHandler, applicationHandler, auditHandler, configurationHandler, licenseHandler, controllerHandler, recordingHandler, agentHandler, agentWebSocketHandler, vncProxyHandler, jwtManager, userDB, redisCache, webhookSecret)
+	setupRoutes(router, apiHandler, userHandler, groupHandler, authHandler, activityHandler, catalogHandler, sharingHandler, pluginHandler, dashboardHandler, sessionActivityHandler, apiKeyHandler, teamHandler, preferencesHandler, notificationsHandler, searchHandler, sessionTemplatesHandler, batchHandler, monitoringHandler, quotasHandler, nodeHandler, wsManager, consoleHandler, collaborationHandler, integrationsHandler, loadBalancingHandler, schedulingHandler, securityHandler, templateVersioningHandler, setupHandler, applicationHandler, auditHandler, configurationHandler, licenseHandler, controllerHandler, recordingHandler, agentHandler, agentWebSocketHandler, vncProxyHandler, jwtManager, userDB, database, redisCache, webhookSecret)
 
 	// Create HTTP server with security timeouts
 	srv := &http.Server{
@@ -389,9 +391,21 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("API Server listening on port %s", port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+		// Check if TLS is configured
+		if tlsCertFile != "" && tlsKeyFile != "" {
+			log.Printf("API Server listening on port %s (HTTPS/TLS enabled)", port)
+			log.Printf("TLS Certificate: %s", tlsCertFile)
+			log.Printf("TLS Key: %s", tlsKeyFile)
+			if err := srv.ListenAndServeTLS(tlsCertFile, tlsKeyFile); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Failed to start HTTPS server: %v", err)
+			}
+		} else {
+			log.Printf("API Server listening on port %s (HTTP - TLS not configured)", port)
+			log.Println("WARNING: Running without TLS/HTTPS. This is insecure for production!")
+			log.Println("         Set TLS_CERT_FILE and TLS_KEY_FILE environment variables to enable HTTPS")
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Failed to start HTTP server: %v", err)
+			}
 		}
 	}()
 
@@ -461,11 +475,14 @@ func main() {
 	log.Println("Graceful shutdown completed")
 }
 
-func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, nodeHandler *handlers.NodeHandler, wsManager *internalWebsocket.Manager, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, integrationsHandler *handlers.IntegrationsHandler, loadBalancingHandler *handlers.LoadBalancingHandler, schedulingHandler *handlers.SchedulingHandler, securityHandler *handlers.SecurityHandler, templateVersioningHandler *handlers.TemplateVersioningHandler, setupHandler *handlers.SetupHandler, applicationHandler *handlers.ApplicationHandler, auditHandler *handlers.AuditHandler, configurationHandler *handlers.ConfigurationHandler, licenseHandler *handlers.LicenseHandler, controllerHandler *handlers.ControllerHandler, recordingHandler *handlers.RecordingHandler, agentHandler *handlers.AgentHandler, agentWebSocketHandler *handlers.AgentWebSocketHandler, vncProxyHandler *handlers.VNCProxyHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, redisCache *cache.Cache, webhookSecret string) {
+func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserHandler, groupHandler *handlers.GroupHandler, authHandler *auth.AuthHandler, activityHandler *handlers.ActivityHandler, catalogHandler *handlers.CatalogHandler, sharingHandler *handlers.SharingHandler, pluginHandler *handlers.PluginHandler, dashboardHandler *handlers.DashboardHandler, sessionActivityHandler *handlers.SessionActivityHandler, apiKeyHandler *handlers.APIKeyHandler, teamHandler *handlers.TeamHandler, preferencesHandler *handlers.PreferencesHandler, notificationsHandler *handlers.NotificationsHandler, searchHandler *handlers.SearchHandler, sessionTemplatesHandler *handlers.SessionTemplatesHandler, batchHandler *handlers.BatchHandler, monitoringHandler *handlers.MonitoringHandler, quotasHandler *handlers.QuotasHandler, nodeHandler *handlers.NodeHandler, wsManager *internalWebsocket.Manager, consoleHandler *handlers.ConsoleHandler, collaborationHandler *handlers.CollaborationHandler, integrationsHandler *handlers.IntegrationsHandler, loadBalancingHandler *handlers.LoadBalancingHandler, schedulingHandler *handlers.SchedulingHandler, securityHandler *handlers.SecurityHandler, templateVersioningHandler *handlers.TemplateVersioningHandler, setupHandler *handlers.SetupHandler, applicationHandler *handlers.ApplicationHandler, auditHandler *handlers.AuditHandler, configurationHandler *handlers.ConfigurationHandler, licenseHandler *handlers.LicenseHandler, controllerHandler *handlers.ControllerHandler, recordingHandler *handlers.RecordingHandler, agentHandler *handlers.AgentHandler, agentWebSocketHandler *handlers.AgentWebSocketHandler, vncProxyHandler *handlers.VNCProxyHandler, jwtManager *auth.JWTManager, userDB *db.UserDB, database *db.Database, redisCache *cache.Cache, webhookSecret string) {
 	// SECURITY: Create authentication middleware
 	authMiddleware := auth.Middleware(jwtManager, userDB)
 	adminMiddleware := auth.RequireRole("admin")
 	operatorMiddleware := auth.RequireAnyRole("admin", "operator")
+
+	// SECURITY: Create agent API key authentication middleware
+	agentAuth := middleware.NewAgentAuth(database)
 
 	// SECURITY: Create webhook authentication middleware
 	var webhookAuth *middleware.WebhookAuth
@@ -942,10 +959,8 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 				recordingHandler.RegisterRoutes(admin)
 
 				// v2.0 Agent management (admin only - multi-platform architecture)
-				agentHandler.RegisterRoutes(v1)
+				agentHandler.RegisterAdminRoutes(admin)
 
-				// v2.0 Agent WebSocket connections (agents connect here)
-				agentWebSocketHandler.RegisterRoutes(v1)
 			}
 
 			// NOTE: Billing is now handled by the streamspace-billing plugin
@@ -954,6 +969,22 @@ func setupRoutes(router *gin.Engine, h *api.Handler, userHandler *handlers.UserH
 			// Metrics (operators/admins only)
 			protected.GET("/metrics", operatorMiddleware, h.GetMetrics)
 		}
+
+	// v2.0 Agent self-service routes (require API key authentication, not JWT)
+	// These routes are for agents to register themselves and send heartbeats
+	agentRoutes := v1.Group("/agents")
+	agentRoutes.Use(agentAuth.RequireAPIKey())
+	{
+		agentHandler.RegisterRoutes(agentRoutes)
+	}
+
+	// v2.0 Agent WebSocket connections (require API key authentication, not JWT)
+	// Agents connect here to receive commands and send status updates
+	agentWSRoutes := v1.Group("")
+	agentWSRoutes.Use(agentAuth.RequireAPIKey())
+	{
+		agentWebSocketHandler.RegisterRoutes(agentWSRoutes)
+	}
 	}
 
 	// WebSocket endpoints (require authentication)
