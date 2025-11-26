@@ -285,7 +285,7 @@ If Wave Falls Behind:
 ## References
 
 - **Wave Planning Template**: [.github/ISSUE_TEMPLATE/03-wave-planning.md](.github/ISSUE_TEMPLATE/03-wave-planning.md)
-- **GitHub Workflow**: [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)
+- **GitHub Workflow**: [github-workflow.md](GITHUB_WORKFLOW.md)
 - **Zencoder Rules**: [.zencoder/rules/](./zencoder/rules/)
 - **Milestones**: [GitHub Milestones](https://github.com/streamspace-dev/streamspace/milestones)
 - **Current Issues**: [Wave 27 Issues](https://github.com/streamspace-dev/streamspace/issues?q=label%3Awave%3A27)

@@ -110,7 +110,7 @@ Tell me your wave and role:
 ```
 
 I will:
-1. Check `WAVE_PLANNING.md` for current wave
+1. Check `wave-planning.md` for current wave
 2. Find your assigned issues
 3. Show unblocked issues in order
 4. Explain your Definition of Done (DoD)
@@ -319,8 +319,8 @@ These auto-apply to every interaction:
 
 ### **Workflow Documentation** (Root)
 Created for Wave-based development:
-- `WAVE_PLANNING.md`: Current wave + daily standup template
-- `GITHUB_WORKFLOW.md`: Complete workflow reference
+- `wave-planning.md`: Current wave + daily standup template
+- `github-workflow.md`: Complete workflow reference
 - `WORKFLOW_ENHANCEMENT_SUMMARY.md`: Overview
 
 ### **Quick Reference** (Right here!)
@@ -402,7 +402,7 @@ Created for Wave-based development:
 ## Daily Routine
 
 ### **Morning**
-1. Open `WAVE_PLANNING.md`
+1. Open `wave-planning.md`
 2. Check current wave number
 3. Find your assigned unblocked issues
 4. Start work on highest priority
@@ -421,7 +421,7 @@ Created for Wave-based development:
 4. Move to next issue
 
 ### **Daily Standup**
-1. Check `WAVE_PLANNING.md` standup template
+1. Check `wave-planning.md` standup template
 2. Post to wave issue (e.g., #223)
 3. Include: what done, what today, blockers
 
@@ -483,7 +483,7 @@ Created for Wave-based development:
 ## Troubleshooting
 
 ### **"I'm not sure what to work on"**
-→ Check `WAVE_PLANNING.md` for your wave  
+→ Check `wave-planning.md` for your wave  
 → List your assigned issues  
 → Start with highest priority unblocked issue
 
@@ -548,10 +548,10 @@ Created for Wave-based development:
 → Read the full explanation in system-reminder (chat history)
 
 ### **Workflow Details**
-→ See `GITHUB_WORKFLOW.md` (comprehensive reference)
+→ See `github-workflow.md` (comprehensive reference)
 
 ### **Current Wave Status**
-→ Check `WAVE_PLANNING.md` (daily dashboard)
+→ Check `wave-planning.md` (daily dashboard)
 
 ### **Code Patterns**
 → Review `.zencoder/rules/coding-standards.md`

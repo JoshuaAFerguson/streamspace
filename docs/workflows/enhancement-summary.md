@@ -26,7 +26,7 @@ Your GitHub workflow has been **transformed from ad-hoc issue management to stru
 | **Assignments** | Inconsistent | Mandatory: agent + size + wave before work starts |
 | **Templates** | Basic issue template | 3 comprehensive templates with DoR/DoD |
 | **Automation** | None | GitHub Actions auto-labels PRs by wave |
-| **Documentation** | Scattered | Centralized in GITHUB_WORKFLOW.md |
+| **Documentation** | Scattered | Centralized in github-workflow.md |
 | **Visibility** | Hard to see progress | Wave milestones show real-time status |
 
 ---
@@ -47,7 +47,7 @@ Each wave:
 - ✅ Identifies & manages blockers
 - ✅ Retrospective template for lessons learned
 
-**View current wave**: [WAVE_PLANNING.md](WAVE_PLANNING.md)
+**View current wave**: [wave-planning.md](wave-planning.md)
 
 ### 2. Enhanced Issue Templates ✅
 
@@ -88,7 +88,7 @@ New workflow: `.github/workflows/wave-tracking.yml`
 
 ### 4. Comprehensive Workflow Guide ✅
 
-**New file**: [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)
+**New file**: [github-workflow.md](github-workflow.md)
 
 Complete reference covering:
 - Wave lifecycle & structure
@@ -101,7 +101,7 @@ Complete reference covering:
 
 ### 5. Wave Planning Dashboard ✅
 
-**New file**: [WAVE_PLANNING.md](WAVE_PLANNING.md)
+**New file**: [wave-planning.md](wave-planning.md)
 
 At-a-glance view of:
 - Current wave status
@@ -122,7 +122,7 @@ At-a-glance view of:
 **Each morning:**
 ```bash
 # Review current wave
-open WAVE_PLANNING.md
+open wave-planning.md
 
 # Check standup comments on wave issue
 gh issue view 223
@@ -231,13 +231,13 @@ Ready for merge."
 ### For Everyone (Daily Workflow)
 
 **Morning:**
-1. Open [WAVE_PLANNING.md](WAVE_PLANNING.md)
+1. Open [wave-planning.md](wave-planning.md)
 2. Check current wave number
 3. Review your assigned issues from that wave
 4. Start work on highest-priority unblocked issue
 
 **Mid-day:**
-5. Post standup comment to wave issue (template in WAVE_PLANNING.md)
+5. Post standup comment to wave issue (template in wave-planning.md)
 6. Identify any blockers
 7. Communicate blockers to @architect
 
@@ -451,22 +451,22 @@ Final stats:
 ### For Architect (This Week)
 
 - [ ] Review Wave 27 issues (#223)
-- [ ] Conduct daily standups (see template in WAVE_PLANNING.md)
+- [ ] Conduct daily standups (see template in wave-planning.md)
 - [ ] Update wave issue with daily progress
 - [ ] Identify & escalate blockers
 - [ ] Plan Wave 28 issues by end of Wave 27
 
 ### For All Agents
 
-- [ ] Read [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md) (30 min)
-- [ ] Bookmark [WAVE_PLANNING.md](WAVE_PLANNING.md) (check daily)
+- [ ] Read [github-workflow.md](github-workflow.md) (30 min)
+- [ ] Bookmark [wave-planning.md](wave-planning.md) (check daily)
 - [ ] Review your assigned issues from [Wave 27 #223](https://github.com/streamspace-dev/streamspace/issues/223)
 - [ ] Ensure your issues have all required labels (agent + size + wave)
 
 ### For Developers
 
 - [ ] Use new templates when creating issues
-- [ ] Apply issue labels according to [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)
+- [ ] Apply issue labels according to [github-workflow.md](github-workflow.md)
 - [ ] Comment on issue when moving to next stage
 - [ ] Use wave issue for daily standup
 
@@ -505,14 +505,14 @@ After 2 waves, measure:
 - ✅ `.github/ISSUE_TEMPLATE/02-bug-report.md`
 - ✅ `.github/ISSUE_TEMPLATE/03-wave-planning.md`
 - ✅ `.github/workflows/wave-tracking.yml`
-- ✅ `GITHUB_WORKFLOW.md`
-- ✅ `WAVE_PLANNING.md`
-- ✅ `WORKFLOW_ENHANCEMENT_SUMMARY.md` (this file)
+- ✅ `github-workflow.md`
+- ✅ `wave-planning.md`
+- ✅ `enhancement-summary.md` (this file)
 
 **Existing Files to Review:**
 - `CONTRIBUTING.md` (link to new templates)
 - `.zencoder/rules/agent-architect.md` (wave planning section)
-- `.zencoder/README.md` (link to GITHUB_WORKFLOW.md)
+- `.zencoder/README.md` (link to github-workflow.md)
 
 ---
 
@@ -538,8 +538,8 @@ After 2 waves, measure:
 
 ## Questions?
 
-- **Workflow questions**: See [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md)
-- **Current wave**: See [WAVE_PLANNING.md](WAVE_PLANNING.md)
+- **Workflow questions**: See [github-workflow.md](github-workflow.md)
+- **Current wave**: See [wave-planning.md](wave-planning.md)
 - **Issue templates**: Check `.github/ISSUE_TEMPLATE/`
 - **Automation**: Review `.github/workflows/wave-tracking.yml`
 - **Agent roles**: See `.zencoder/rules/agent-*.md`
