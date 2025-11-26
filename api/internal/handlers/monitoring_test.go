@@ -20,7 +20,8 @@ import (
 func setupMonitoringTest(t *testing.T) (*MonitoringHandler, sqlmock.Sqlmock, func()) {
 	gin.SetMode(gin.TestMode)
 
-	mockDB, mock, err := sqlmock.New()
+	// Enable ping monitoring for health check tests
+	mockDB, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	if err != nil {
 		t.Fatalf("failed to create sqlmock: %v", err)
 	}
@@ -40,8 +41,11 @@ func setupMonitoringTest(t *testing.T) (*MonitoringHandler, sqlmock.Sqlmock, fun
 // ============================================================================
 
 func TestHealthCheck_Success(t *testing.T) {
-	handler, _, cleanup := setupMonitoringTest(t)
+	handler, mock, cleanup := setupMonitoringTest(t)
 	defer cleanup()
+
+	// HealthCheck pings the database
+	mock.ExpectPing()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -55,6 +59,7 @@ func TestHealthCheck_Success(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 	assert.Equal(t, "healthy", response["status"])
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestDetailedHealthCheck_AllHealthy(t *testing.T) {
@@ -76,9 +81,11 @@ func TestDetailedHealthCheck_AllHealthy(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, "healthy", response["overall_status"])
-	checks := response["checks"].(map[string]interface{})
-	assert.Equal(t, "healthy", checks["database"])
+	// Response format: {"status": "healthy/unhealthy", "components": {...}, "timestamp": "..."}
+	assert.Equal(t, "healthy", response["status"])
+	components := response["components"].(map[string]interface{})
+	dbComp := components["database"].(map[string]interface{})
+	assert.Equal(t, "healthy", dbComp["status"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -102,9 +109,11 @@ func TestDetailedHealthCheck_DatabaseUnhealthy(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Equal(t, "unhealthy", response["overall_status"])
-	checks := response["checks"].(map[string]interface{})
-	assert.Equal(t, "unhealthy", checks["database"])
+	// Response format: {"status": "healthy/unhealthy", "components": {...}, "timestamp": "..."}
+	assert.Equal(t, "unhealthy", response["status"])
+	components := response["components"].(map[string]interface{})
+	dbComp := components["database"].(map[string]interface{})
+	assert.Equal(t, "unhealthy", dbComp["status"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -116,10 +125,15 @@ func TestDatabaseHealth_Healthy(t *testing.T) {
 	// Mock database ping
 	mock.ExpectPing()
 
-	// Mock stats query
-	rows := sqlmock.NewRows([]string{"max_connections", "current_connections"}).
-		AddRow(100, 10)
-	mock.ExpectQuery("SELECT.*pg_stat_database").WillReturnRows(rows)
+	// Mock database size query
+	dbSizeRow := sqlmock.NewRows([]string{"pg_database_size"}).AddRow(1000000)
+	mock.ExpectQuery(`SELECT pg_database_size`).WillReturnRows(dbSizeRow)
+
+	// Mock table sizes query
+	tableRows := sqlmock.NewRows([]string{"schemaname", "tablename", "size"}).
+		AddRow("public", "sessions", 500000).
+		AddRow("public", "users", 200000)
+	mock.ExpectQuery(`SELECT.*schemaname.*tablename.*pg_total_relation_size`).WillReturnRows(tableRows)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -134,7 +148,7 @@ func TestDatabaseHealth_Healthy(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "healthy", response["status"])
-	assert.NotNil(t, response["response_time"])
+	assert.NotNil(t, response["pingLatency"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
