@@ -87,6 +87,15 @@ spec:
               fieldRef:
                 fieldPath: metadata.name
 
+          # Agent API Key for authentication (Issue #227)
+          # Uses the bootstrap key from secrets for initial registration
+          # After registration, agent receives a unique API key
+          - name: AGENT_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "streamspace.fullname" . }}-secrets
+                key: agent-bootstrap-key
+
           {{- with .Values.k8sAgent.extraEnv }}
           {{- toYaml . | nindent 10 }}
           {{- end }}
