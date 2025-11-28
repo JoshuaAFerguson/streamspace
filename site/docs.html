@@ -45,24 +45,25 @@
 
     <main class="doc-content">
       <h1>Documentation</h1>
-      <p>Comprehensive guides and references for StreamSpace v2.0-beta</p>
+      <p>Comprehensive guides and references for StreamSpace v2.0-beta.1</p>
 
       <h2 id="overview">Overview</h2>
-      <p>StreamSpace is a multi-platform container streaming platform that delivers GUI applications to web browsers using VNC technology. v2.0-beta introduces a Control Plane + Agent architecture supporting Kubernetes (production-ready) with Docker, VM, and cloud platforms coming soon.</p>
+      <p>StreamSpace is a multi-platform container streaming platform that delivers GUI applications to web browsers using VNC technology. v2.0-beta.1 is production-ready with multi-tenancy, observability, and enterprise security.</p>
 
-      <h3>Key Concepts (v2.0)</h3>
+      <h3>Key Concepts (v2.0-beta.1)</h3>
       <ul>
         <li><strong>Control Plane</strong> - Centralized API/UI that manages agents via WebSocket</li>
-        <li><strong>Agent</strong> - Platform-specific component (K8s, Docker, VM) that provisions sessions</li>
+        <li><strong>Agent</strong> - Platform-specific component (K8s, Docker) that provisions sessions</li>
+        <li><strong>Multi-Tenancy</strong> - Org-scoped access control with JWT claims</li>
         <li><strong>Session</strong> - A running instance of an application for a user</li>
         <li><strong>Template</strong> - An application definition that can be launched as a Session</li>
-        <li><strong>VNC Proxy</strong> - End-to-end VNC tunnel through Control Plane to agent</li>
+        <li><strong>VNC Proxy</strong> - End-to-end VNC tunnel (&lt;100ms latency)</li>
+        <li><strong>Observability</strong> - Grafana dashboards and Prometheus alerts</li>
         <li><strong>Hibernation</strong> - Automatic scale-to-zero when sessions are idle</li>
-        <li><strong>Plugin</strong> - Extension that adds functionality to StreamSpace</li>
       </ul>
 
-      <h2 id="architecture">Architecture (v2.0-beta)</h2>
-      <p>StreamSpace v2.0 uses a Control Plane + Agent architecture with WebSocket communication:</p>
+      <h2 id="architecture">Architecture (v2.0-beta.1)</h2>
+      <p>StreamSpace v2.0-beta.1 uses a Control Plane + Agent architecture with WebSocket communication:</p>
 
       <h3>1. Control Plane</h3>
       <p>Centralized management API and Web UI that orchestrates agents across multiple platforms.</p>
@@ -79,13 +80,13 @@
       <h3>2. Platform Agents</h3>
       <p>Agents connect to the Control Plane via WebSocket and manage sessions on their platform.</p>
       <ul>
-        <li><strong>K8s Agent</strong> (agents/k8s-agent/) - Production-ready Kubernetes agent</li>
-        <li><strong>Docker Agent</strong> - Standalone Docker support (v2.1, in development)</li>
+        <li><strong>K8s Agent</strong> (agents/k8s-agent/) - Production-ready (~80% coverage)</li>
+        <li><strong>Docker Agent</strong> (agents/docker-agent/) - Production-ready (~60% coverage)</li>
         <li><strong>VM Agent</strong> - Hyper-V/VMware support (v2.2, planned)</li>
         <li><strong>Cloud Agent</strong> - AWS/GCP/Azure support (v2.3, planned)</li>
-        <li>WebSocket client (wss://) for bidirectional communication</li>
-        <li>VNC tunnel management and health checks</li>
-        <li>Automatic registration and reconnection</li>
+        <li>Leader election and HA (automatic failover &lt;5s)</li>
+        <li>VNC tunnel management (&lt;100ms latency)</li>
+        <li>Automatic reconnection (~23s)</li>
       </ul>
       <p><a href="https://github.com/streamspace-dev/streamspace/blob/main/docs/V2_AGENT_GUIDE.md">K8s Agent operations guide →</a></p>
 
