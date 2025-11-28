@@ -58,33 +58,7 @@ check_prerequisites() {
     if ! command -v helm &> /dev/null; then
         log_error "Helm is not installed or not in PATH"
         exit 1
-    fi
-
-    # Check Helm version and block broken versions
-    local helm_version=$(helm version --short 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
-    log_info "Helm version: ${helm_version}"
-
-    # Block Helm v4.0.x (known broken chart loading)
-    if [[ "${helm_version}" == v4.0.* ]]; then
-        log_error "Helm ${helm_version} detected - THIS VERSION IS BROKEN"
-        log_error "Chart loading is broken in Helm v4.0.x due to upstream regression"
-        log_error ""
-        log_error "Please downgrade Helm to v3.18.0:"
-        log_error "  brew uninstall helm"
-        log_error "  brew install helm@3.18.0"
-        log_error ""
-        log_error "Or wait for Helm v4.0.1+ patch release"
-        log_error ""
-        log_error "See: BUG_REPORT_P0_HELM_v4.md for details"
-        exit 1
-    fi
-
-    # Warn about Helm v3.19.x (has chart loading bugs)
-    if [[ "${helm_version}" == v3.19.* ]]; then
-        log_warning "Helm ${helm_version} has known bugs, consider downgrading to v3.18.0"
-    fi
-
-    log_success "Helm version OK: ${helm_version}"
+    fi  
 
     if ! kubectl cluster-info &> /dev/null; then
         log_error "Cannot connect to Kubernetes cluster"
@@ -152,57 +126,9 @@ deploy_helm() {
     log_info "Chart directory contents:"
     ls -la "${CHART_PATH}/" 2>&1 | head -10
 
-    # Workaround for Helm v3.19.0: Package chart first, then install from .tgz
-    # This avoids the directory loading bug in v3.19.0
-    local helm_version=$(helm version --short 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
-    local use_package_workaround=false
-
-    if [[ "${helm_version}" == "v3.19."* ]] || [[ "${FORCE_PACKAGE:-false}" == "true" ]]; then
-        log_warning "Detected Helm ${helm_version} - using package workaround for chart loading bug"
-        use_package_workaround=true
-    fi
-
-    # Try validation only if not using package workaround
-    if [ "${use_package_workaround}" = false ] && [ "${SKIP_LINT:-false}" != "true" ]; then
-        log_info "Validating chart with helm lint..."
-        if helm lint "${CHART_PATH}" 2>&1 | tee /tmp/helm-lint.log; then
-            log_success "Chart validation passed"
-        else
-            log_warning "Helm lint reported errors (this may be a Helm v3.19.0 issue)"
-            log_info "Will use package workaround for installation"
-            use_package_workaround=true
-        fi
-    fi
-
     # Prepare chart for installation
     local chart_ref="${CHART_PATH}"
-    local temp_dir=""
 
-    if [ "${use_package_workaround}" = true ]; then
-        log_info "Packaging chart to work around Helm v3.19.0 directory loading bug..."
-        temp_dir=$(mktemp -d)
-
-        if helm package "${CHART_PATH}" -d "${temp_dir}" 2>&1 | tee /tmp/helm-package.log; then
-            # Find the packaged chart file
-            local chart_package=$(find "${temp_dir}" -name "streamspace-*.tgz" | head -1)
-            if [ -n "${chart_package}" ]; then
-                chart_ref="${chart_package}"
-                log_success "Chart packaged successfully: $(basename ${chart_package})"
-            else
-                log_error "Chart packaging failed - package file not found"
-                log_info "Package output:"
-                cat /tmp/helm-package.log
-                rm -rf "${temp_dir}"
-                exit 1
-            fi
-        else
-            log_error "Chart packaging failed"
-            log_info "This is a critical Helm v3.19.0 bug. Please downgrade Helm to v3.18.0 or earlier."
-            log_info "See docs/DEPLOYMENT_TROUBLESHOOTING.md for detailed instructions."
-            rm -rf "${temp_dir}"
-            exit 1
-        fi
-    fi
 
     # Check if release exists
     if helm status "${RELEASE_NAME}" -n "${NAMESPACE}" &> /dev/null; then
@@ -238,15 +164,9 @@ deploy_helm() {
             --set k8sAgent.image.pullPolicy=Never \
             --set postgresql.enabled=true \
             --set postgresql.auth.password=streamspace \
-            --debug \
+
             --wait \
             --timeout 5m
-    fi
-
-    # Clean up temporary directory if we created one
-    if [ -n "${temp_dir}" ] && [ -d "${temp_dir}" ]; then
-        rm -rf "${temp_dir}"
-        log_info "Cleaned up temporary package directory"
     fi
 
     log_success "Helm deployment complete"
