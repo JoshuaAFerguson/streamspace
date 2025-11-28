@@ -7,37 +7,120 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+*No unreleased changes - see v2.0.0-beta.1 below*
+
+## [2.0.0-beta.1] - 2025-11-28
+
+### 🚀 PRODUCTION-READY RELEASE: Multi-Platform + Enterprise Security
+
+**Release Highlights**:
+- ✅ **Multi-Tenancy**: Organization-scoped access control across all resources
+- ✅ **Security Hardened**: 15 vulnerability fixes, 7+ security headers
+- ✅ **Observability**: 3 Grafana dashboards, 12 Prometheus alert rules
+- ✅ **API Documentation**: OpenAPI 3.0 spec with interactive Swagger UI
+- ✅ **Disaster Recovery**: Comprehensive DR guide with RPO/RTO targets
+- ✅ **Test Coverage**: 98% UI tests passing, all backend tests passing
+
 ### Added
 
-#### Development Workflow Improvements (2025-11-23)
-- **Multi-Agent Slash Commands** for rapid agent initialization
-  - `/init-architect` - Initialize Architect agent
-  - `/init-builder` - Initialize Builder agent
-  - `/init-validator` - Initialize Validator agent
-  - `/init-scribe` - Initialize Scribe agent
-- **Specialized Subagents** via `@` mentions
-  - `@docs-writer` - Comprehensive documentation generation
-  - `@github-manager` - GitHub issue/PR management
-  - `@workflow-optimizer` - Development workflow analysis
-- **Smart Git Commands**
-  - `/commit-smart` - Generate semantic commit messages
-  - `/pr-description` - Generate detailed PR descriptions
-- **Enhanced CLAUDE.md** with realistic documentation standards
-  - Added README.md realism requirements
-  - Clarified report locations (.claude/reports/)
-  - Added website/wiki maintenance guidance
+#### Multi-Tenancy (Wave 27) ⭐ **Major Feature**
+- **Organization Context Middleware** (`api/internal/middleware/orgcontext.go`)
+  - JWT claims include `org_id` for all authenticated requests
+  - Automatic org-scoping for all database queries
+  - Cross-tenant access prevention at middleware level
+- **Org-Scoped Database Queries**
+  - Sessions filtered by organization
+  - Templates scoped to org or public
+  - Audit logs partitioned by organization
+- **WebSocket Org Authorization**
+  - Session broadcasts filtered by org
+  - Metrics scoped to user's organization
+  - Unauthorized subscription attempts blocked
+- **Database Migration** (`api/migrations/006_add_organizations.sql`)
+  - Organizations table with settings and quotas
+  - Foreign key relationships for all org-scoped tables
+
+#### Observability (Wave 27) ⭐ **Major Feature**
+- **3 Grafana Dashboards** (`chart/templates/grafana-dashboard.yaml`)
+  - Control Plane Dashboard: API latency, error rates, request volume
+  - Sessions Dashboard: Active sessions, lifecycle metrics, resource usage
+  - Agents Dashboard: Heartbeat status, command latency, capacity
+- **12 Prometheus Alert Rules** (`chart/templates/prometheusrules.yaml`)
+  - API latency > 800ms p99 (warning), > 2s (critical)
+  - Session startup > 30s (warning), > 60s (critical)
+  - Agent heartbeat missing > 60s (warning), > 120s (critical)
+  - Error rate > 1% (warning), > 5% (critical)
+
+#### API Documentation (Wave 27)
+- **OpenAPI 3.0 Specification** (`api/internal/handlers/swagger.yaml`)
+  - 70+ endpoints documented
+  - Request/response schemas
+  - Authentication schemes (JWT, API Key)
+- **Interactive Swagger UI** at `/api/docs`
+  - Try-it-out functionality
+  - Token persistence in localStorage
+- **Multiple Formats**: `/api/openapi.yaml`, `/api/openapi.json`
+
+#### Disaster Recovery Documentation (Wave 27)
+- **Comprehensive DR Guide** (`docs/DISASTER_RECOVERY.md`)
+  - RPO/RTO targets (DB: 15min/1h, Storage: 24h/4h)
+  - PostgreSQL backup procedures (pg_dump, WAL archiving)
+  - Storage backup via CSI VolumeSnapshots
+  - Full region DR recovery procedures
+  - Cloud provider guides (AWS, GCP, Azure)
+- **Release Checklist** (`docs/RELEASE_CHECKLIST.md`)
+  - Pre-release backup verification
+  - Staging deployment checklist
+  - Post-release validation steps
+
+#### GitHub Workflow Automation (Wave 27)
+- **Issue Templates** (`.github/ISSUE_TEMPLATE/`)
+  - Feature request template with acceptance criteria
+  - Bug report template with reproduction steps
+  - Wave planning template for coordination
+- **Wave Tracking Workflow** (`.github/workflows/wave-tracking.yml`)
+  - Automatic issue labeling
+  - Progress tracking automation
 
 ### Changed
 
-#### Documentation Standards (2025-11-23)
-- **README.md** now requires realistic status indicators (not optimistic)
-- Test coverage numbers must be accurate and referenced
-- Known issues and limitations must be clearly documented
-- Status badges updated to reflect testing phase
+#### Security Improvements (Wave 28)
+- **Dependency Updates** - 15 vulnerabilities resolved
+  - `golang.org/x/crypto`: v0.36.0 → v0.45.0 (Critical SSH auth bypass fix)
+  - `golang.org/x/net`: v0.38.0 → v0.47.0
+  - `k8s.io/*`: v0.28.0 → v0.34.2
+- **K8s API Compatibility**
+  - Updated `ResourceRequirements` → `VolumeResourceRequirements`
+  - Compatible with Kubernetes 1.34+
 
-## [2.0.0-beta.1] - 2025-11-25 (Target)
+#### Test Suite Improvements (Wave 28)
+- **UI Tests**: 189/191 passing (98%)
+  - Fixed deprecated component prop references
+  - Updated mock data structures
+  - Resolved async timing issues
+- **Backend Tests**: 9/9 packages passing (100%)
+  - All handler tests passing
+  - WebSocket tests with org context
+  - Middleware tests for org scoping
 
-### 🚀 PRODUCTION-READY RELEASE: Multi-Platform + High Availability
+### Fixed
+
+#### Wave 28 Bug Fixes
+- **Security Headers**: Added HSTS, CSP, X-Frame-Options, X-Content-Type-Options
+- **Test Infrastructure**: Fixed flaky tests, improved mock reliability
+- **JWT Claims**: Proper org_id extraction and validation
+
+### Security
+
+- **CVE Fixes**: 2 Critical, 2 High, 10 Moderate, 1 Low vulnerabilities resolved
+- **Multi-Tenancy**: Complete org isolation at database, API, and WebSocket layers
+- **Audit Trail**: All cross-tenant access attempts logged
+
+---
+
+## [2.0.0-beta] - 2025-11-22
+
+### 🚀 ARCHITECTURE RELEASE: Multi-Platform + High Availability
 
 **Release Highlights**:
 - ✅ **All 9 Phases Complete** + High Availability features

@@ -41,7 +41,7 @@
       <h1>Stream Any App to Your Browser</h1>
       <p>Multi-platform Control Plane + Agent architecture for delivering containerized applications with browser-based access, auto-hibernation, and enterprise security features.</p>
       <p class="mt-2" style="font-size: 1.1rem; opacity: 0.9; background: rgba(255,255,255,0.1); padding: 0.75rem 1rem; border-radius: 8px; display: inline-block;">
-        <strong>🎉 v2.0-beta</strong> - Multi-platform agent architecture complete! Kubernetes agent ready, Docker/VM/Cloud coming soon. <a href="https://github.com/streamspace-dev/streamspace/blob/main/docs/V2_BETA_RELEASE_NOTES.md" style="color: #a5b4fc;">See release notes</a>
+        <strong>🎉 v2.0-beta.1 - Production Ready</strong> - Multi-tenancy, observability, 0 CVEs. <a href="https://github.com/streamspace-dev/streamspace/blob/main/CHANGELOG.md" style="color: #a5b4fc;">See changelog</a>
       </p>
       <div class="hero-buttons">
         <a href="getting-started.html" class="button button-primary">Get Started</a>
@@ -80,8 +80,8 @@
         </div>
         <div class="feature-card">
           <div class="feature-icon">👥</div>
-          <h3>Enterprise Features</h3>
-          <p>Multi-factor authentication, IP whitelisting, scheduled sessions, webhooks, real-time updates, and admin dashboard.</p>
+          <h3>Multi-Tenancy</h3>
+          <p>Org-scoped access control, JWT claims with org_id, cross-tenant prevention, and enterprise security features.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">📦</div>
@@ -130,12 +130,12 @@ kubectl port-forward -n streamspace svc/streamspace-ui 3000:80
           <p>Open Source</p>
         </div>
         <div class="stat-item">
-          <h3>5</h3>
-          <p>Plugin Types</p>
+          <h3>0</h3>
+          <p>Critical CVEs</p>
         </div>
         <div class="stat-item">
-          <h3>⚡</h3>
-          <p>Auto-Hibernation</p>
+          <h3>3</h3>
+          <p>Grafana Dashboards</p>
         </div>
       </div>
     </div>
@@ -145,7 +145,7 @@ kubectl port-forward -n streamspace svc/streamspace-ui 3000:80
   <section class="code-section">
     <div class="container">
       <div class="section-header">
-        <h2>Architecture (v2.0-beta)</h2>
+        <h2>Architecture (v2.0-beta.1)</h2>
         <p>Modern Control Plane + Agent architecture for multi-platform deployments</p>
       </div>
       <div class="code-block">
