@@ -217,6 +217,11 @@ func main() {
 		log.Printf("Warning: Failed to dispatch pending commands: %v", err)
 	}
 
+	// Initialize Session Reconciler to handle stuck sessions (Issue #235)
+	log.Println("Initializing Session Reconciler...")
+	sessionReconciler := services.NewSessionReconciler(database, agentHub, commandDispatcher)
+	go sessionReconciler.Start()
+
 	// Initialize activity tracker
 	log.Println("Initializing activity tracker...")
 	activityTracker := activity.NewTracker(k8sClient, eventPublisher, platform)
