@@ -58,7 +58,7 @@ check_prerequisites() {
     if ! command -v helm &> /dev/null; then
         log_error "Helm is not installed or not in PATH"
         exit 1
-    fi  
+    fi
 
     if ! kubectl cluster-info &> /dev/null; then
         log_error "Cannot connect to Kubernetes cluster"

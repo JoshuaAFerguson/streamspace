@@ -252,9 +252,9 @@ func main() {
 	region := flag.String("region", os.Getenv("REGION"), "Deployment region")
 	namespace := flag.String("namespace", getEnvOrDefault("NAMESPACE", "streamspace"), "Kubernetes namespace for sessions")
 	kubeConfig := flag.String("kubeconfig", os.Getenv("KUBECONFIG"), "Path to kubeconfig file (empty for in-cluster)")
-	maxCPU := flag.Int("max-cpu", 100, "Maximum CPU cores available")
-	maxMemory := flag.Int("max-memory", 128, "Maximum memory in GB")
-	maxSessions := flag.Int("max-sessions", 100, "Maximum concurrent sessions")
+	maxCPU := flag.String("max-cpu", getEnvOrDefault("MAX_CPU", "64 cores"), "Maximum CPU available (e.g., '64 cores', '64000m')")
+	maxMemory := flag.String("max-memory", getEnvOrDefault("MAX_MEMORY", "256Gi"), "Maximum memory available (e.g., '256Gi', '128GB')")
+	maxSessions := flag.Int("max-sessions", getEnvIntOrDefault("MAX_SESSIONS", 100), "Maximum concurrent sessions")
 	heartbeatInterval := flag.Int("heartbeat-interval", getEnvIntOrDefault("HEALTH_CHECK_INTERVAL", 30), "Heartbeat interval in seconds")
 	enableHA := flag.Bool("enable-ha", getEnvOrDefault("ENABLE_HA", "false") == "true", "Enable high availability mode with leader election")
 
@@ -279,9 +279,9 @@ func main() {
 		KubeConfig:        *kubeConfig,
 		HeartbeatInterval: *heartbeatInterval,
 		Capacity: config.AgentCapacity{
-			MaxCPU:      *maxCPU,
-			MaxMemory:   *maxMemory,
 			MaxSessions: *maxSessions,
+			CPU:         *maxCPU,
+			Memory:      *maxMemory,
 		},
 	}
 
@@ -449,12 +449,28 @@ type AgentRegistrationRequest struct {
 }
 
 // AgentRegistrationResponse is the response from agent registration.
+// For bootstrap registrations (Issue #226), the response includes a new API key.
 type AgentRegistrationResponse struct {
+	// Agent is the nested agent object (bootstrap registration response)
+	Agent *struct {
+		ID        string    `json:"id"`
+		AgentID   string    `json:"agentId"`
+		Platform  string    `json:"platform"`
+		Status    string    `json:"status"`
+		CreatedAt time.Time `json:"createdAt"`
+	} `json:"agent,omitempty"`
+
+	// Direct fields (non-bootstrap registration response)
 	ID        string    `json:"id"`
 	AgentID   string    `json:"agentId"`
 	Platform  string    `json:"platform"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"createdAt"`
+
+	// APIKey is the new API key issued during bootstrap registration (Issue #226)
+	// IMPORTANT: Agent must save this and use it for all future requests
+	APIKey  string `json:"apiKey,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 // Connect establishes connection to the Control Plane.
@@ -531,7 +547,24 @@ func (a *K8sAgent) registerAgent() error {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	log.Printf("[K8sAgent] Registered successfully: %s (status: %s)", regResp.AgentID, regResp.Status)
+	// ISSUE #232 FIX: Update API key if a new one was issued (bootstrap registration)
+	// The API generates a unique key for each agent during bootstrap registration.
+	// We must use this new key for all subsequent requests (WebSocket, heartbeats, etc.)
+	if regResp.APIKey != "" {
+		log.Printf("[K8sAgent] Received new API key from Control Plane (bootstrap registration)")
+		log.Printf("[K8sAgent] IMPORTANT: Using new API key for all future requests")
+		a.config.APIKey = regResp.APIKey
+	}
+
+	// Get agent ID from response (handle both nested and direct formats)
+	agentID := regResp.AgentID
+	status := regResp.Status
+	if regResp.Agent != nil {
+		agentID = regResp.Agent.AgentID
+		status = regResp.Agent.Status
+	}
+
+	log.Printf("[K8sAgent] Registered successfully: %s (status: %s)", agentID, status)
 	return nil
 }
 
@@ -632,9 +665,9 @@ func (a *K8sAgent) sendHeartbeat() error {
 			"status":         "online",
 			"activeSessions": activeSessions,
 			"capacity": map[string]interface{}{
-				"maxCpu":      a.config.Capacity.MaxCPU,
-				"maxMemory":   a.config.Capacity.MaxMemory,
 				"maxSessions": a.config.Capacity.MaxSessions,
+				"cpu":         a.config.Capacity.CPU,
+				"memory":      a.config.Capacity.Memory,
 			},
 		},
 	}

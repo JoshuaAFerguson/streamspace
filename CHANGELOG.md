@@ -9,7 +9,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 *No unreleased changes - see v2.0.0-beta.1 below*
 
-## [2.0.0-beta.1] - 2025-11-28
+## [2.0.0-beta.1] - 2025-11-29
+
+### Fixed (Wave 30) 🚨 **CRITICAL**
+
+#### Agent Ignores New API Key After Bootstrap (Issue #232)
+- **[CRITICAL] Fixed agent not using new API key after bootstrap registration**
+  - Problem: Agent ignored the `apiKey` field in registration response
+  - Caused: WebSocket connection failed with 403 (still using bootstrap key)
+  - Solution: Update agent's config.APIKey when new key is received
+  - Added `APIKey` and `Message` fields to AgentRegistrationResponse struct
+- **Files changed:**
+  - `agents/k8s-agent/main.go`: Parse and use new API key from registration response
+
+#### Request Body Consumed by Middleware (Issue #231)
+- **[CRITICAL] Fixed middleware consuming request body causing EOF in handlers**
+  - Problem: `c.ShouldBindJSON()` in auth middleware consumed body, leaving nothing for handler
+  - Caused: "EOF" error when handler tried to parse JSON body
+  - Solution: Use `io.ReadAll` + `io.NopCloser` to read and restore body
+  - Fixed in both `RequireAPIKey()` and `RequireAuth()` functions
+- **Files changed:**
+  - `api/internal/middleware/agent_auth.go`: Preserve request body after reading
+
+#### AgentCapacity Type Mismatch (Issue #230)
+- **[CRITICAL] Fixed agent/API AgentCapacity struct incompatibility**
+  - Problem: Agent sent int fields (maxCpu, maxMemory), API expected string fields (cpu, memory)
+  - Caused: JSON parsing EOF error during registration
+  - Solution: Updated agent's AgentCapacity struct to match API format
+  - Changed capacity config from int to string format (e.g., "64 cores", "256Gi")
+- **Files changed:**
+  - `agents/k8s-agent/internal/config/config.go`: Changed MaxCPU/MaxMemory to CPU/Memory strings
+  - `agents/k8s-agent/main.go`: Updated flag parsing and heartbeat to use new format
+  - `chart/values.yaml`: Updated capacity defaults to string format
+
+#### Migration 005 Missing (Issue #229)
+- **[CRITICAL] Added api_key_hash migration to database.go**
+  - Problem: Migration 005 existed as a file but was not included in the inline migrations array
+  - Caused: `pq: column "api_key_hash" does not exist` error breaking agent authentication
+  - Solution: Added DO $$ block to add api_key_hash, api_key_created_at, api_key_last_used_at columns
+  - Added index on api_key_hash for fast lookups
+- **Files changed:**
+  - `api/internal/db/database.go`: Added migration for api_key columns
+
+#### Agent Registration Bug (Issue #226)
+- **[CRITICAL] Fixed agent registration chicken-and-egg problem**
+  - Problem: Agents could not self-register because AgentAuth middleware required agents to exist in database first
+  - Solution: Added `AGENT_BOOTSTRAP_KEY` environment variable for first-time agent registration
+  - Agents can now self-register without manual database provisioning
+  - Each agent receives a unique API key after bootstrap registration
+  - Bootstrap key is auto-generated and stored in Kubernetes secrets
+- **Files changed:**
+  - `api/internal/middleware/agent_auth.go`: Bootstrap key check in RequireAPIKey() and RequireAuth()
+  - `api/internal/handlers/agents.go`: API key generation and storage on first registration
+  - `chart/values.yaml`: Added `api.agentAuth.bootstrapKey` configuration
+  - `chart/templates/api-deployment.yaml`: Added AGENT_BOOTSTRAP_KEY environment variable
+  - `chart/templates/app-secrets.yaml`: Auto-generated bootstrap key in secrets
 
 ### 🚀 PRODUCTION-READY RELEASE: Multi-Platform + Enterprise Security
 
