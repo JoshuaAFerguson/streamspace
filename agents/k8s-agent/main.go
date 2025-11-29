@@ -471,6 +471,9 @@ type AgentRegistrationResponse struct {
 	// IMPORTANT: Agent must save this and use it for all future requests
 	APIKey  string `json:"apiKey,omitempty"`
 	Message string `json:"message,omitempty"`
+
+	// ApprovalStatus indicates if agent is pending approval (Issue #234)
+	ApprovalStatus string `json:"approvalStatus,omitempty"`
 }
 
 // Connect establishes connection to the Control Plane.
@@ -536,7 +539,8 @@ func (a *K8sAgent) registerAgent() error {
 	defer resp.Body.Close()
 
 	// Check response status
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+	// ISSUE #234: Accept 202 Accepted for pending approval workflow
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("registration failed with status %d: %s", resp.StatusCode, string(body))
 	}
@@ -547,6 +551,74 @@ func (a *K8sAgent) registerAgent() error {
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
+	// ISSUE #234: Handle pending approval status
+	if regResp.ApprovalStatus == "pending" {
+		log.Printf("[K8sAgent] Registration pending administrator approval")
+		log.Printf("[K8sAgent] Message: %s", regResp.Message)
+		log.Printf("[K8sAgent] Waiting for approval. Will retry every 30 seconds...")
+
+		// Retry loop with 30-second intervals
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// Create new request for retry (can't reuse req - body already consumed)
+				retryReq, err := http.NewRequest("POST", registerURL, bytes.NewBuffer(jsonBody))
+				if err != nil {
+					log.Printf("[K8sAgent] Failed to create retry request: %v. Continuing to wait...", err)
+					continue
+				}
+				retryReq.Header.Set("Content-Type", "application/json")
+				retryReq.Header.Set("X-Agent-API-Key", a.config.APIKey)
+
+				// Retry registration
+				retryResp, err := client.Do(retryReq)
+				if err != nil {
+					log.Printf("[K8sAgent] Registration retry failed: %v. Continuing to wait...", err)
+					continue
+				}
+
+				// Check if still pending
+				var retryRegResp AgentRegistrationResponse
+				if err := json.NewDecoder(retryResp.Body).Decode(&retryRegResp); err != nil {
+					retryResp.Body.Close()
+					log.Printf("[K8sAgent] Failed to decode retry response: %v. Continuing to wait...", err)
+					continue
+				}
+				retryResp.Body.Close()
+
+				// Check approval status
+				if retryRegResp.ApprovalStatus == "pending" {
+					log.Printf("[K8sAgent] Still pending approval. Retrying in 30 seconds...")
+					continue
+				}
+
+				// Check if rejected
+				if retryRegResp.ApprovalStatus == "rejected" {
+					return fmt.Errorf("agent registration was rejected by administrator")
+				}
+
+				// Approved! Update API key and continue
+				if retryRegResp.APIKey != "" {
+					log.Printf("[K8sAgent] Agent approved! Received API key from Control Plane")
+					a.config.APIKey = retryRegResp.APIKey
+				}
+
+				// Update regResp to use approved response
+				regResp = retryRegResp
+				log.Printf("[K8sAgent] Agent registration approved")
+				// Exit retry loop
+				goto approved
+
+			case <-a.stopChan:
+				return fmt.Errorf("agent stopped while waiting for approval")
+			}
+		}
+	}
+
+approved:
 	// ISSUE #232 FIX: Update API key if a new one was issued (bootstrap registration)
 	// The API generates a unique key for each agent during bootstrap registration.
 	// We must use this new key for all subsequent requests (WebSocket, heartbeats, etc.)
@@ -673,6 +745,41 @@ func (a *K8sAgent) sendHeartbeat() error {
 	}
 
 	return a.sendMessage(heartbeat)
+}
+
+// sendSessionUpdate sends a session status update to the Control Plane.
+// v2.0 ARCHITECTURE: Database is source of truth - agent must update it via status messages.
+//
+// This follows the agent protocol defined in api/internal/models/agent_protocol.go:
+// - Type: "status" (models.MessageTypeStatus)
+// - Payload: StatusMessage with sessionId, state, vncReady, vncPort, platformMetadata
+func (a *K8sAgent) sendSessionUpdate(sessionID, state, podName, podIP string) error {
+	// Build platform metadata with pod information
+	platformMetadata := map[string]interface{}{
+		"podName": podName,
+	}
+	if podIP != "" {
+		platformMetadata["podIP"] = podIP
+	}
+
+	// Build status message payload
+	payload := map[string]interface{}{
+		"sessionId":        sessionID,
+		"state":            state,
+		"vncReady":         state == "running", // VNC is ready when session is running
+		"vncPort":          3000,               // Standard VNC port in session pods
+		"platformMetadata": platformMetadata,
+	}
+
+	// Create message with correct protocol type
+	update := map[string]interface{}{
+		"type":    "status", // models.MessageTypeStatus
+		"payload": payload,
+	}
+
+	log.Printf("[K8sAgent] Sending session status update: %s -> %s (pod: %s, vncReady: %v)",
+		sessionID, state, podName, state == "running")
+	return a.sendMessage(update)
 }
 
 // sendMessage sends a JSON message over the WebSocket connection.

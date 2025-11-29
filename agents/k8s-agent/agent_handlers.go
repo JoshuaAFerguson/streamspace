@@ -147,6 +147,15 @@ func (h *StartSessionHandler) Handle(cmd *CommandMessage) (*CommandResult, error
 		}
 	}
 
+	// v2.0 ARCHITECTURE: Update database via API (source of truth)
+	// Send session update message to Control Plane to update database
+	if h.agent != nil {
+		if err := h.agent.sendSessionUpdate(sessionID, "running", podName, podIP); err != nil {
+			log.Printf("[StartSessionHandler] Warning: Failed to send session update: %v", err)
+			// Don't fail the command - database can be updated manually if needed
+		}
+	}
+
 	// Return success result
 	return &CommandResult{
 		Success: true,
