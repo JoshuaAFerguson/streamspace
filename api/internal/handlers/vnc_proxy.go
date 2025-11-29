@@ -42,6 +42,14 @@ import (
 	ws "github.com/streamspace-dev/streamspace/api/internal/websocket"
 )
 
+const (
+	// VNC WebSocket timeout constants
+	// These are longer than agent timeouts since VNC sessions may be idle
+	vncPongWait   = 120 * time.Second // Time to wait for pong from UI
+	vncPingPeriod = 54 * time.Second  // Send pings to UI at this interval
+	vncWriteWait  = 10 * time.Second  // Time allowed to write a message
+)
+
 // VNCProxyHandler manages VNC WebSocket connections from UI clients.
 //
 // It proxies VNC traffic between UI clients and platform agents, enabling
@@ -213,6 +221,8 @@ func (h *VNCProxyHandler) HandleVNCConnection(c *gin.Context) {
 //   - Proxy → Agent: Send vnc_data message to agent
 //   - Agent → Proxy: Receive vnc_data message from agent
 //   - Proxy → UI: Write VNC data to UI WebSocket
+//
+// FIX: Added ping/pong keep-alive to prevent timeout during idle VNC sessions
 func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn *websocket.Conn) {
 	defer func() {
 		// Cleanup on disconnect
@@ -236,6 +246,26 @@ func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn 
 		log.Printf("[VNCProxy] VNC connection closed for session %s", sessionID)
 	}()
 
+	// FIX: Set up ping/pong handlers to keep connection alive during idle VNC sessions
+	// Set initial read deadline
+	uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
+
+	// Handle pong messages from UI (extends read deadline)
+	uiConn.SetPongHandler(func(string) error {
+		uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
+		return nil
+	})
+
+	// Handle ping messages from UI (respond with pong)
+	uiConn.SetPingHandler(func(appData string) error {
+		uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
+		uiConn.SetWriteDeadline(time.Now().Add(vncWriteWait))
+		if err := uiConn.WriteMessage(websocket.PongMessage, []byte(appData)); err != nil {
+			return err
+		}
+		return nil
+	})
+
 	// Get agent connection to receive vnc_data messages
 	agentConn := h.agentHub.GetConnection(agentID)
 	if agentConn == nil {
@@ -246,6 +276,26 @@ func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn 
 	// Channel to signal goroutine termination
 	stopChan := make(chan struct{})
 	defer close(stopChan)
+
+	// FIX: Goroutine 3: Send periodic pings to UI to keep connection alive
+	go func() {
+		ticker := time.NewTicker(vncPingPeriod)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				uiConn.SetWriteDeadline(time.Now().Add(vncWriteWait))
+				if err := uiConn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					log.Printf("[VNCProxy] Ping error for session %s: %v", sessionID, err)
+					stopChan <- struct{}{}
+					return
+				}
+			case <-stopChan:
+				return
+			}
+		}
+	}()
 
 	// Goroutine 1: UI → Agent (read from UI, send to agent)
 	go func() {
@@ -261,6 +311,9 @@ func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn 
 					stopChan <- struct{}{}
 					return
 				}
+
+				// FIX: Reset read deadline on successful read (activity detected)
+				uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
 
 				// Only process binary or text messages
 				if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage {
