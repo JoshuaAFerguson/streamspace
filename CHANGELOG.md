@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (Wave 30) 🚨 **CRITICAL**
 
+#### Migration 006 Missing (Issue #233)
+- **[CRITICAL] Added organizations migration to database.go**
+  - Problem: Migration 006 existed as a file but was not included in the inline migrations array
+  - Caused: `pq: column "org_id" does not exist` error preventing UI from listing sessions
+  - Solution: Added migration 006 to create organizations table and add org_id to tables
+  - Creates default organization for existing data
+  - Adds org_id to users, sessions, audit_log, api_keys, webhooks, agents tables
+- **Files changed:**
+  - `api/internal/db/database.go`: Added migration 006 (organizations and multi-tenancy support)
+
 #### Agent Ignores New API Key After Bootstrap (Issue #232)
 - **[CRITICAL] Fixed agent not using new API key after bootstrap registration**
   - Problem: Agent ignored the `apiKey` field in registration response
