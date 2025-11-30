@@ -359,7 +359,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(userDB, groupDB)
 	groupHandler := handlers.NewGroupHandler(groupDB, userDB)
 	authHandler := auth.NewAuthHandler(userDB, jwtManager, samlAuth)
-	activityHandler := handlers.NewActivityHandler(k8sClient, activityTracker)
+	activityHandler := handlers.NewActivityHandler(k8sClient, activityTracker, database)
 	catalogHandler := handlers.NewCatalogHandler(database)
 	sharingHandler := handlers.NewSharingHandler(database)
 	pluginHandler := handlers.NewPluginHandler(database, pluginDir)
