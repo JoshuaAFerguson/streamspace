@@ -124,21 +124,30 @@ func (h *VNCProxyHandler) HandleVNCConnection(c *gin.Context) {
 	}
 	userID := userIDInterface.(string)
 
-	// Look up session in database
+	// Look up session in database (including streaming protocol metadata)
 	var agentID string
 	var sessionState string
 	var sessionOwner string
+	var streamingProtocol string
+	var streamingPort int
+	var streamingPath string
 	err := h.db.DB().QueryRow(`
-		SELECT agent_id, state, user_id
+		SELECT agent_id, state, user_id,
+		       COALESCE(streaming_protocol, 'vnc'),
+		       COALESCE(streaming_port, 5900),
+		       COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE id = $1
-	`, sessionID).Scan(&agentID, &sessionState, &sessionOwner)
+	`, sessionID).Scan(&agentID, &sessionState, &sessionOwner, &streamingProtocol, &streamingPort, &streamingPath)
 
 	if err != nil {
 		log.Printf("[VNCProxy] Session %s not found: %v", sessionID, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
 		return
 	}
+
+	log.Printf("[VNCProxy] Session %s uses streaming protocol: %s (port: %d, path: %s)",
+		sessionID, streamingProtocol, streamingPort, streamingPath)
 
 	// Verify user has access to session
 	if sessionOwner != userID {
@@ -172,6 +181,51 @@ func (h *VNCProxyHandler) HandleVNCConnection(c *gin.Context) {
 		})
 		return
 	}
+
+	// Route to appropriate proxy handler based on streaming protocol
+	// VNC: Use WebSocket-based VNC proxy (current implementation)
+	// Selkies/HTTP-based: Return session info for direct HTTP access
+	if streamingProtocol == "selkies" || streamingProtocol == "guacamole" || streamingProtocol == "kasm" {
+		// HTTP-based streaming protocols (Selkies, Kasm, Guacamole, etc.)
+		log.Printf("[VNCProxy] Session %s uses HTTP-based protocol (%s), returning session access info",
+			sessionID, streamingProtocol)
+
+		// For HTTP-based protocols, the UI should access the pod directly via the session URL
+		// The agent exposes the pod's HTTP port, and the URL field contains the access URL
+		//
+		// FUTURE: Implement HTTP/WebSocket proxy for additional security/isolation
+		// For now, direct access is simpler and works with any HTTP-based streaming protocol
+
+		// Fetch session URL from database
+		var sessionURL string
+		err := h.db.DB().QueryRow(`SELECT COALESCE(url, '') FROM sessions WHERE id = $1`, sessionID).Scan(&sessionURL)
+		if err != nil || sessionURL == "" {
+			log.Printf("[VNCProxy] Session %s has no URL set (agent may still be starting pod)", sessionID)
+			c.JSON(http.StatusAccepted, gin.H{
+				"error": "Session URL not yet available",
+				"message": "The agent is still starting the session. Please wait and try again.",
+				"session_id": sessionID,
+				"protocol": streamingProtocol,
+				"retry_after": 5, // Suggest retry after 5 seconds
+			})
+			return
+		}
+
+		// Return session access information for HTTP-based protocol
+		c.JSON(http.StatusOK, gin.H{
+			"type": "http_session",
+			"session_id": sessionID,
+			"protocol": streamingProtocol,
+			"url": sessionURL,
+			"port": streamingPort,
+			"path": streamingPath,
+			"message": "Access this session via the provided URL",
+		})
+		return
+	}
+
+	// VNC protocol: Continue with existing VNC WebSocket proxy
+	log.Printf("[VNCProxy] Session %s uses VNC protocol, using WebSocket proxy", sessionID)
 
 	// Check for existing VNC connection
 	h.connMutex.RLock()

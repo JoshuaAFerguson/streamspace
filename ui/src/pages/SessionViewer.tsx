@@ -424,10 +424,18 @@ export default function SessionViewer() {
       </AppBar>
 
       <Box sx={{ flex: 1, position: 'relative', bgcolor: '#000' }}>
-        {/* v2.0: VNC connection routed through Control Plane proxy for firewall-friendly access */}
+        {/* Multi-protocol streaming support */}
+        {/* VNC: Load noVNC viewer through control plane proxy */}
+        {/* Selkies/HTTP-based: Load through control plane HTTP proxy */}
         <iframe
           ref={iframeRef}
-          src={`/vnc-viewer/${sessionId}`}
+          src={
+            session.streamingProtocol === 'selkies' ||
+            session.streamingProtocol === 'guacamole' ||
+            session.streamingProtocol === 'kasm'
+              ? `/api/v1/http/${sessionId}/`
+              : `/vnc-viewer/${sessionId}`
+          }
           style={{
             width: '100%',
             height: '100%',

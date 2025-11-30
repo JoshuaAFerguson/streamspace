@@ -45,6 +45,9 @@ type Session struct {
 	LastConnection     *time.Time `json:"last_connection,omitempty"`
 	LastDisconnect     *time.Time `json:"last_disconnect,omitempty"`
 	LastActivity       *time.Time `json:"last_activity,omitempty"`
+	StreamingProtocol  string     `json:"streaming_protocol"` // vnc, selkies, guacamole, x2go, rdp
+	StreamingPort      int        `json:"streaming_port"`     // Port for streaming service
+	StreamingPath      string     `json:"streaming_path,omitempty"` // URL path for HTTP-based protocols
 }
 
 // SessionDB handles database operations for sessions.
@@ -78,9 +81,10 @@ func (s *SessionDB) CreateSession(ctx context.Context, session *Session) error {
 			id, user_id, org_id, team_id, template_name, state, app_type,
 			active_connections, url, namespace, platform, agent_id, cluster_id, pod_name,
 			memory, cpu, persistent_home, idle_timeout, max_session_duration,
-			tags, created_at, updated_at, last_connection, last_disconnect, last_activity
+			tags, created_at, updated_at, last_connection, last_disconnect, last_activity,
+			streaming_protocol, streaming_port, streaming_path
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
 		ON CONFLICT (id) DO UPDATE SET
 			state = EXCLUDED.state,
 			url = EXCLUDED.url,
@@ -88,6 +92,9 @@ func (s *SessionDB) CreateSession(ctx context.Context, session *Session) error {
 			cluster_id = EXCLUDED.cluster_id,
 			pod_name = EXCLUDED.pod_name,
 			tags = EXCLUDED.tags,
+			streaming_protocol = EXCLUDED.streaming_protocol,
+			streaming_port = EXCLUDED.streaming_port,
+			streaming_path = EXCLUDED.streaming_path,
 			updated_at = EXCLUDED.updated_at
 	`
 
@@ -96,6 +103,7 @@ func (s *SessionDB) CreateSession(ctx context.Context, session *Session) error {
 		session.ActiveConnections, session.URL, session.Namespace, session.Platform, nullString(session.AgentID), nullString(session.ClusterID), session.PodName,
 		session.Memory, session.CPU, session.PersistentHome, session.IdleTimeout, session.MaxSessionDuration,
 		pq.Array(session.Tags), session.CreatedAt, session.UpdatedAt, session.LastConnection, session.LastDisconnect, session.LastActivity,
+		session.StreamingProtocol, session.StreamingPort, nullString(session.StreamingPath),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create session %s for user %s in org %s: %w", session.ID, session.UserID, session.OrgID, err)
@@ -116,7 +124,8 @@ func (s *SessionDB) GetSession(ctx context.Context, sessionID string) (*Session,
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
 			COALESCE(tags, ARRAY[]::TEXT[]),
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			created_at, updated_at, last_connection, last_disconnect, last_activity,
+			COALESCE(streaming_protocol, 'vnc'), COALESCE(streaming_port, 5900), COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE id = $1
 	`
@@ -127,6 +136,7 @@ func (s *SessionDB) GetSession(ctx context.Context, sessionID string) (*Session,
 		&session.Memory, &session.CPU, &session.PersistentHome, &session.IdleTimeout, &session.MaxSessionDuration,
 		pq.Array(&session.Tags),
 		&session.CreatedAt, &session.UpdatedAt, &session.LastConnection, &session.LastDisconnect, &session.LastActivity,
+		&session.StreamingProtocol, &session.StreamingPort, &session.StreamingPath,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -151,7 +161,8 @@ func (s *SessionDB) GetSessionByOrg(ctx context.Context, sessionID, orgID string
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
 			COALESCE(tags, ARRAY[]::TEXT[]),
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			created_at, updated_at, last_connection, last_disconnect, last_activity,
+			COALESCE(streaming_protocol, 'vnc'), COALESCE(streaming_port, 5900), COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE id = $1 AND org_id = $2
 	`
@@ -162,6 +173,7 @@ func (s *SessionDB) GetSessionByOrg(ctx context.Context, sessionID, orgID string
 		&session.Memory, &session.CPU, &session.PersistentHome, &session.IdleTimeout, &session.MaxSessionDuration,
 		pq.Array(&session.Tags),
 		&session.CreatedAt, &session.UpdatedAt, &session.LastConnection, &session.LastDisconnect, &session.LastActivity,
+		&session.StreamingProtocol, &session.StreamingPort, &session.StreamingPath,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -184,7 +196,8 @@ func (s *SessionDB) ListSessions(ctx context.Context) ([]*Session, error) {
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
 			COALESCE(tags, ARRAY[]::TEXT[]),
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			created_at, updated_at, last_connection, last_disconnect, last_activity,
+			COALESCE(streaming_protocol, 'vnc'), COALESCE(streaming_port, 5900), COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE state != 'deleted'
 		ORDER BY created_at DESC
@@ -204,7 +217,8 @@ func (s *SessionDB) ListSessionsByOrg(ctx context.Context, orgID string) ([]*Ses
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
 			COALESCE(tags, ARRAY[]::TEXT[]),
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			created_at, updated_at, last_connection, last_disconnect, last_activity,
+			COALESCE(streaming_protocol, 'vnc'), COALESCE(streaming_port, 5900), COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE org_id = $1 AND state != 'deleted'
 		ORDER BY created_at DESC
@@ -234,7 +248,8 @@ func (s *SessionDB) ListSessionsByUser(ctx context.Context, userID string) ([]*S
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
 			COALESCE(tags, ARRAY[]::TEXT[]),
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			created_at, updated_at, last_connection, last_disconnect, last_activity,
+			COALESCE(streaming_protocol, 'vnc'), COALESCE(streaming_port, 5900), COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE user_id = $1 AND state != 'deleted'
 		ORDER BY created_at DESC
@@ -264,7 +279,8 @@ func (s *SessionDB) ListSessionsByUserAndOrg(ctx context.Context, userID, orgID 
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
 			COALESCE(tags, ARRAY[]::TEXT[]),
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			created_at, updated_at, last_connection, last_disconnect, last_activity,
+			COALESCE(streaming_protocol, 'vnc'), COALESCE(streaming_port, 5900), COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE user_id = $1 AND org_id = $2 AND state != 'deleted'
 		ORDER BY created_at DESC
@@ -293,7 +309,8 @@ func (s *SessionDB) ListSessionsByState(ctx context.Context, state string) ([]*S
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
 			COALESCE(tags, ARRAY[]::TEXT[]),
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			created_at, updated_at, last_connection, last_disconnect, last_activity,
+			COALESCE(streaming_protocol, 'vnc'), COALESCE(streaming_port, 5900), COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE state = $1
 		ORDER BY created_at DESC
@@ -323,7 +340,8 @@ func (s *SessionDB) ListSessionsByStateAndOrg(ctx context.Context, state, orgID 
 			COALESCE(memory, ''), COALESCE(cpu, ''), COALESCE(persistent_home, false),
 			COALESCE(idle_timeout, ''), COALESCE(max_session_duration, ''),
 			COALESCE(tags, ARRAY[]::TEXT[]),
-			created_at, updated_at, last_connection, last_disconnect, last_activity
+			created_at, updated_at, last_connection, last_disconnect, last_activity,
+			COALESCE(streaming_protocol, 'vnc'), COALESCE(streaming_port, 5900), COALESCE(streaming_path, '')
 		FROM sessions
 		WHERE state = $1 AND org_id = $2
 		ORDER BY created_at DESC
@@ -563,6 +581,7 @@ func (s *SessionDB) scanSessions(rows *sql.Rows) ([]*Session, error) {
 			&session.Memory, &session.CPU, &session.PersistentHome, &session.IdleTimeout, &session.MaxSessionDuration,
 			pq.Array(&session.Tags),
 			&session.CreatedAt, &session.UpdatedAt, &session.LastConnection, &session.LastDisconnect, &session.LastActivity,
+			&session.StreamingProtocol, &session.StreamingPort, &session.StreamingPath,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan session row: %w", err)
