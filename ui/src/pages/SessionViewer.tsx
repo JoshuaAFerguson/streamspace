@@ -427,15 +427,21 @@ export default function SessionViewer() {
         {/* Multi-protocol streaming support */}
         {/* VNC: Load noVNC viewer through control plane proxy */}
         {/* Selkies/HTTP-based: Load through control plane HTTP proxy */}
+        {/* Token is passed as query param for iframe auth (iframes can't send Authorization headers) */}
         <iframe
           ref={iframeRef}
-          src={
-            session.streamingProtocol === 'selkies' ||
-            session.streamingProtocol === 'guacamole' ||
-            session.streamingProtocol === 'kasm'
-              ? `/api/v1/http/${sessionId}/`
-              : `/vnc-viewer/${sessionId}`
-          }
+          src={(() => {
+            const token = localStorage.getItem('token');
+            const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+            if (
+              session.streamingProtocol === 'selkies' ||
+              session.streamingProtocol === 'guacamole' ||
+              session.streamingProtocol === 'kasm'
+            ) {
+              return `/api/v1/http/${sessionId}/${tokenParam}`;
+            }
+            return `/vnc-viewer/${sessionId}${tokenParam}`;
+          })()}
           style={{
             width: '100%',
             height: '100%',

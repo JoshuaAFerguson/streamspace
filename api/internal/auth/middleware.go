@@ -163,8 +163,15 @@ func Middleware(jwtManager *JWTManager, userDB *db.UserDB) gin.HandlerFunc {
 
 		var tokenString string
 
-		// For WebSocket connections, try query parameter first (browsers can't send custom headers)
-		if isWebSocket {
+		// Check if this is a VNC/HTTP proxy path (iframes can't send Authorization headers)
+		path := c.Request.URL.Path
+		isVNCProxy := strings.HasPrefix(path, "/api/v1/http/") ||
+			strings.HasPrefix(path, "/api/v1/vnc/") ||
+			strings.HasPrefix(path, "/api/v1/websockify/")
+
+		// For WebSocket connections or VNC proxy paths, try query parameter first
+		// (browsers can't send custom headers in iframes or WebSocket upgrades)
+		if isWebSocket || isVNCProxy {
 			tokenString = c.Query("token")
 		}
 
