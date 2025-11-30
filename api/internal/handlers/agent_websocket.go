@@ -499,7 +499,7 @@ func (h *AgentWebSocketHandler) handleStatus(conn *wsocket.AgentConnection, msg 
 
 	query := `
 		UPDATE sessions
-		SET state = $1, pod_name = $2, url = $3, updated_at = $4
+		SET state = $1, pod_name = $2, url = $3, updated_at = $4, last_activity = $4
 		WHERE id = $5
 	`
 
