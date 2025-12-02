@@ -173,9 +173,23 @@ func Middleware(jwtManager *JWTManager, userDB *db.UserDB) gin.HandlerFunc {
 		// (browsers can't send custom headers in iframes or WebSocket upgrades)
 		if isWebSocket || isVNCProxy {
 			tokenString = c.Query("token")
+
+			// If token provided in query, set a session cookie for subsequent requests
+			// This allows asset/sub-resource requests (which don't include ?token) to authenticate
+			if tokenString != "" {
+				// Set cookie for all /api/v1 paths (covers http, vnc, websockify)
+				// Using SameSite=Lax (default) which allows same-origin requests including iframes
+				// Note: Not using HttpOnly so the cookie works properly in iframe context
+				c.SetCookie("streamspace_proxy_token", tokenString, 900, "/api/v1", "", false, false)
+			}
+
+			// If no query token, try the session cookie (for sub-resource requests like assets)
+			if tokenString == "" {
+				tokenString, _ = c.Cookie("streamspace_proxy_token")
+			}
 		}
 
-		// If no token from query parameter, try Authorization header
+		// If no token from query parameter or cookie, try Authorization header
 		if tokenString == "" {
 			authHeader := c.GetHeader("Authorization")
 			if authHeader == "" {

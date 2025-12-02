@@ -107,7 +107,7 @@ func (h *SelkiesProxyHandler) HandleHTTPProxy(c *gin.Context) {
 	}
 
 	// Get user from JWT (set by auth middleware)
-	userIDInterface, exists := c.Get("user_id")
+	userIDInterface, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return

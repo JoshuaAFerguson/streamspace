@@ -431,7 +431,7 @@ export default function SessionViewer() {
         <iframe
           ref={iframeRef}
           src={(() => {
-            const token = localStorage.getItem('token');
+            const token = localStorage.getItem('streamspace_token');
             const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
             if (
               session.streamingProtocol === 'selkies' ||
