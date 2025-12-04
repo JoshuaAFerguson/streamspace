@@ -217,7 +217,7 @@ func TestCreateResource_NoK8sClient(t *testing.T) {
 	// v2.0-beta: k8sClient is nil, returns 503 before validation
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Cluster management not available")
 }
 
@@ -259,7 +259,7 @@ func TestUpdateResource_NoK8sClient(t *testing.T) {
 	// v2.0-beta: k8sClient is nil, returns 503 before validation
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Cluster management not available")
 }
 
@@ -293,7 +293,7 @@ func TestDeleteResource_NoK8sClient(t *testing.T) {
 	// v2.0-beta: k8sClient is nil, returns 503 before validation
 	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Cluster management not available")
 }
 
@@ -356,7 +356,7 @@ func BenchmarkGetGVRForKind_CommonKinds(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		k := kinds[i%len(kinds)]
-		handler.getGVRForKind(k.apiVersion, k.kind)
+		_, _ = handler.getGVRForKind(k.apiVersion, k.kind)
 	}
 }
 
@@ -365,6 +365,6 @@ func BenchmarkGetGVRForKind_UnknownKind(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		handler.getGVRForKind("custom.io/v1", "UnknownResource")
+		_, _ = handler.getGVRForKind("custom.io/v1", "UnknownResource")
 	}
 }

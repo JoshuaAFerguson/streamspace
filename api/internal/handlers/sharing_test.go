@@ -157,7 +157,7 @@ func TestCreateShare_InvalidPermission(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	// Validator returns "Validation failed" with field details
 	assert.Contains(t, response["error"], "Validation failed")
 }
@@ -190,7 +190,7 @@ func TestCreateShare_NotOwner(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Only the session owner")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -230,7 +230,7 @@ func TestCreateShare_UserNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "User not found")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -383,7 +383,7 @@ func TestTransferOwnership_UserNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "User not found")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -450,7 +450,7 @@ func TestCreateInvitation_InvalidPermission(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	// Validator returns "Validation failed" with field details
 	assert.Contains(t, response["error"], "Validation failed")
 }
@@ -611,7 +611,7 @@ func TestAcceptInvitation_Expired(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "expired")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -644,7 +644,7 @@ func TestAcceptInvitation_Exhausted(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "fully used")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -831,6 +831,6 @@ func TestListSharedSessions_NoUserID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "userId parameter required")
 }

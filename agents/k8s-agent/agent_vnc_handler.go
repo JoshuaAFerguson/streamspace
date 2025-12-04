@@ -164,7 +164,7 @@ func (a *K8sAgent) initVNCTunnelForSession(sessionID string) error {
 
 		if err := a.vncManager.CreateTunnel(sessionID); err != nil {
 			log.Printf("[VNCHandler] Failed to create VNC tunnel for session %s: %v", sessionID, err)
-			a.sendVNCError(sessionID, err.Error())
+			_ = a.sendVNCError(sessionID, err.Error())
 		}
 	}()
 

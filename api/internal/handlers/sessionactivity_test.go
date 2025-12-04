@@ -243,7 +243,7 @@ func TestGetSessionActivity_WithFilters(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 	events := response["events"].([]interface{})
 	assert.Len(t, events, 1)
@@ -282,7 +282,7 @@ func TestGetSessionActivity_Pagination(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, float64(25), response["limit"])
 	assert.Equal(t, float64(50), response["offset"])
 
@@ -484,7 +484,7 @@ func TestGetUserSessionActivity_Pagination(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, float64(20), response["limit"])
 	assert.Equal(t, float64(40), response["offset"])
 

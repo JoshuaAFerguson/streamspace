@@ -379,8 +379,8 @@ func TestBroadcastToAllAgents(t *testing.T) {
 		Receive:  make(chan []byte, 256),
 	}
 
-	hub.RegisterAgent(agentConn1)
-	hub.RegisterAgent(agentConn2)
+	_ = hub.RegisterAgent(agentConn1)
+	_ = hub.RegisterAgent(agentConn2)
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -441,8 +441,8 @@ func TestBroadcastWithExclusion(t *testing.T) {
 		Receive:  make(chan []byte, 256),
 	}
 
-	hub.RegisterAgent(agentConn1)
-	hub.RegisterAgent(agentConn2)
+	_ = hub.RegisterAgent(agentConn1)
+	_ = hub.RegisterAgent(agentConn2)
 
 	time.Sleep(100 * time.Millisecond)
 
@@ -510,8 +510,8 @@ func TestGetConnectedAgents(t *testing.T) {
 		Receive:  make(chan []byte, 256),
 	}
 
-	hub.RegisterAgent(agentConn1)
-	hub.RegisterAgent(agentConn2)
+	_ = hub.RegisterAgent(agentConn1)
+	_ = hub.RegisterAgent(agentConn2)
 
 	time.Sleep(100 * time.Millisecond)
 

@@ -278,7 +278,7 @@ func (ct *ConnectionTracker) checkConnections() {
 				activeConns++
 			} else {
 				// Connection is stale, remove it
-				ct.removeConnection(ctx, conn.ID)
+				_ = ct.removeConnection(ctx, conn.ID)
 			}
 		}
 

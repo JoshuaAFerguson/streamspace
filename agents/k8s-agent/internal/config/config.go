@@ -96,7 +96,7 @@ func (c *AgentConfig) Validate() error {
 		c.HeartbeatInterval = 10 // default 10 seconds
 	}
 
-	if c.ReconnectBackoff == nil || len(c.ReconnectBackoff) == 0 {
+	if len(c.ReconnectBackoff) == 0 {
 		c.ReconnectBackoff = []int{2, 4, 8, 16, 32} // default exponential backoff
 	}
 

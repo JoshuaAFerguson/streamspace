@@ -56,16 +56,6 @@ func setupLicenseTest(t *testing.T) (*LicenseHandler, sqlmock.Sqlmock, func()) {
 	return handler, mock, cleanup
 }
 
-// Helper to create int pointer
-func intPtr(i int) *int {
-	return &i
-}
-
-// Helper to create float64 pointer
-func float64Ptr(f float64) *float64 {
-	return &f
-}
-
 // ============================================================================
 // GET CURRENT LICENSE TESTS
 // ============================================================================

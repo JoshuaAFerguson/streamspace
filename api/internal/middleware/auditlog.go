@@ -790,7 +790,7 @@ func (a *AuditLogger) Middleware() gin.HandlerFunc {
 
 			// Only log if body is present and under size limit (10KB)
 			if len(bodyBytes) > 0 && len(bodyBytes) < 10240 {
-				json.Unmarshal(bodyBytes, &requestBody)
+				_ = json.Unmarshal(bodyBytes, &requestBody)
 				requestBody = a.redactSensitiveData(requestBody)
 			}
 		}
@@ -844,7 +844,7 @@ func (a *AuditLogger) Middleware() gin.HandlerFunc {
 
 		// Log event asynchronously (non-blocking)
 		// Database write happens in background goroutine
-		go a.logEvent(event)
+		go func() { _ = a.logEvent(event) }()
 	}
 }
 

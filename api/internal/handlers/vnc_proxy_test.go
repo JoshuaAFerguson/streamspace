@@ -49,7 +49,7 @@ func (h *testAgentHub) AddMockAgent(agentID string) {
 		Receive: make(chan []byte, 256),
 		Conn:    nil, // Not needed for these tests
 	}
-	h.RegisterAgent(conn)
+	_ = h.RegisterAgent(conn)
 
 	// Give hub time to process registration (async operation)
 	// Poll until agent is connected or timeout

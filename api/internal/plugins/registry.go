@@ -135,8 +135,7 @@ import (
 //   - Runtime calls GetGlobalRegistry() to discover all plugins
 //   - Discovery applies global registry to runtime
 var (
-	globalRegistry     = &GlobalPluginRegistry{plugins: make(map[string]PluginFactory)}
-	globalRegistryOnce sync.Once
+	globalRegistry = &GlobalPluginRegistry{plugins: make(map[string]PluginFactory)}
 )
 
 // GlobalPluginRegistry manages global plugin registration and discovery.

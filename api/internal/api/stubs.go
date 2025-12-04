@@ -60,13 +60,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-var (
-	templateGVR = schema.GroupVersionResource{
-		Group:    "stream.space",
-		Version:  "v1alpha1",
-		Resource: "templates",
-	}
-)
 
 // upgrader configures the WebSocket upgrader with security checks.
 // It validates the Origin header to prevent CSRF attacks on WebSocket connections.
@@ -643,7 +636,7 @@ func (h *Handler) GetPodLogs(c *gin.Context) {
 
 		scanner := bufio.NewScanner(stream)
 		for scanner.Scan() {
-			c.Writer.Write([]byte(scanner.Text() + "\n"))
+			_, _ = c.Writer.Write([]byte(scanner.Text() + "\n"))
 			c.Writer.Flush()
 		}
 		return
@@ -944,7 +937,7 @@ func (h *Handler) SessionsWebSocket(c *gin.Context) {
 		if role != "admin" && role != "operator" {
 			// Regular users can only subscribe to their own events
 			log.Printf("Unauthorized attempt to subscribe to user %s by user %s (role: %s)", queryUserID, userIDStr, role)
-			conn.WriteJSON(map[string]interface{}{
+			_ = conn.WriteJSON(map[string]interface{}{
 				"error": "Unauthorized: Only admins and operators can subscribe to other users' events",
 			})
 			conn.Close()

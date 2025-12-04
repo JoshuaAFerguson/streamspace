@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,16 +15,6 @@ import (
 	"github.com/streamspace-dev/streamspace/api/internal/auth"
 )
 
-// createTestToken creates a JWT token for testing
-func createTestToken(t *testing.T, jwtManager *auth.JWTManager, claims *auth.Claims) string {
-	// Create token using the manager's config
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	tokenString, err := token.SignedString([]byte("test-secret-key-at-least-32-bytes"))
-	require.NoError(t, err)
-	return tokenString
-}
-
 func TestOrgContextMiddleware_ValidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -35,7 +26,7 @@ func TestOrgContextMiddleware_ValidToken(t *testing.T) {
 
 	// Create a token with org context
 	token, err := jwtManager.GenerateTokenWithOrg(
-		nil,
+		context.TODO(),
 		"user123",
 		"testuser",
 		"test@example.com",

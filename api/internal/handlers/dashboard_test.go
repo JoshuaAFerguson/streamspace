@@ -150,7 +150,7 @@ func TestGetResourceUsage_DatabaseError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "Failed to get resource usage", response["error"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -236,7 +236,7 @@ func TestGetUserUsageStats_Pagination(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 
 	assert.Equal(t, float64(10), response["limit"])
 	assert.Equal(t, float64(20), response["offset"])
@@ -350,7 +350,7 @@ func TestGetActivityTimeline_CustomDays(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, float64(30), response["days"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -378,7 +378,7 @@ func TestGetActivityTimeline_MaxDays(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, float64(90), response["days"], "Should cap at 90 days")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -466,7 +466,7 @@ func TestGetUserDashboard_NoAuth(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "User not authenticated", response["error"])
 }
 

@@ -704,7 +704,7 @@ func TestConcurrentAgentRegistrations(t *testing.T) {
 				Receive:  make(chan []byte, 256),
 			}
 			agents1[i] = agentConn
-			hub1.RegisterAgent(agentConn)
+			_ = hub1.RegisterAgent(agentConn)
 		}
 		done <- true
 	}()
@@ -720,7 +720,7 @@ func TestConcurrentAgentRegistrations(t *testing.T) {
 				Receive:  make(chan []byte, 256),
 			}
 			agents2[i] = agentConn
-			hub2.RegisterAgent(agentConn)
+			_ = hub2.RegisterAgent(agentConn)
 		}
 		done <- true
 	}()

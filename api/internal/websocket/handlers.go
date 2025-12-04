@@ -153,7 +153,7 @@ func (m *Manager) HandleSessionsWebSocketWithOrg(conn *websocket.Conn, userID, s
 	// SECURITY: Reject connections without org context
 	if orgCtx == nil || orgCtx.OrgID == "" {
 		log.Printf("WebSocket connection rejected: missing org context")
-		conn.WriteMessage(websocket.CloseMessage,
+		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "org context required"))
 		conn.Close()
 		return
@@ -224,7 +224,7 @@ func (m *Manager) HandleMetricsWebSocketWithOrg(conn *websocket.Conn, orgCtx *Or
 	// SECURITY: Reject connections without org context
 	if orgCtx == nil || orgCtx.OrgID == "" {
 		log.Printf("WebSocket metrics connection rejected: missing org context")
-		conn.WriteMessage(websocket.CloseMessage,
+		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "org context required"))
 		conn.Close()
 		return
@@ -253,7 +253,7 @@ func (m *Manager) HandleLogsWebSocketWithOrg(conn *websocket.Conn, podName strin
 	// SECURITY: Reject connections without org context
 	if orgCtx == nil || orgCtx.OrgID == "" || orgCtx.K8sNamespace == "" {
 		log.Printf("WebSocket logs connection rejected: missing org context")
-		conn.WriteMessage(websocket.TextMessage, []byte("Error: org context required"))
+		_ = conn.WriteMessage(websocket.TextMessage, []byte("Error: org context required"))
 		return
 	}
 
@@ -272,7 +272,7 @@ func (m *Manager) HandleLogsWebSocketWithOrg(conn *websocket.Conn, podName strin
 	stream, err := req.Stream(ctx)
 	if err != nil {
 		log.Printf("Failed to get pod logs stream for %s/%s: %v", namespace, podName, err)
-		conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Error: %v", err)))
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Error: %v", err)))
 		return
 	}
 	defer stream.Close()
@@ -364,7 +364,11 @@ func (m *Manager) broadcastSessionUpdates() {
 				// Add status info
 				status := make(map[string]interface{})
 				// Capitalize first letter for UI compatibility (expects "Running", not "running")
-				status["phase"] = strings.Title(state)
+				capitalizedState := state
+				if len(state) > 0 {
+					capitalizedState = strings.ToUpper(state[:1]) + state[1:]
+				}
+				status["phase"] = capitalizedState
 				if podName != nil {
 					status["podName"] = *podName
 				}

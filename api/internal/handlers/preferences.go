@@ -256,7 +256,7 @@ func (h *PreferencesHandler) GetUIPreferences(c *gin.Context) {
 	}
 
 	var uiPrefs map[string]interface{}
-	json.Unmarshal(prefsJSON, &uiPrefs)
+	_ = json.Unmarshal(prefsJSON, &uiPrefs)
 
 	c.JSON(http.StatusOK, uiPrefs)
 }
@@ -325,7 +325,7 @@ func (h *PreferencesHandler) GetNotificationPreferences(c *gin.Context) {
 	}
 
 	var notifPrefs map[string]interface{}
-	json.Unmarshal(prefsJSON, &notifPrefs)
+	_ = json.Unmarshal(prefsJSON, &notifPrefs)
 
 	c.JSON(http.StatusOK, notifPrefs)
 }
@@ -393,7 +393,7 @@ func (h *PreferencesHandler) GetDefaultsPreferences(c *gin.Context) {
 	}
 
 	var defaults map[string]interface{}
-	json.Unmarshal(prefsJSON, &defaults)
+	_ = json.Unmarshal(prefsJSON, &defaults)
 
 	c.JSON(http.StatusOK, defaults)
 }

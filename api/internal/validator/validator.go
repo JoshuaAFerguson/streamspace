@@ -15,9 +15,9 @@ var validate *validator.Validate
 func init() {
 	validate = validator.New()
 
-	// Register custom validators
-	validate.RegisterValidation("password", validatePassword)
-	validate.RegisterValidation("username", validateUsername)
+	// Register custom validators (errors ignored in init - validation will fail at runtime if registration fails)
+	_ = validate.RegisterValidation("password", validatePassword)
+	_ = validate.RegisterValidation("username", validateUsername)
 }
 
 // ValidateStruct validates a struct and returns user-friendly error messages

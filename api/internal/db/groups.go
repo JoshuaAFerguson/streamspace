@@ -211,7 +211,6 @@ func (g *GroupDB) ListGroups(ctx context.Context, groupType string, parentID *st
 	if parentID != nil {
 		query += fmt.Sprintf(" AND g.parent_id = $%d", argIdx)
 		args = append(args, *parentID)
-		argIdx++
 	}
 
 	query += " GROUP BY g.id ORDER BY g.name ASC"

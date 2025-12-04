@@ -116,7 +116,6 @@ import (
 	"github.com/streamspace-dev/streamspace/api/internal/tracker"
 	"github.com/streamspace-dev/streamspace/api/internal/websocket"
 	"gopkg.in/yaml.v3"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // sessionGVR defines the GroupVersionResource for Session custom resources.
@@ -132,13 +131,6 @@ const (
 	DefaultNamespace = "streamspace"
 )
 
-var (
-	sessionGVR = schema.GroupVersionResource{
-		Group:    "stream.space",
-		Version:  "v1alpha1",
-		Resource: "sessions",
-	}
-)
 
 // Handler handles all API requests for StreamSpace.
 //
@@ -2105,7 +2097,6 @@ func (h *Handler) ListCatalogTemplates(c *gin.Context) {
 	if tag != "" {
 		query += fmt.Sprintf(" AND $%d = ANY(ct.tags)", argIdx)
 		args = append(args, tag)
-		argIdx++
 	}
 
 	query += " ORDER BY ct.install_count DESC, ct.display_name ASC"
@@ -2480,66 +2471,6 @@ func (h *Handler) DeleteRepository(c *gin.Context) {
 //
 // PERFORMANCE:
 //
-// - Calls enrichSessionWithDBInfo for each session (N queries for N sessions)
-// - Could be optimized with batch query if needed
-// - Current implementation prioritizes code simplicity
-//
-// CONCURRENCY:
-//
-// - Safe for concurrent use (each request has own context)
-// - Connection tracker uses internal locking
-func (h *Handler) enrichSessionsWithDBInfo(ctx context.Context, sessions []*k8s.Session) []map[string]interface{} {
-	enriched := make([]map[string]interface{}, 0, len(sessions))
-
-	for _, session := range sessions {
-		enriched = append(enriched, h.enrichSessionWithDBInfo(ctx, session))
-	}
-
-	return enriched
-}
-
-// enrichSessionWithDBInfo enriches a single session with database information.
-//
-// Combines Kubernetes session data with real-time connection tracking:
-// - Session fields from Kubernetes CRD (name, state, resources)
-// - Active connection count from connection tracker
-//
-// This provides a complete view of session state for API clients without
-// requiring multiple requests.
-//
-// ERROR HANDLING:
-//
-// - Database errors are non-fatal (connection count defaults to 0)
-// - Always returns a valid response even if enrichment fails
-func (h *Handler) enrichSessionWithDBInfo(ctx context.Context, session *k8s.Session) map[string]interface{} {
-	result := map[string]interface{}{
-		"name":               session.Name,
-		"namespace":          session.Namespace,
-		"user":               session.User,
-		"template":           session.Template,
-		"state":              session.State,
-		"persistentHome":     session.PersistentHome,
-		"idleTimeout":        session.IdleTimeout,
-		"maxSessionDuration": session.MaxSessionDuration,
-		"tags":               session.Tags,
-		"status":             session.Status,
-		"createdAt":          session.CreatedAt,
-	}
-
-	if session.Resources.Memory != "" || session.Resources.CPU != "" {
-		result["resources"] = map[string]string{
-			"memory": session.Resources.Memory,
-			"cpu":    session.Resources.CPU,
-		}
-	}
-
-	// Get active connections count
-	activeConns := h.connTracker.GetConnectionCount(session.Name)
-	result["activeConnections"] = activeConns
-
-	return result
-}
-
 // convertDBSessionsToResponse converts database sessions to API response format.
 func (h *Handler) convertDBSessionsToResponse(sessions []*db.Session) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(sessions))
@@ -2597,125 +2528,4 @@ func (h *Handler) convertDBSessionToResponse(session *db.Session) map[string]int
 	}
 
 	return result
-}
-
-// cacheSessionInDB caches a session in the PostgreSQL database.
-//
-// DATABASE TRANSACTION BOUNDARY:
-//
-// - Single UPSERT query (INSERT ... ON CONFLICT DO UPDATE)
-// - No explicit transaction needed (single query is atomic)
-// - Idempotent: Safe to call multiple times with same session
-//
-// CACHE STRATEGY:
-//
-// Kubernetes is the source of truth for sessions. The database cache:
-// - Improves query performance (faster than Kubernetes API)
-// - Enables complex queries (search, filtering, aggregation)
-// - Provides metadata not in Kubernetes (connection count, analytics)
-//
-// IMPORTANT: Cache updates are best-effort. Callers should:
-// - Log errors but NOT fail the request on cache failures
-// - Kubernetes state is authoritative, database is supplementary
-//
-// UPSERT BEHAVIOR:
-//
-// ON CONFLICT (id) DO UPDATE ensures idempotency:
-// - If session doesn't exist: INSERT new row
-// - If session exists: UPDATE existing row with new values
-// - No error if called multiple times
-//
-// ERROR HANDLING:
-//
-// Returns error on database failure, but callers typically ignore it:
-//   if err := h.cacheSessionInDB(ctx, session); err != nil {
-//       log.Printf("Cache update failed (non-fatal): %v", err)
-//   }
-func (h *Handler) cacheSessionInDB(ctx context.Context, session *k8s.Session) error {
-	dbSession := &db.Session{
-		ID:                 session.Name,
-		UserID:             session.User,
-		TemplateName:       session.Template,
-		State:              session.State,
-		AppType:            "desktop",
-		Namespace:          session.Namespace,
-		Platform:           h.platform,
-		URL:                session.Status.URL,
-		PodName:            session.Status.PodName,
-		Memory:             session.Resources.Memory,
-		CPU:                session.Resources.CPU,
-		PersistentHome:     session.PersistentHome,
-		IdleTimeout:        session.IdleTimeout,
-		MaxSessionDuration: session.MaxSessionDuration,
-		CreatedAt:          session.CreatedAt,
-		LastActivity:       session.Status.LastActivity,
-	}
-
-	return h.sessionDB.CreateSession(ctx, dbSession)
-}
-
-// updateSessionInDB updates a cached session in the database.
-//
-// DATABASE TRANSACTION BOUNDARY:
-//
-// - Single UPDATE query
-// - No explicit transaction needed
-// - Updates state, URL, and timestamp
-//
-// CACHE CONSISTENCY:
-//
-// This method updates only fields that change during session lifecycle:
-// - state: running → hibernated → terminated
-// - url: Updated when session endpoint changes
-// - updated_at: Timestamp of last modification
-//
-// Other fields (user, template, namespace) are immutable and not updated.
-//
-// ERROR HANDLING:
-//
-// - Returns error if session not found or database failure
-// - Callers typically log and ignore errors (best-effort caching)
-func (h *Handler) updateSessionInDB(ctx context.Context, session *k8s.Session) error {
-	_, err := h.db.DB().ExecContext(ctx, `
-		UPDATE sessions
-		SET state = $1, url = $2, updated_at = $3
-		WHERE id = $4
-	`, session.State, session.Status.URL, time.Now(), session.Name)
-
-	return err
-}
-
-// deleteSessionFromDB removes a session from the database cache.
-//
-// DATABASE TRANSACTION BOUNDARY:
-//
-// - Single DELETE query
-// - No explicit transaction needed
-// - Idempotent: Safe to call even if session doesn't exist
-//
-// CLEANUP STRATEGY:
-//
-// When a session is deleted from Kubernetes, we also remove it from
-// the database cache to prevent stale data.
-//
-// CASCADE BEHAVIOR:
-//
-// Database schema may have CASCADE DELETE for related tables:
-// - session_connections (active connections)
-// - session_snapshots (saved states)
-// - audit_logs (may be preserved)
-//
-// Check database schema for exact CASCADE behavior.
-//
-// ERROR HANDLING:
-//
-// - Returns error on database failure
-// - Callers typically log and ignore (best-effort cleanup)
-// - Stale cache entries cleaned up by periodic garbage collection
-func (h *Handler) deleteSessionFromDB(ctx context.Context, sessionID string) error {
-	_, err := h.db.DB().ExecContext(ctx, `
-		DELETE FROM sessions WHERE id = $1
-	`, sessionID)
-
-	return err
 }

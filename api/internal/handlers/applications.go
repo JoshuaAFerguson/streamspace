@@ -232,7 +232,7 @@ func (h *ApplicationHandler) InstallApplication(c *gin.Context) {
 
 	// Step 4: Grant initial group access permissions if specified in request
 	for _, groupID := range req.GroupIDs {
-		h.appDB.AddGroupAccess(ctx, app.ID, groupID, "launch")
+		_ = h.appDB.AddGroupAccess(ctx, app.ID, groupID, "launch")
 	}
 
 	// Step 5: Publish NATS event for controller to process

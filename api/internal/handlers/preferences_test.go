@@ -177,7 +177,7 @@ func TestGetPreferences_NoAuth(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "not authenticated")
 }
 
@@ -692,7 +692,7 @@ func TestGetPreferences_DatabaseError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Failed to get preferences")
 
 	assert.NoError(t, mock.ExpectationsWereMet())

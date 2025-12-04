@@ -299,7 +299,6 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	if region != "" {
 		query += fmt.Sprintf(" AND region = $%d", argIdx)
 		args = append(args, region)
-		argIdx++
 	}
 
 	query += " ORDER BY created_at DESC"

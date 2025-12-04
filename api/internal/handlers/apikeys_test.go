@@ -58,11 +58,6 @@ func setupAPIKeyTest(t *testing.T) (*APIKeyHandler, sqlmock.Sqlmock, func()) {
 	return handler, mock, cleanup
 }
 
-// Helper to create time pointer
-func timePtr(t time.Time) *time.Time {
-	return &t
-}
-
 // ============================================================================
 // CREATE API KEY TESTS
 // ============================================================================

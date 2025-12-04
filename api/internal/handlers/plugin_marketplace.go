@@ -518,10 +518,8 @@ func (h *PluginMarketplaceHandler) EnablePlugin(c *gin.Context) {
 func (h *PluginMarketplaceHandler) DisablePlugin(c *gin.Context) {
 	name := c.Param("name")
 
-	// Unload from runtime
-	if err := h.runtime.UnloadPlugin(c.Request.Context(), name); err != nil {
-		// Log but don't fail
-	}
+	// Unload from runtime (best effort, don't fail if plugin wasn't loaded)
+	_ = h.runtime.UnloadPlugin(c.Request.Context(), name)
 
 	// Update database
 	_, err := h.db.DB().ExecContext(c.Request.Context(), `

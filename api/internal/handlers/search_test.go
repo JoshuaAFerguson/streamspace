@@ -148,7 +148,7 @@ func TestSearch_MissingQuery(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "query required")
 }
 
@@ -238,7 +238,7 @@ func TestSearchTemplates_DatabaseError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "failed")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -684,7 +684,7 @@ func TestGetSavedSearch_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "not found")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -815,7 +815,7 @@ func TestExecuteSavedSearch_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "not found")
 
 	assert.NoError(t, mock.ExpectationsWereMet())

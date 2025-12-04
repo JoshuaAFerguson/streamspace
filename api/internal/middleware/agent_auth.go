@@ -499,8 +499,8 @@ func (a *AgentAuth) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		// Update last used timestamp
-		a.database.DB().Exec(`
+		// Update last used timestamp (best effort, ignore errors)
+		_, _ = a.database.DB().Exec(`
 			UPDATE agents SET api_key_last_used_at = $1, updated_at = $1
 			WHERE agent_id = $2
 		`, time.Now(), agentID)

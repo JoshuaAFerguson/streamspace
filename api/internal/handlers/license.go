@@ -378,7 +378,7 @@ func (h *LicenseHandler) ActivateLicense(c *gin.Context) {
 		})
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Deactivate current license
 	_, err = tx.Exec("UPDATE licenses SET status = 'inactive' WHERE status = 'active'")

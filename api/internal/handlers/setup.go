@@ -229,7 +229,7 @@ func (h *SetupHandler) SetupAdmin(c *gin.Context) {
 		})
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Update admin user (only if password is still NULL - prevents race conditions)
 	result, err := tx.Exec(`

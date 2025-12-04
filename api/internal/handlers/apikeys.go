@@ -481,13 +481,13 @@ func (h *APIKeyHandler) GetAPIKeyUsage(c *gin.Context) {
 
 	// Get total usage count
 	var totalUsage int
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM api_key_usage_log WHERE api_key_id = $1
 	`, keyID).Scan(&totalUsage)
 
 	// Get recent usage (last 24 hours)
 	var recentUsage int
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM api_key_usage_log
 		WHERE api_key_id = $1 AND timestamp >= NOW() - INTERVAL '24 hours'
 	`, keyID).Scan(&recentUsage)

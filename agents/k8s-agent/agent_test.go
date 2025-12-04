@@ -325,7 +325,7 @@ func BenchmarkAgentMessageParsing(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var msg AgentMessage
-		json.Unmarshal([]byte(jsonStr), &msg)
+		_ = json.Unmarshal([]byte(jsonStr), &msg)
 	}
 }
 

@@ -280,14 +280,13 @@ func (h *CatalogHandler) ListTemplates(c *gin.Context) {
 	if appType != "" {
 		countQuery += ` AND ct.app_type = $` + strconv.Itoa(countArgIdx)
 		countArgs = append(countArgs, appType)
-		countArgIdx++
 	}
 	if featured {
 		countQuery += ` AND ct.is_featured = true`
 	}
 
 	var total int
-	h.db.DB().QueryRowContext(c.Request.Context(), countQuery, countArgs...).Scan(&total)
+	_ = h.db.DB().QueryRowContext(c.Request.Context(), countQuery, countArgs...).Scan(&total)
 
 	c.JSON(http.StatusOK, gin.H{
 		"templates": templates,
@@ -628,7 +627,7 @@ func (h *CatalogHandler) RecordInstall(c *gin.Context) {
 
 // updateTemplateRating updates the aggregated rating for a template
 func (h *CatalogHandler) updateTemplateRating(c *gin.Context, templateID string) {
-	h.db.DB().ExecContext(c.Request.Context(), `
+	_, _ = h.db.DB().ExecContext(c.Request.Context(), `
 		UPDATE catalog_templates ct
 		SET
 			avg_rating = COALESCE((

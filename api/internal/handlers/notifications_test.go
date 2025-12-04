@@ -194,7 +194,7 @@ func TestGetUnreadCount_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, float64(5), response["count"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -224,7 +224,7 @@ func TestMarkAsRead_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "Notification marked as read", response["message"])
 	assert.Equal(t, notifID, response["id"])
 
@@ -253,7 +253,7 @@ func TestMarkAllAsRead_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "All notifications marked as read", response["message"])
 	assert.Equal(t, float64(3), response["count"])
 
@@ -284,7 +284,7 @@ func TestDeleteNotification_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "Notification deleted", response["message"])
 	assert.Equal(t, notifID, response["id"])
 
@@ -313,7 +313,7 @@ func TestClearAllNotifications_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "Read notifications cleared", response["message"])
 	assert.Equal(t, float64(7), response["count"])
 
@@ -416,7 +416,7 @@ func TestUpdateNotificationPreferences_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, "Notification preferences updated", response["message"])
 
 	assert.NoError(t, mock.ExpectationsWereMet())

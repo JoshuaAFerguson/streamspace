@@ -135,7 +135,7 @@ func TestGetTeamPermissions_DatabaseError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Failed to get team permissions")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -223,7 +223,7 @@ func TestGetTeamRoleInfo_DatabaseError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Failed to get team roles")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -253,7 +253,7 @@ func TestGetMyTeamPermissions_NoAuth(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "not authenticated")
 }
 
@@ -274,7 +274,7 @@ func TestGetMyTeamPermissions_InvalidUserID(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Invalid user ID")
 }
 
@@ -312,7 +312,7 @@ func TestCheckPermission_NoAuth(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "not authenticated")
 }
 
@@ -360,7 +360,7 @@ func TestGetMyTeams_NoAuth(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "not authenticated")
 }
 

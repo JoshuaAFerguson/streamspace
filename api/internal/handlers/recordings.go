@@ -267,7 +267,7 @@ func (h *RecordingHandler) ListRecordings(c *gin.Context) {
 		countQueryPg = strings.Replace(countQueryPg, "$", fmt.Sprintf("$%d", i+1), 1)
 	}
 
-	h.database.DB().QueryRowContext(ctx, countQueryPg, countArgs...).Scan(&total)
+	_ = h.database.DB().QueryRowContext(ctx, countQueryPg, countArgs...).Scan(&total)
 
 	c.JSON(http.StatusOK, gin.H{
 		"recordings": recordings,
@@ -539,16 +539,16 @@ func (h *RecordingHandler) ListPolicies(c *gin.Context) {
 
 		// Parse JSONB fields
 		if len(applyToUsers) > 0 {
-			json.Unmarshal(applyToUsers, &p.ApplyToUsers)
+			_ = json.Unmarshal(applyToUsers, &p.ApplyToUsers)
 		}
 		if len(applyToTeams) > 0 {
-			json.Unmarshal(applyToTeams, &p.ApplyToTeams)
+			_ = json.Unmarshal(applyToTeams, &p.ApplyToTeams)
 		}
 		if len(applyToTemplates) > 0 {
-			json.Unmarshal(applyToTemplates, &p.ApplyToTemplates)
+			_ = json.Unmarshal(applyToTemplates, &p.ApplyToTemplates)
 		}
 		if len(metadata) > 0 {
-			json.Unmarshal(metadata, &p.Metadata)
+			_ = json.Unmarshal(metadata, &p.Metadata)
 		}
 
 		policies = append(policies, p)
@@ -603,16 +603,16 @@ func (h *RecordingHandler) GetPolicy(c *gin.Context) {
 
 	// Parse JSONB fields
 	if len(applyToUsers) > 0 {
-		json.Unmarshal(applyToUsers, &p.ApplyToUsers)
+		_ = json.Unmarshal(applyToUsers, &p.ApplyToUsers)
 	}
 	if len(applyToTeams) > 0 {
-		json.Unmarshal(applyToTeams, &p.ApplyToTeams)
+		_ = json.Unmarshal(applyToTeams, &p.ApplyToTeams)
 	}
 	if len(applyToTemplates) > 0 {
-		json.Unmarshal(applyToTemplates, &p.ApplyToTemplates)
+		_ = json.Unmarshal(applyToTemplates, &p.ApplyToTemplates)
 	}
 	if len(metadata) > 0 {
-		json.Unmarshal(metadata, &p.Metadata)
+		_ = json.Unmarshal(metadata, &p.Metadata)
 	}
 
 	c.JSON(http.StatusOK, p)
@@ -792,7 +792,7 @@ func (h *RecordingHandler) logAccess(ctx context.Context, recordingID, userID, a
 		INSERT INTO recording_access_log (recording_id, user_id, action, ip_address, user_agent)
 		VALUES ($1, $2, $3, $4, $5)
 	`
-	h.database.DB().ExecContext(ctx, query, recordingID, userID, action, ipAddress, userAgent)
+	_, _ = h.database.DB().ExecContext(ctx, query, recordingID, userID, action, ipAddress, userAgent)
 }
 
 // formatDuration formats duration in seconds to human-readable format

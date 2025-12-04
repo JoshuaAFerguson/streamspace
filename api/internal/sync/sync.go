@@ -212,7 +212,7 @@ func (s *SyncService) SyncRepository(ctx context.Context, repoID int) error {
 
 	if cloneErr != nil {
 		errMsg := fmt.Sprintf("Git operation failed: %v", cloneErr)
-		s.updateRepositoryStatus(ctx, repoID, "failed", errMsg)
+		_ = s.updateRepositoryStatus(ctx, repoID, "failed", errMsg) // Best effort status update
 		return fmt.Errorf("git operation failed: %w", cloneErr)
 	}
 
@@ -238,7 +238,7 @@ func (s *SyncService) SyncRepository(ctx context.Context, repoID int) error {
 	if len(templates) > 0 {
 		if err := s.updateCatalog(ctx, repoID, templates); err != nil {
 			errMsg := fmt.Sprintf("Template catalog update failed: %v", err)
-			s.updateRepositoryStatus(ctx, repoID, "failed", errMsg)
+			_ = s.updateRepositoryStatus(ctx, repoID, "failed", errMsg) // Best effort status update
 			return fmt.Errorf("template catalog update failed: %w", err)
 		}
 	}
@@ -247,7 +247,7 @@ func (s *SyncService) SyncRepository(ctx context.Context, repoID int) error {
 	if len(plugins) > 0 {
 		if err := s.updatePluginCatalog(ctx, repoID, plugins); err != nil {
 			errMsg := fmt.Sprintf("Plugin catalog update failed: %v", err)
-			s.updateRepositoryStatus(ctx, repoID, "failed", errMsg)
+			_ = s.updateRepositoryStatus(ctx, repoID, "failed", errMsg) // Best effort status update
 			return fmt.Errorf("plugin catalog update failed: %w", err)
 		}
 	}
@@ -386,7 +386,7 @@ func (s *SyncService) updateCatalog(ctx context.Context, repoID int, templates [
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // No-op after successful commit
 
 	// Deduplicate templates by name (keep the last occurrence)
 	templateMap := make(map[string]*ParsedTemplate)
@@ -458,7 +458,7 @@ func (s *SyncService) updatePluginCatalog(ctx context.Context, repoID int, plugi
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // No-op after successful commit
 
 	// Delete existing plugins for this repository
 	_, err = tx.ExecContext(ctx, `

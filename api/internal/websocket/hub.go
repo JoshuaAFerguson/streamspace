@@ -243,10 +243,10 @@ func (c *Client) writePump() {
 		select {
 		case message, ok := <-c.send:
 			// Set write deadline to prevent hanging on slow connections
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
 				// Hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -254,13 +254,13 @@ func (c *Client) writePump() {
 			if err != nil {
 				return
 			}
-			w.Write(message)
+			_, _ = w.Write(message)
 
 			// Add queued messages to the current websocket message
 			n := len(c.send)
 			for i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
-				w.Write(<-c.send)
+				_, _ = w.Write([]byte{'\n'})
+				_, _ = w.Write(<-c.send)
 			}
 
 			if err := w.Close(); err != nil {
@@ -269,7 +269,7 @@ func (c *Client) writePump() {
 
 		case <-ticker.C:
 			// Send ping to keep connection alive
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -285,19 +285,20 @@ func (c *Client) readPump() {
 	}()
 
 	// Set read deadline and pong handler to keep connection alive
-	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 
 	// Set ping handler to automatically respond with pongs
 	c.conn.SetPingHandler(func(appData string) error {
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		err := c.conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(10*time.Second))
 		if err == websocket.ErrCloseSent {
 			return nil
-		} else if e, ok := err.(net.Error); ok && e.Temporary() {
+		} else if _, ok := err.(net.Error); ok {
+			// Treat all net.Error as non-fatal for pong responses
 			return nil
 		}
 		return err
@@ -313,7 +314,7 @@ func (c *Client) readPump() {
 		}
 
 		// Reset read deadline on any message
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		// For now, we just log received messages
 		// In the future, we could handle client->server messages

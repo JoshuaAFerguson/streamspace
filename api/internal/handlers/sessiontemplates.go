@@ -208,7 +208,6 @@ func (h *SessionTemplatesHandler) ListSessionTemplates(c *gin.Context) {
 	if category != "" {
 		sqlQuery += fmt.Sprintf(` AND category = $%d`, argIndex)
 		args = append(args, category)
-		argIndex++
 	}
 
 	sqlQuery += ` ORDER BY is_default DESC, usage_count DESC, created_at DESC`
@@ -240,16 +239,16 @@ func (h *SessionTemplatesHandler) ListSessionTemplates(c *gin.Context) {
 				t.TeamID = teamID.String
 			}
 			if len(tagsJSON) > 0 {
-				json.Unmarshal(tagsJSON, &t.Tags)
+				_ = json.Unmarshal(tagsJSON, &t.Tags)
 			}
 			if len(configJSON) > 0 {
-				json.Unmarshal(configJSON, &t.Configuration)
+				_ = json.Unmarshal(configJSON, &t.Configuration)
 			}
 			if len(resourcesJSON) > 0 {
-				json.Unmarshal(resourcesJSON, &t.Resources)
+				_ = json.Unmarshal(resourcesJSON, &t.Resources)
 			}
 			if len(envJSON) > 0 {
-				json.Unmarshal(envJSON, &t.Environment)
+				_ = json.Unmarshal(envJSON, &t.Environment)
 			}
 
 			templates = append(templates, t)
@@ -310,7 +309,7 @@ func (h *SessionTemplatesHandler) CreateSessionTemplate(c *gin.Context) {
 
 	// If setting as default, unset other defaults
 	if req.IsDefault {
-		h.db.DB().ExecContext(ctx, `UPDATE user_session_templates SET is_default = false WHERE user_id = $1`, userIDStr)
+		_, _ = h.db.DB().ExecContext(ctx, `UPDATE user_session_templates SET is_default = false WHERE user_id = $1`, userIDStr)
 	}
 
 	_, err := h.db.DB().ExecContext(ctx, `
@@ -376,16 +375,16 @@ func (h *SessionTemplatesHandler) GetSessionTemplate(c *gin.Context) {
 		t.TeamID = teamID.String
 	}
 	if len(tagsJSON) > 0 {
-		json.Unmarshal(tagsJSON, &t.Tags)
+		_ = json.Unmarshal(tagsJSON, &t.Tags)
 	}
 	if len(configJSON) > 0 {
-		json.Unmarshal(configJSON, &t.Configuration)
+		_ = json.Unmarshal(configJSON, &t.Configuration)
 	}
 	if len(resourcesJSON) > 0 {
-		json.Unmarshal(resourcesJSON, &t.Resources)
+		_ = json.Unmarshal(resourcesJSON, &t.Resources)
 	}
 	if len(envJSON) > 0 {
-		json.Unmarshal(envJSON, &t.Environment)
+		_ = json.Unmarshal(envJSON, &t.Environment)
 	}
 
 	c.JSON(http.StatusOK, t)
@@ -485,7 +484,7 @@ func (h *SessionTemplatesHandler) CloneSessionTemplate(c *gin.Context) {
 	var req struct {
 		Name string `json:"name"`
 	}
-	c.ShouldBindJSON(&req)
+	_ = c.ShouldBindJSON(&req)
 
 	ctx := context.Background()
 
@@ -735,7 +734,7 @@ func (h *SessionTemplatesHandler) SetAsDefaultTemplate(c *gin.Context) {
 	ctx := context.Background()
 
 	// Unset other defaults
-	h.db.DB().ExecContext(ctx, `UPDATE user_session_templates SET is_default = false WHERE user_id = $1`, userIDStr)
+	_, _ = h.db.DB().ExecContext(ctx, `UPDATE user_session_templates SET is_default = false WHERE user_id = $1`, userIDStr)
 
 	// Set this as default
 	_, err := h.db.DB().ExecContext(ctx, `
@@ -902,7 +901,7 @@ func (h *SessionTemplatesHandler) ListPublicTemplates(c *gin.Context) {
 			}
 			if len(tagsJSON) > 0 {
 				var tags []string
-				json.Unmarshal(tagsJSON, &tags)
+				_ = json.Unmarshal(tagsJSON, &tags)
 				item["tags"] = tags
 			}
 			templates = append(templates, item)
@@ -1251,13 +1250,15 @@ func (h *SessionTemplatesHandler) ListTemplateVersions(c *gin.Context) {
 	page := 1
 	limit := 50
 	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := fmt.Sscanf(pageStr, "%d", &page); err == nil && p == 1 && page > 0 {
-			// page is valid
+		var parsedPage int
+		if p, err := fmt.Sscanf(pageStr, "%d", &parsedPage); err == nil && p == 1 && parsedPage > 0 {
+			page = parsedPage
 		}
 	}
 	if limitStr := c.Query("limit"); limitStr != "" {
-		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && l == 1 && limit > 0 && limit <= 100 {
-			// limit is valid
+		var parsedLimit int
+		if l, err := fmt.Sscanf(limitStr, "%d", &parsedLimit); err == nil && l == 1 && parsedLimit > 0 && parsedLimit <= 100 {
+			limit = parsedLimit
 		}
 	}
 	offset := (page - 1) * limit

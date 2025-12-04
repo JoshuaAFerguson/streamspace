@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -413,7 +412,7 @@ func main() {
 		log.Println("Configuring mTLS (Mutual TLS) for agent authentication...")
 
 		// Load CA certificate
-		caCert, err := ioutil.ReadFile(agentCACertFile)
+		caCert, err := os.ReadFile(agentCACertFile)
 		if err != nil {
 			log.Fatalf("Failed to read agent CA certificate: %v", err)
 		}

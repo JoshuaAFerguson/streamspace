@@ -230,20 +230,21 @@ func (h *AgentWebSocketHandler) readPump(conn *wsocket.AgentConnection) {
 		conn.Conn.Close()
 	}()
 
-	conn.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	_ = conn.Conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.Conn.SetReadLimit(maxMessageSize)
 	conn.Conn.SetPongHandler(func(string) error {
-		conn.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = conn.Conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
 	// Set ping handler to automatically respond with pongs when agent sends pings
 	conn.Conn.SetPingHandler(func(appData string) error {
-		conn.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = conn.Conn.SetReadDeadline(time.Now().Add(pongWait))
 		err := conn.Conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(writeWait))
 		if err == websocket.ErrCloseSent {
 			return nil
-		} else if e, ok := err.(net.Error); ok && e.Temporary() {
+		} else if _, ok := err.(net.Error); ok {
+			// Treat all net.Error as non-fatal for pong responses
 			return nil
 		}
 		return err
@@ -321,10 +322,10 @@ func (h *AgentWebSocketHandler) writePump(conn *wsocket.AgentConnection) {
 	for {
 		select {
 		case message, ok := <-conn.Send:
-			conn.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = conn.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// Hub closed the channel
-				conn.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = conn.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -333,13 +334,13 @@ func (h *AgentWebSocketHandler) writePump(conn *wsocket.AgentConnection) {
 				log.Printf("[AgentWebSocket] Write error for agent %s: %v", conn.AgentID, err)
 				return
 			}
-			w.Write(message)
+			_, _ = w.Write(message)
 
 			// Add queued messages to the current websocket message
 			n := len(conn.Send)
 			for i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
-				w.Write(<-conn.Send)
+				_, _ = w.Write([]byte{'\n'})
+				_, _ = w.Write(<-conn.Send)
 			}
 
 			if err := w.Close(); err != nil {
@@ -348,7 +349,7 @@ func (h *AgentWebSocketHandler) writePump(conn *wsocket.AgentConnection) {
 			}
 
 		case <-ticker.C:
-			conn.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = conn.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := conn.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				log.Printf("[AgentWebSocket] Ping error for agent %s: %v", conn.AgentID, err)
 				return

@@ -164,20 +164,3 @@ func (a *K8sAgent) sendFailed(commandID string, errorMessage string) error {
 
 	return a.sendMessage(failed)
 }
-
-// sendStatusUpdate sends a session status update to the Control Plane.
-func (a *K8sAgent) sendStatusUpdate(sessionID string, state string, vncReady bool, vncPort int, metadata map[string]interface{}) error {
-	status := map[string]interface{}{
-		"type":      "status",
-		"timestamp": time.Now(),
-		"payload": map[string]interface{}{
-			"sessionId":        sessionID,
-			"state":            state,
-			"vncReady":         vncReady,
-			"vncPort":          vncPort,
-			"platformMetadata": metadata,
-		},
-	}
-
-	return a.sendMessage(status)
-}

@@ -434,9 +434,6 @@ const (
 
 	// Send pings to peer with this period (must be less than pongWait)
 	pingPeriod = (pongWait * 9) / 10
-
-	// Maximum message size allowed from peer
-	maxMessageSize = 512 * 1024 // 512 KB
 )
 
 // AgentRegistrationRequest is the request payload for agent registration.
@@ -662,9 +659,9 @@ func (a *K8sAgent) connectWebSocket() error {
 	}
 
 	// Set connection parameters
-	conn.SetReadDeadline(time.Now().Add(pongWait))
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
@@ -823,7 +820,7 @@ func (a *K8sAgent) readPump() {
 
 			if conn == nil {
 				log.Println("[K8sAgent] Connection lost in read pump")
-				a.Reconnect()
+				_ = a.Reconnect()
 				continue
 			}
 
@@ -833,7 +830,7 @@ func (a *K8sAgent) readPump() {
 					log.Printf("[K8sAgent] Unexpected close: %v", err)
 				}
 				log.Println("[K8sAgent] Read error, attempting reconnect...")
-				a.Reconnect()
+				_ = a.Reconnect()
 				continue
 			}
 
@@ -878,7 +875,7 @@ func (a *K8sAgent) writePump() {
 				continue
 			}
 
-			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				log.Printf("[K8sAgent] Write error: %v", err)
 				return
@@ -894,7 +891,7 @@ func (a *K8sAgent) writePump() {
 				continue
 			}
 
-			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				log.Printf("[K8sAgent] Ping error: %v", err)
 				return

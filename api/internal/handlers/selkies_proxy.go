@@ -247,12 +247,12 @@ func (h *SelkiesProxyHandler) proxyToService(c *gin.Context, targetURL string, p
 		// Check if error is due to connection refused (service not ready)
 		if strings.Contains(err.Error(), "connection refused") {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"error": "Session service not ready", "message": "The session is still starting. Please wait and try again."}`))
+			_, _ = w.Write([]byte(`{"error": "Session service not ready", "message": "The session is still starting. Please wait and try again."}`))
 			return
 		}
 
 		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte(fmt.Sprintf(`{"error": "Proxy error", "message": "%s"}`, err.Error())))
+		_, _ = w.Write([]byte(fmt.Sprintf(`{"error": "Proxy error", "message": "%s"}`, err.Error())))
 	}
 
 	// Execute the proxy

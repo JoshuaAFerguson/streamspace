@@ -280,7 +280,7 @@ func TestListTemplates_DatabaseError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Database error")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -352,7 +352,7 @@ func TestGetTemplateDetails_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "not found")
 
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -453,7 +453,7 @@ func TestAddRating_NoAuth(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Unauthorized")
 }
 
@@ -479,7 +479,7 @@ func TestAddRating_InvalidRating(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Validation failed")
 }
 
@@ -592,7 +592,7 @@ func TestDeleteRating_NoAuth(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Unauthorized")
 }
 
@@ -678,7 +678,7 @@ func TestRecordInstall_DatabaseError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
 	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
+	_ = json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Contains(t, response["error"], "Database error")
 
 	assert.NoError(t, mock.ExpectationsWereMet())

@@ -92,7 +92,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -310,14 +309,14 @@ func (h *QuotasHandler) GetUserUsage(c *gin.Context) {
 
 	// Count active sessions
 	var activeSessions int
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM sessions
 		WHERE user_id = $1 AND state IN ('running', 'starting', 'pending')
 	`, userID).Scan(&activeSessions)
 
 	// Sum allocated resources
 	var totalCPU, totalMemory int
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT
 			COALESCE(SUM((resources->>'cpu')::int), 0),
 			COALESCE(SUM((resources->>'memory')::int), 0)
@@ -328,7 +327,7 @@ func (h *QuotasHandler) GetUserUsage(c *gin.Context) {
 
 	// Calculate storage usage (snapshots + persistent homes)
 	var snapshotStorage int64
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(size_bytes), 0)
 		FROM session_snapshots
 		WHERE user_id = $1 AND status = 'completed'
@@ -382,13 +381,13 @@ func (h *QuotasHandler) GetUserQuotaStatus(c *gin.Context) {
 
 	// Get usage
 	var activeSessions int
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM sessions
 		WHERE user_id = $1 AND state IN ('running', 'starting', 'pending')
 	`, userID).Scan(&activeSessions)
 
 	var totalCPU, totalMemory int
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT
 			COALESCE(SUM((resources->>'cpu')::int), 0),
 			COALESCE(SUM((resources->>'memory')::int), 0)
@@ -398,7 +397,7 @@ func (h *QuotasHandler) GetUserQuotaStatus(c *gin.Context) {
 	`, userID).Scan(&totalCPU, &totalMemory)
 
 	var totalStorage int64
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(size_bytes), 0)
 		FROM session_snapshots
 		WHERE user_id = $1 AND status = 'completed'
@@ -598,7 +597,7 @@ func (h *QuotasHandler) GetTeamUsage(c *gin.Context) {
 	userIDs := []string{}
 	for rows.Next() {
 		var userID string
-		rows.Scan(&userID)
+		_ = rows.Scan(&userID)
 		userIDs = append(userIDs, userID)
 	}
 
@@ -635,7 +634,7 @@ func (h *QuotasHandler) GetTeamUsage(c *gin.Context) {
 		SELECT COUNT(*) FROM sessions
 		WHERE user_id IN (%s) AND state IN ('running', 'starting', 'pending')
 	`, placeholders)
-	h.db.DB().QueryRowContext(ctx, query, args...).Scan(&activeSessions)
+	_ = h.db.DB().QueryRowContext(ctx, query, args...).Scan(&activeSessions)
 
 	// Sum allocated resources
 	var totalCPU, totalMemory int
@@ -647,7 +646,7 @@ func (h *QuotasHandler) GetTeamUsage(c *gin.Context) {
 		WHERE user_id IN (%s) AND state IN ('running', 'starting')
 		AND resources IS NOT NULL
 	`, placeholders)
-	h.db.DB().QueryRowContext(ctx, query, args...).Scan(&totalCPU, &totalMemory)
+	_ = h.db.DB().QueryRowContext(ctx, query, args...).Scan(&totalCPU, &totalMemory)
 
 	// Calculate storage
 	var totalStorage int64
@@ -656,7 +655,7 @@ func (h *QuotasHandler) GetTeamUsage(c *gin.Context) {
 		FROM session_snapshots
 		WHERE user_id IN (%s) AND status = 'completed'
 	`, placeholders)
-	h.db.DB().QueryRowContext(ctx, query, args...).Scan(&totalStorage)
+	_ = h.db.DB().QueryRowContext(ctx, query, args...).Scan(&totalStorage)
 
 	c.JSON(http.StatusOK, gin.H{
 		"teamId":         teamID,
@@ -716,7 +715,7 @@ func (h *QuotasHandler) GetTeamQuotaStatus(c *gin.Context) {
 	userIDs := []string{}
 	for rows.Next() {
 		var userID string
-		rows.Scan(&userID)
+		_ = rows.Scan(&userID)
 		userIDs = append(userIDs, userID)
 	}
 
@@ -739,7 +738,7 @@ func (h *QuotasHandler) GetTeamQuotaStatus(c *gin.Context) {
 			SELECT COUNT(*) FROM sessions
 			WHERE user_id IN (%s) AND state IN ('running', 'starting', 'pending')
 		`, placeholders)
-		h.db.DB().QueryRowContext(ctx, query, args...).Scan(&activeSessions)
+		_ = h.db.DB().QueryRowContext(ctx, query, args...).Scan(&activeSessions)
 
 		query = fmt.Sprintf(`
 			SELECT
@@ -749,14 +748,14 @@ func (h *QuotasHandler) GetTeamQuotaStatus(c *gin.Context) {
 			WHERE user_id IN (%s) AND state IN ('running', 'starting')
 			AND resources IS NOT NULL
 		`, placeholders)
-		h.db.DB().QueryRowContext(ctx, query, args...).Scan(&totalCPU, &totalMemory)
+		_ = h.db.DB().QueryRowContext(ctx, query, args...).Scan(&totalCPU, &totalMemory)
 
 		query = fmt.Sprintf(`
 			SELECT COALESCE(SUM(size_bytes), 0)
 			FROM session_snapshots
 			WHERE user_id IN (%s) AND status = 'completed'
 		`, placeholders)
-		h.db.DB().QueryRowContext(ctx, query, args...).Scan(&totalStorage)
+		_ = h.db.DB().QueryRowContext(ctx, query, args...).Scan(&totalStorage)
 	}
 
 	// Calculate percentages
@@ -872,7 +871,7 @@ func (h *QuotasHandler) ListAllQuotas(c *gin.Context) {
 		var maxSessions, maxCPU, maxMemory, maxStorage sql.NullInt64
 		var createdAt, updatedAt time.Time
 
-		rows.Scan(&id, &userID, &teamID, &maxSessions, &maxCPU, &maxMemory, &maxStorage,
+		_ = rows.Scan(&id, &userID, &teamID, &maxSessions, &maxCPU, &maxMemory, &maxStorage,
 			&createdAt, &updatedAt)
 
 		quota := map[string]interface{}{
@@ -926,7 +925,7 @@ func (h *QuotasHandler) GetQuotaViolations(c *gin.Context) {
 		for rows.Next() {
 			var userID string
 			var maxSessions, activeSessions int64
-			rows.Scan(&userID, &maxSessions, &activeSessions)
+			_ = rows.Scan(&userID, &maxSessions, &activeSessions)
 
 			violations = append(violations, map[string]interface{}{
 				"type":           "user",
@@ -971,13 +970,13 @@ func (h *QuotasHandler) CheckQuota(c *gin.Context) {
 
 	// Get current usage
 	var activeSessions int
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM sessions
 		WHERE user_id = $1 AND state IN ('running', 'starting', 'pending')
 	`, req.UserID).Scan(&activeSessions)
 
 	var totalCPU, totalMemory int
-	h.db.DB().QueryRowContext(ctx, `
+	_ = h.db.DB().QueryRowContext(ctx, `
 		SELECT
 			COALESCE(SUM((resources->>'cpu')::int), 0),
 			COALESCE(SUM((resources->>'memory')::int), 0)
@@ -1058,7 +1057,7 @@ func (h *QuotasHandler) GetPolicies(c *gin.Context) {
 		var enabled bool
 		var createdAt, updatedAt time.Time
 
-		rows.Scan(&id, &name, &description, &rules, &priority, &enabled, &createdAt, &updatedAt)
+		_ = rows.Scan(&id, &name, &description, &rules, &priority, &enabled, &createdAt, &updatedAt)
 
 		policies = append(policies, map[string]interface{}{
 			"id":          id,
@@ -1226,11 +1225,4 @@ func nullInt64ToInt(n sql.NullInt64) int {
 		return int(n.Int64)
 	}
 	return 0
-}
-
-func parseInt(s string, def int) int {
-	if i, err := strconv.Atoi(s); err == nil {
-		return i
-	}
-	return def
 }

@@ -152,7 +152,7 @@ func (m *VNCTunnelManager) CreateTunnel(sessionID string) error {
 	go m.relayData(tunnel)
 
 	// Notify Control Plane that VNC is ready
-	m.agent.sendVNCReady(sessionID, vncPort, podName)
+	_ = m.agent.sendVNCReady(sessionID, vncPort, podName)
 
 	log.Printf("[VNCTunnel] Tunnel created successfully for session %s (local port: %d)", sessionID, tunnel.localPort)
 	return nil
@@ -210,7 +210,7 @@ func (m *VNCTunnelManager) SendData(sessionID string, base64Data string) error {
 	if err != nil {
 		log.Printf("[VNCTunnel] Write error for session %s: %v", sessionID, err)
 		// Close tunnel on write error
-		go m.CloseTunnel(sessionID)
+		go func() { _ = m.CloseTunnel(sessionID) }()
 		return err
 	}
 
@@ -338,7 +338,7 @@ func (m *VNCTunnelManager) connectToForwardedPort(tunnel *VNCTunnel) error {
 func (m *VNCTunnelManager) relayData(tunnel *VNCTunnel) {
 	defer func() {
 		log.Printf("[VNCTunnel] Data relay stopped for session %s", tunnel.sessionID)
-		m.CloseTunnel(tunnel.sessionID)
+		_ = m.CloseTunnel(tunnel.sessionID)
 	}()
 
 	buffer := make([]byte, 32*1024) // 32KB buffer
@@ -350,7 +350,7 @@ func (m *VNCTunnelManager) relayData(tunnel *VNCTunnel) {
 
 		default:
 			// Set read deadline to allow checking stopChan
-			tunnel.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+			_ = tunnel.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
 			n, err := tunnel.conn.Read(buffer)
 			if err != nil {
@@ -360,7 +360,7 @@ func (m *VNCTunnelManager) relayData(tunnel *VNCTunnel) {
 				}
 				if err != io.EOF {
 					log.Printf("[VNCTunnel] Read error for session %s: %v", tunnel.sessionID, err)
-					m.agent.sendVNCError(tunnel.sessionID, err.Error())
+					_ = m.agent.sendVNCError(tunnel.sessionID, err.Error())
 				}
 				return
 			}
@@ -389,7 +389,7 @@ func (m *VNCTunnelManager) CloseAll() {
 	m.mutex.Unlock()
 
 	for _, sessionID := range sessionIDs {
-		m.CloseTunnel(sessionID)
+		_ = m.CloseTunnel(sessionID)
 	}
 
 	log.Println("[VNCTunnel] All tunnels closed")

@@ -260,7 +260,7 @@ func (h *VNCProxyHandler) HandleVNCConnection(c *gin.Context) {
 
 	// Update session active_connections count and last_activity (Issue #239)
 	now := time.Now()
-	h.db.DB().Exec(`
+	_, _ = h.db.DB().Exec(`
 		UPDATE sessions
 		SET active_connections = active_connections + 1,
 		    last_connection = $1,
@@ -293,7 +293,7 @@ func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn 
 		h.connMutex.Unlock()
 
 		// Update session active_connections count
-		h.db.DB().Exec(`
+		_, _ = h.db.DB().Exec(`
 			UPDATE sessions
 			SET active_connections = active_connections - 1,
 			    last_disconnect = $1
@@ -301,25 +301,25 @@ func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn 
 		`, time.Now(), sessionID)
 
 		// Send vnc_close to agent
-		h.sendVNCCloseToAgent(agentID, sessionID, "client_disconnect")
+		_ = h.sendVNCCloseToAgent(agentID, sessionID, "client_disconnect")
 
 		log.Printf("[VNCProxy] VNC connection closed for session %s", sessionID)
 	}()
 
 	// FIX: Set up ping/pong handlers to keep connection alive during idle VNC sessions
 	// Set initial read deadline
-	uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
+	_ = uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
 
 	// Handle pong messages from UI (extends read deadline)
 	uiConn.SetPongHandler(func(string) error {
-		uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
+		_ = uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
 		return nil
 	})
 
 	// Handle ping messages from UI (respond with pong)
 	uiConn.SetPingHandler(func(appData string) error {
-		uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
-		uiConn.SetWriteDeadline(time.Now().Add(vncWriteWait))
+		_ = uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
+		_ = uiConn.SetWriteDeadline(time.Now().Add(vncWriteWait))
 		if err := uiConn.WriteMessage(websocket.PongMessage, []byte(appData)); err != nil {
 			return err
 		}
@@ -345,7 +345,7 @@ func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn 
 		for {
 			select {
 			case <-ticker.C:
-				uiConn.SetWriteDeadline(time.Now().Add(vncWriteWait))
+				_ = uiConn.SetWriteDeadline(time.Now().Add(vncWriteWait))
 				if err := uiConn.WriteMessage(websocket.PingMessage, nil); err != nil {
 					log.Printf("[VNCProxy] Ping error for session %s: %v", sessionID, err)
 					stopChan <- struct{}{}
@@ -390,7 +390,7 @@ func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn 
 				}
 
 				// FIX: Reset read deadline on successful read (activity detected)
-				uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
+				_ = uiConn.SetReadDeadline(time.Now().Add(vncPongWait))
 
 				// Only process binary or text messages
 				if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage {

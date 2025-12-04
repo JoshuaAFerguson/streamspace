@@ -128,48 +128,6 @@ func validateWebhookInput(webhook *Webhook) error {
 	return nil
 }
 
-// validateIntegrationInput validates integration creation/update input
-func validateIntegrationInput(integration *Integration) error {
-	// Name validation
-	if len(integration.Name) == 0 {
-		return fmt.Errorf("integration name is required")
-	}
-	if len(integration.Name) > 200 {
-		return fmt.Errorf("integration name must be 200 characters or less")
-	}
-
-	// Type validation
-	// Note: slack, teams, discord, pagerduty, and email are now handled by plugins
-	validTypes := []string{"custom"}
-	deprecatedTypes := []string{"slack", "teams", "discord", "pagerduty", "email"}
-
-	validType := false
-	for _, t := range validTypes {
-		if integration.Type == t {
-			validType = true
-			break
-		}
-	}
-
-	// Check if it's a deprecated type (now handled by plugins)
-	for _, t := range deprecatedTypes {
-		if integration.Type == t {
-			return fmt.Errorf("%s integration is now handled by plugins. Please install the streamspace-%s plugin from the plugin marketplace instead", integration.Type, integration.Type)
-		}
-	}
-
-	if !validType {
-		return fmt.Errorf("invalid integration type, must be one of: %s. Note: slack, teams, discord, pagerduty, and email are now plugins", strings.Join(validTypes, ", "))
-	}
-
-	// Description length
-	if len(integration.Description) > 1000 {
-		return fmt.Errorf("integration description must be 1000 characters or less")
-	}
-
-	return nil
-}
-
 // ============================================================================
 // DATA STRUCTURES
 // ============================================================================
@@ -376,7 +334,6 @@ func (h *IntegrationsHandler) ListWebhooks(c *gin.Context) {
 	if enabled != "" {
 		query += fmt.Sprintf(" AND enabled = $%d", argCount)
 		args = append(args, enabled == "true")
-		argCount++
 	}
 
 	query += " ORDER BY created_at DESC"
@@ -619,13 +576,13 @@ func (h *IntegrationsHandler) TestWebhook(c *gin.Context) {
 	}
 
 	if events.Valid && events.String != "" {
-		json.Unmarshal([]byte(events.String), &webhook.Events)
+		_ = json.Unmarshal([]byte(events.String), &webhook.Events)
 	}
 	if headers.Valid && headers.String != "" {
-		json.Unmarshal([]byte(headers.String), &webhook.Headers)
+		_ = json.Unmarshal([]byte(headers.String), &webhook.Headers)
 	}
 	if retryPolicy.Valid && retryPolicy.String != "" {
-		json.Unmarshal([]byte(retryPolicy.String), &webhook.RetryPolicy)
+		_ = json.Unmarshal([]byte(retryPolicy.String), &webhook.RetryPolicy)
 	}
 
 	// Create test event
@@ -674,7 +631,7 @@ func (h *IntegrationsHandler) GetWebhookDeliveries(c *gin.Context) {
 
 	// Count total
 	var total int
-	h.DB.DB().QueryRow("SELECT COUNT(*) FROM webhook_deliveries WHERE webhook_id = $1", webhookID).Scan(&total)
+	_ = h.DB.DB().QueryRow("SELECT COUNT(*) FROM webhook_deliveries WHERE webhook_id = $1", webhookID).Scan(&total)
 
 	rows, err := h.DB.DB().Query(`
 		SELECT id, webhook_id, event, payload, status, status_code, response_body,
@@ -702,7 +659,7 @@ func (h *IntegrationsHandler) GetWebhookDeliveries(c *gin.Context) {
 
 		if err == nil {
 			if payload.Valid && payload.String != "" {
-				json.Unmarshal([]byte(payload.String), &d.Payload)
+				_ = json.Unmarshal([]byte(payload.String), &d.Payload)
 			}
 			deliveries = append(deliveries, d)
 		}
@@ -792,7 +749,6 @@ func (h *IntegrationsHandler) ListIntegrations(c *gin.Context) {
 	if enabled != "" {
 		query += fmt.Sprintf(" AND enabled = $%d", argCount)
 		args = append(args, enabled == "true")
-		argCount++
 	}
 
 	query += " ORDER BY created_at DESC"
@@ -815,10 +771,10 @@ func (h *IntegrationsHandler) ListIntegrations(c *gin.Context) {
 
 		if err == nil {
 			if config.Valid && config.String != "" {
-				json.Unmarshal([]byte(config.String), &i.Config)
+				_ = json.Unmarshal([]byte(config.String), &i.Config)
 			}
 			if events.Valid && events.String != "" {
-				json.Unmarshal([]byte(events.String), &i.Events)
+				_ = json.Unmarshal([]byte(events.String), &i.Events)
 			}
 			integrations = append(integrations, i)
 		}
@@ -866,20 +822,20 @@ func (h *IntegrationsHandler) TestIntegration(c *gin.Context) {
 	}
 
 	if config.Valid && config.String != "" {
-		json.Unmarshal([]byte(config.String), &integration.Config)
+		_ = json.Unmarshal([]byte(config.String), &integration.Config)
 	}
 	if events.Valid && events.String != "" {
-		json.Unmarshal([]byte(events.String), &integration.Events)
+		_ = json.Unmarshal([]byte(events.String), &integration.Events)
 	}
 
 	// Test based on type
 	success, message := h.testIntegration(integration)
 
 	// Update last test time
-	h.DB.DB().Exec("UPDATE integrations SET last_test_at = $1 WHERE id = $2", time.Now(), integrationID)
+	_, _ = h.DB.DB().Exec("UPDATE integrations SET last_test_at = $1 WHERE id = $2", time.Now(), integrationID)
 
 	if success {
-		h.DB.DB().Exec("UPDATE integrations SET last_success_at = $1 WHERE id = $2", time.Now(), integrationID)
+		_, _ = h.DB.DB().Exec("UPDATE integrations SET last_success_at = $1 WHERE id = $2", time.Now(), integrationID)
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": message})
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": message})

@@ -120,7 +120,6 @@ func (h *ConfigurationHandler) ListConfigurations(c *gin.Context) {
 	if category != "" {
 		query += fmt.Sprintf(" WHERE category = $%d", argCounter)
 		args = append(args, category)
-		argCounter++
 	}
 
 	query += " ORDER BY category, key"
@@ -365,7 +364,7 @@ func (h *ConfigurationHandler) BulkUpdateConfigurations(c *gin.Context) {
 		})
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	updated := []string{}
 	failed := map[string]string{}

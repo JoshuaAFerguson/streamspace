@@ -290,7 +290,7 @@ func (h *AuditHandler) ListAuditLogs(c *gin.Context) {
 
 		// Parse changes JSONB
 		if len(changesJSON) > 0 {
-			json.Unmarshal(changesJSON, &log.Changes)
+			_ = json.Unmarshal(changesJSON, &log.Changes)
 		}
 
 		logs = append(logs, log)
@@ -370,7 +370,7 @@ func (h *AuditHandler) GetAuditLog(c *gin.Context) {
 
 	// Parse changes JSONB
 	if len(changesJSON) > 0 {
-		json.Unmarshal(changesJSON, &log.Changes)
+		_ = json.Unmarshal(changesJSON, &log.Changes)
 	}
 
 	c.JSON(http.StatusOK, log)
@@ -510,7 +510,7 @@ func (h *AuditHandler) ExportAuditLogs(c *gin.Context) {
 		}
 
 		if len(changesJSON) > 0 {
-			json.Unmarshal(changesJSON, &log.Changes)
+			_ = json.Unmarshal(changesJSON, &log.Changes)
 		}
 
 		logs = append(logs, log)
@@ -535,7 +535,7 @@ func (h *AuditHandler) ExportAuditLogs(c *gin.Context) {
 
 		// Write CSV header
 		header := []string{"ID", "Timestamp", "User ID", "Action", "Resource Type", "Resource ID", "IP Address", "Status Code", "Duration (ms)", "Error"}
-		writer.Write(header)
+		_ = writer.Write(header)
 
 		// Write data rows
 		for _, log := range logs {
@@ -567,7 +567,7 @@ func (h *AuditHandler) ExportAuditLogs(c *gin.Context) {
 				durationMS,
 				errorMsg,
 			}
-			writer.Write(row)
+			_ = writer.Write(row)
 		}
 	}
 }
