@@ -91,7 +91,7 @@ func setupVNCProxyTest(t *testing.T) (*VNCProxyHandler, sqlmock.Sqlmock, *testAg
 	return handler, mock, hub, cleanup
 }
 
-// createTestContext creates a Gin test context with optional user_id
+// createTestContext creates a Gin test context with optional userID
 func createTestContext(sessionID string, userID string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -100,7 +100,8 @@ func createTestContext(sessionID string, userID string) (*gin.Context, *httptest
 	c.Params = []gin.Param{{Key: "sessionId", Value: sessionID}}
 
 	if userID != "" {
-		c.Set("user_id", userID)
+		// Handler expects "userID" (camelCase) from auth middleware
+		c.Set("userID", userID)
 	}
 
 	return c, w
@@ -169,7 +170,7 @@ func TestHandleVNCConnection_SessionNotFound(t *testing.T) {
 	userID := "user123"
 
 	// Mock database query to return no rows
-	mock.ExpectQuery(`SELECT agent_id, state, user_id FROM sessions WHERE id = \$1`).
+	mock.ExpectQuery(`SELECT agent_id, state, user_id, COALESCE.*FROM sessions.*WHERE id = \$1`).
 		WithArgs(sessionID).
 		WillReturnError(sql.ErrNoRows)
 
@@ -196,7 +197,7 @@ func TestHandleVNCConnection_DatabaseError(t *testing.T) {
 	userID := "user123"
 
 	// Mock database query to return error
-	mock.ExpectQuery(`SELECT agent_id, state, user_id FROM sessions WHERE id = \$1`).
+	mock.ExpectQuery(`SELECT agent_id, state, user_id, COALESCE.*FROM sessions.*WHERE id = \$1`).
 		WithArgs(sessionID).
 		WillReturnError(fmt.Errorf("database connection lost"))
 
@@ -224,10 +225,10 @@ func TestHandleVNCConnection_AccessDenied(t *testing.T) {
 	sessionOwner := "user456" // Different user
 
 	// Mock database query to return session owned by different user
-	rows := sqlmock.NewRows([]string{"agent_id", "state", "user_id"}).
-		AddRow("agent-k8s-1", "running", sessionOwner)
+	rows := sqlmock.NewRows([]string{"agent_id", "state", "user_id", "streaming_protocol", "streaming_port", "streaming_path"}).
+		AddRow("agent-k8s-1", "running", sessionOwner, "vnc", 5900, "")
 
-	mock.ExpectQuery(`SELECT agent_id, state, user_id FROM sessions WHERE id = \$1`).
+	mock.ExpectQuery(`SELECT agent_id, state, user_id, COALESCE.*FROM sessions.*WHERE id = \$1`).
 		WithArgs(sessionID).
 		WillReturnRows(rows)
 
@@ -283,10 +284,10 @@ func TestHandleVNCConnection_SessionNotRunning(t *testing.T) {
 			userID := "user123"
 
 			// Mock database query to return session in non-running state
-			rows := sqlmock.NewRows([]string{"agent_id", "state", "user_id"}).
-				AddRow("agent-k8s-1", tc.sessionState, userID)
+			rows := sqlmock.NewRows([]string{"agent_id", "state", "user_id", "streaming_protocol", "streaming_port", "streaming_path"}).
+				AddRow("agent-k8s-1", tc.sessionState, userID, "vnc", 5900, "")
 
-			mock.ExpectQuery(`SELECT agent_id, state, user_id FROM sessions WHERE id = \$1`).
+			mock.ExpectQuery(`SELECT agent_id, state, user_id, COALESCE.*FROM sessions.*WHERE id = \$1`).
 				WithArgs(sessionID).
 				WillReturnRows(rows)
 
@@ -315,10 +316,10 @@ func TestHandleVNCConnection_NoAgentAssigned(t *testing.T) {
 	userID := "user123"
 
 	// Mock database query to return session with no agent assigned (empty string)
-	rows := sqlmock.NewRows([]string{"agent_id", "state", "user_id"}).
-		AddRow("", "running", userID)
+	rows := sqlmock.NewRows([]string{"agent_id", "state", "user_id", "streaming_protocol", "streaming_port", "streaming_path"}).
+		AddRow("", "running", userID, "vnc", 5900, "")
 
-	mock.ExpectQuery(`SELECT agent_id, state, user_id FROM sessions WHERE id = \$1`).
+	mock.ExpectQuery(`SELECT agent_id, state, user_id, COALESCE.*FROM sessions.*WHERE id = \$1`).
 		WithArgs(sessionID).
 		WillReturnRows(rows)
 
@@ -346,10 +347,10 @@ func TestHandleVNCConnection_AgentNotConnected(t *testing.T) {
 	agentID := "agent-k8s-1"
 
 	// Mock database query to return session with agent
-	rows := sqlmock.NewRows([]string{"agent_id", "state", "user_id"}).
-		AddRow(agentID, "running", userID)
+	rows := sqlmock.NewRows([]string{"agent_id", "state", "user_id", "streaming_protocol", "streaming_port", "streaming_path"}).
+		AddRow(agentID, "running", userID, "vnc", 5900, "")
 
-	mock.ExpectQuery(`SELECT agent_id, state, user_id FROM sessions WHERE id = \$1`).
+	mock.ExpectQuery(`SELECT agent_id, state, user_id, COALESCE.*FROM sessions.*WHERE id = \$1`).
 		WithArgs(sessionID).
 		WillReturnRows(rows)
 

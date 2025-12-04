@@ -195,11 +195,11 @@ func TestListAgents_All(t *testing.T) {
 	defer cleanup()
 
 	timestamp := time.Now()
-	rows := sqlmock.NewRows([]string{"id", "agent_id", "platform", "region", "status", "capacity", "last_heartbeat", "websocket_id", "metadata", "created_at", "updated_at"}).
-		AddRow("uuid-1", "k8s-prod-us-east-1", "kubernetes", "us-east-1", "online", nil, timestamp, nil, nil, timestamp, timestamp).
-		AddRow("uuid-2", "docker-dev-host-1", "docker", "us-west-2", "online", nil, timestamp, nil, nil, timestamp, timestamp)
+	rows := sqlmock.NewRows([]string{"id", "agent_id", "platform", "region", "status", "capacity", "last_heartbeat", "websocket_id", "metadata", "created_at", "updated_at", "approval_status", "approved_at", "approved_by"}).
+		AddRow("uuid-1", "k8s-prod-us-east-1", "kubernetes", "us-east-1", "online", nil, timestamp, nil, nil, timestamp, timestamp, "approved", timestamp, "admin").
+		AddRow("uuid-2", "docker-dev-host-1", "docker", "us-west-2", "online", nil, timestamp, nil, nil, timestamp, timestamp, "approved", timestamp, "admin")
 
-	query := `SELECT id, agent_id, platform, region, status, capacity, last_heartbeat, websocket_id, metadata, created_at, updated_at FROM agents WHERE 1=1 ORDER BY created_at DESC`
+	query := `SELECT id, agent_id, platform, region, status, capacity, last_heartbeat, websocket_id, metadata, created_at, updated_at, approval_status, approved_at, approved_by FROM agents WHERE 1=1 ORDER BY created_at DESC`
 	mock.ExpectQuery(query).WillReturnRows(rows)
 
 	w := httptest.NewRecorder()
@@ -224,10 +224,10 @@ func TestListAgents_FilterByPlatform(t *testing.T) {
 	defer cleanup()
 
 	timestamp := time.Now()
-	rows := sqlmock.NewRows([]string{"id", "agent_id", "platform", "region", "status", "capacity", "last_heartbeat", "websocket_id", "metadata", "created_at", "updated_at"}).
-		AddRow("uuid-1", "k8s-prod-us-east-1", "kubernetes", "us-east-1", "online", nil, timestamp, nil, nil, timestamp, timestamp)
+	rows := sqlmock.NewRows([]string{"id", "agent_id", "platform", "region", "status", "capacity", "last_heartbeat", "websocket_id", "metadata", "created_at", "updated_at", "approval_status", "approved_at", "approved_by"}).
+		AddRow("uuid-1", "k8s-prod-us-east-1", "kubernetes", "us-east-1", "online", nil, timestamp, nil, nil, timestamp, timestamp, "approved", timestamp, "admin")
 
-	query := `SELECT id, agent_id, platform, region, status, capacity, last_heartbeat, websocket_id, metadata, created_at, updated_at FROM agents WHERE 1=1 AND platform = \$1 ORDER BY created_at DESC`
+	query := `SELECT id, agent_id, platform, region, status, capacity, last_heartbeat, websocket_id, metadata, created_at, updated_at, approval_status, approved_at, approved_by FROM agents WHERE 1=1 AND platform = \$1 ORDER BY created_at DESC`
 	mock.ExpectQuery(query).WithArgs("kubernetes").WillReturnRows(rows)
 
 	w := httptest.NewRecorder()
@@ -251,10 +251,10 @@ func TestListAgents_FilterByStatus(t *testing.T) {
 	defer cleanup()
 
 	timestamp := time.Now()
-	rows := sqlmock.NewRows([]string{"id", "agent_id", "platform", "region", "status", "capacity", "last_heartbeat", "websocket_id", "metadata", "created_at", "updated_at"}).
-		AddRow("uuid-1", "k8s-prod-us-east-1", "kubernetes", "us-east-1", "online", nil, timestamp, nil, nil, timestamp, timestamp)
+	rows := sqlmock.NewRows([]string{"id", "agent_id", "platform", "region", "status", "capacity", "last_heartbeat", "websocket_id", "metadata", "created_at", "updated_at", "approval_status", "approved_at", "approved_by"}).
+		AddRow("uuid-1", "k8s-prod-us-east-1", "kubernetes", "us-east-1", "online", nil, timestamp, nil, nil, timestamp, timestamp, "approved", timestamp, "admin")
 
-	query := `SELECT id, agent_id, platform, region, status, capacity, last_heartbeat, websocket_id, metadata, created_at, updated_at FROM agents WHERE 1=1 AND status = \$1 ORDER BY created_at DESC`
+	query := `SELECT id, agent_id, platform, region, status, capacity, last_heartbeat, websocket_id, metadata, created_at, updated_at, approval_status, approved_at, approved_by FROM agents WHERE 1=1 AND status = \$1 ORDER BY created_at DESC`
 	mock.ExpectQuery(query).WithArgs("online").WillReturnRows(rows)
 
 	w := httptest.NewRecorder()

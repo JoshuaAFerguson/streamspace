@@ -32,12 +32,13 @@ func TestCreateSession_Success(t *testing.T) {
 		Platform:     "kubernetes",
 	}
 
-	// Expect INSERT with all session fields (25 parameters including org_id and timestamps)
+	// Expect INSERT with all session fields (28 parameters including org_id, timestamps, and streaming fields)
 	mock.ExpectExec("INSERT INTO sessions").
 		WithArgs(sqlmock.AnyArg(), session.UserID, session.OrgID, sqlmock.AnyArg(), session.TemplateName, session.State, session.AppType,
 			sqlmock.AnyArg(), sqlmock.AnyArg(), session.Namespace, session.Platform, sqlmock.AnyArg(), sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
-			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(),
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	err = sessionDB.CreateSession(ctx, session)
@@ -56,15 +57,16 @@ func TestGetSession_Success(t *testing.T) {
 
 	sessionID := "session123"
 
-	// Match the 25 columns from the actual GetSession query (including org_id, agent_id, cluster_id)
+	// Match the 28 columns from the actual GetSession query (including org_id, agent_id, cluster_id, streaming fields)
 	rows := sqlmock.NewRows([]string{"id", "user_id", "org_id", "team_id", "template_name", "state", "app_type",
 		"active_connections", "url", "namespace", "platform", "agent_id", "cluster_id", "pod_name",
 		"memory", "cpu", "persistent_home", "idle_timeout", "max_session_duration",
-		"tags", "created_at", "updated_at", "last_connection", "last_disconnect", "last_activity"}).
+		"tags", "created_at", "updated_at", "last_connection", "last_disconnect", "last_activity",
+		"streaming_protocol", "streaming_port", "streaming_path"}).
 		AddRow("session123", "user123", "org123", "", "ubuntu-22.04", "running", "desktop",
 			0, "https://session123.example.com", "streamspace", "kubernetes", "", "", "pod-123",
 			"2Gi", "1000m", false, "3600", "28800",
-			nil, time.Now(), time.Now(), nil, nil, nil)
+			nil, time.Now(), time.Now(), nil, nil, nil, "vnc", 5900, "")
 
 	mock.ExpectQuery("SELECT (.+) FROM sessions WHERE id").
 		WithArgs(sessionID).
@@ -113,13 +115,14 @@ func TestListSessions_ByUser(t *testing.T) {
 
 	userID := "user123"
 
-	// Match the 25 columns from the actual query (including org_id, agent_id, cluster_id, tags)
+	// Match the 28 columns from the actual query (including org_id, agent_id, cluster_id, tags, streaming fields)
 	rows := sqlmock.NewRows([]string{"id", "user_id", "org_id", "team_id", "template_name", "state", "app_type",
 		"active_connections", "url", "namespace", "platform", "agent_id", "cluster_id", "pod_name",
 		"memory", "cpu", "persistent_home", "idle_timeout", "max_session_duration",
-		"tags", "created_at", "updated_at", "last_connection", "last_disconnect", "last_activity"}).
-		AddRow("session1", userID, "org123", "", "ubuntu", "running", "desktop", 0, "", "streamspace", "kubernetes", "", "", "", "2Gi", "1000m", false, "", "", nil, time.Now(), time.Now(), nil, nil, nil).
-		AddRow("session2", userID, "org123", "", "debian", "stopped", "desktop", 0, "", "streamspace", "kubernetes", "", "", "", "1Gi", "500m", false, "", "", nil, time.Now(), time.Now(), nil, nil, nil)
+		"tags", "created_at", "updated_at", "last_connection", "last_disconnect", "last_activity",
+		"streaming_protocol", "streaming_port", "streaming_path"}).
+		AddRow("session1", userID, "org123", "", "ubuntu", "running", "desktop", 0, "", "streamspace", "kubernetes", "", "", "", "2Gi", "1000m", false, "", "", nil, time.Now(), time.Now(), nil, nil, nil, "vnc", 5900, "").
+		AddRow("session2", userID, "org123", "", "debian", "stopped", "desktop", 0, "", "streamspace", "kubernetes", "", "", "", "1Gi", "500m", false, "", "", nil, time.Now(), time.Now(), nil, nil, nil, "vnc", 5900, "")
 
 	mock.ExpectQuery("SELECT (.+) FROM sessions WHERE user_id").
 		WithArgs(userID).
