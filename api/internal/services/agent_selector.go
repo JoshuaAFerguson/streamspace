@@ -159,7 +159,8 @@ func (s *AgentSelector) SelectAgent(ctx context.Context, criteria *SelectionCrit
 	return selected, nil
 }
 
-// getOnlineAgents retrieves all agents with status='online' from database.
+// getOnlineAgents retrieves all agents with status='online' and recent heartbeat from database.
+// An agent is considered connected if last_heartbeat is within the last 90 seconds.
 func (s *AgentSelector) getOnlineAgents(ctx context.Context) ([]*AgentInfo, error) {
 	query := `
 		SELECT
@@ -167,6 +168,7 @@ func (s *AgentSelector) getOnlineAgents(ctx context.Context) ([]*AgentInfo, erro
 			platform, COALESCE(region, ''), status, COALESCE(capacity, '{}'::jsonb)
 		FROM agents
 		WHERE status = 'online'
+		  AND last_heartbeat > NOW() - INTERVAL '90 seconds'
 		ORDER BY last_heartbeat DESC
 	`
 
@@ -212,11 +214,18 @@ func (s *AgentSelector) filterAgents(agents []*AgentInfo, criteria *SelectionCri
 	var candidates []*AgentInfo
 
 	for _, agent := range agents {
-		// Check WebSocket connection if required
+		// Check agent connectivity if required
+		// NOTE: We DON'T use agentHub.IsAgentConnected() here because that only works
+		// on the local pod. In multi-pod deployments without Redis, each pod has its
+		// own AgentHub. Instead, we rely on the database: if status='online' and
+		// last_heartbeat is recent, the agent is connected to SOME pod.
 		if criteria.RequireConnected {
-			agent.IsConnected = s.agentHub.IsAgentConnected(agent.AgentID)
+			// The getOnlineAgents query already filters by status='online'
+			// and orders by last_heartbeat DESC, so agents with recent heartbeats
+			// come first. We consider status='online' sufficient for connectivity.
+			agent.IsConnected = agent.Status == "online"
 			if !agent.IsConnected {
-				log.Printf("[AgentSelector] Skipping agent %s (not connected via WebSocket)", agent.AgentID)
+				log.Printf("[AgentSelector] Skipping agent %s (status: %s)", agent.AgentID, agent.Status)
 				continue
 			}
 		}
