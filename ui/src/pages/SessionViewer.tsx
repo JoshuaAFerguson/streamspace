@@ -428,10 +428,12 @@ export default function SessionViewer() {
         {/* VNC: Load noVNC viewer through control plane proxy */}
         {/* Selkies/HTTP-based: Load through control plane HTTP proxy */}
         {/* Token is passed as query param for iframe auth (iframes can't send Authorization headers) */}
+        {/* FIX: Read from localStorage 'token' (the actual JWT) not 'streamspace_token' (sessionStorage copy) */}
         <iframe
           ref={iframeRef}
           src={(() => {
-            const token = localStorage.getItem('streamspace_token');
+            // Get token from localStorage (where auth stores it)
+            const token = localStorage.getItem('token');
             const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
             if (
               session.streamingProtocol === 'selkies' ||

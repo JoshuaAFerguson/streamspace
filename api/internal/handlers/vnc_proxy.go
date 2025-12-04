@@ -45,9 +45,10 @@ import (
 const (
 	// VNC WebSocket timeout constants
 	// These are longer than agent timeouts since VNC sessions may be idle
-	vncPongWait   = 120 * time.Second // Time to wait for pong from UI
-	vncPingPeriod = 54 * time.Second  // Send pings to UI at this interval
-	vncWriteWait  = 10 * time.Second  // Time allowed to write a message
+	vncPongWait            = 120 * time.Second // Time to wait for pong from UI
+	vncPingPeriod          = 54 * time.Second  // Send pings to UI at this interval
+	vncWriteWait           = 10 * time.Second  // Time allowed to write a message
+	vncActivityHeartbeat   = 30 * time.Second  // Update last_activity every 30 seconds
 )
 
 // VNCProxyHandler manages VNC WebSocket connections from UI clients.
@@ -117,7 +118,8 @@ func (h *VNCProxyHandler) HandleVNCConnection(c *gin.Context) {
 	}
 
 	// Get user from JWT (set by auth middleware)
-	userIDInterface, exists := c.Get("user_id")
+	// FIX: Auth middleware sets "userID" not "user_id"
+	userIDInterface, exists := c.Get("userID")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
@@ -256,13 +258,17 @@ func (h *VNCProxyHandler) HandleVNCConnection(c *gin.Context) {
 	log.Printf("[VNCProxy] VNC connection established for session %s (agent: %s, user: %s)",
 		sessionID, agentID, userID)
 
-	// Update session active_connections count
+	// Update session active_connections count and last_activity (Issue #239)
+	now := time.Now()
 	h.db.DB().Exec(`
 		UPDATE sessions
 		SET active_connections = active_connections + 1,
-		    last_connection = $1
+		    last_connection = $1,
+		    last_activity = $1
 		WHERE id = $2
-	`, time.Now(), sessionID)
+	`, now, sessionID)
+
+	log.Printf("[VNCProxy] Updated last_activity for session %s on connect", sessionID)
 
 	// Start bidirectional VNC data relay
 	go h.relayVNCData(sessionID, agentID, wsConn)
@@ -344,6 +350,23 @@ func (h *VNCProxyHandler) relayVNCData(sessionID string, agentID string, uiConn 
 					log.Printf("[VNCProxy] Ping error for session %s: %v", sessionID, err)
 					stopChan <- struct{}{}
 					return
+				}
+			case <-stopChan:
+				return
+			}
+		}
+	}()
+
+	// Issue #239: Goroutine 4: Update last_activity every 30 seconds during active VNC connection
+	go func() {
+		ticker := time.NewTicker(vncActivityHeartbeat)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := h.updateSessionActivity(sessionID); err != nil {
+					log.Printf("[VNCProxy] Activity update error for session %s: %v", sessionID, err)
 				}
 			case <-stopChan:
 				return
@@ -534,4 +557,24 @@ func (h *VNCProxyHandler) GetActiveConnections() int {
 	h.connMutex.RLock()
 	defer h.connMutex.RUnlock()
 	return len(h.activeConnections)
+}
+
+// updateSessionActivity updates the last_activity timestamp for a session.
+// This is called periodically during active VNC connections to track user activity.
+// Issue #239: VNC Activity Tracking
+func (h *VNCProxyHandler) updateSessionActivity(sessionID string) error {
+	result, err := h.db.DB().Exec(`
+		UPDATE sessions
+		SET last_activity = $1
+		WHERE id = $2
+	`, time.Now(), sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to update last_activity: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		log.Printf("[VNCProxy] Updated last_activity for session %s (heartbeat)", sessionID)
+	}
+	return nil
 }

@@ -38,6 +38,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/streamspace-dev/streamspace/api/internal/db"
@@ -181,6 +182,10 @@ func (h *SelkiesProxyHandler) HandleHTTPProxy(c *gin.Context) {
 		return
 	}
 
+	// Issue #239: Update last_activity for HTTP-based streaming sessions
+	// This tracks user activity through the HTTP proxy
+	h.updateSessionActivity(sessionID)
+
 	// Proxy to session Service (in-cluster access via Kubernetes DNS)
 	// Service name format: sessionID.namespace.svc.cluster.local:port
 	targetURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", sessionID, h.namespace, streamingPort)
@@ -265,4 +270,18 @@ func (h *SelkiesProxyHandler) proxyToService(c *gin.Context, targetURL string, p
 func (h *SelkiesProxyHandler) RegisterRoutes(router *gin.RouterGroup) {
 	router.Any("/http/:sessionId/*path", h.HandleHTTPProxy)
 	router.Any("/http/:sessionId", h.HandleHTTPProxy)
+}
+
+// updateSessionActivity updates the last_activity timestamp for a session.
+// This is called on each HTTP request to track user activity.
+// Issue #239: VNC Activity Tracking (also applies to HTTP-based streaming)
+func (h *SelkiesProxyHandler) updateSessionActivity(sessionID string) {
+	_, err := h.db.DB().Exec(`
+		UPDATE sessions
+		SET last_activity = $1
+		WHERE id = $2
+	`, time.Now(), sessionID)
+	if err != nil {
+		log.Printf("[SelkiesProxy] Failed to update last_activity for session %s: %v", sessionID, err)
+	}
 }
