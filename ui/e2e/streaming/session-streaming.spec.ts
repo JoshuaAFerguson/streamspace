@@ -367,8 +367,8 @@ test.describe('Session Streaming', () => {
       await viewer.goto('refresh-session');
       await viewer.waitForLoad();
 
-      // Get initial iframe src
-      const initialSrc = await viewer.getIframeSrc();
+      // Get initial iframe src (verify it exists before refresh)
+      await viewer.getIframeSrc();
 
       // Click refresh
       await viewer.refresh();

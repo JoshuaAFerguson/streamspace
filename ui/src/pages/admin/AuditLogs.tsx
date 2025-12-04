@@ -31,7 +31,6 @@ import {
 import {
   Download as DownloadIcon,
   Refresh as RefreshIcon,
-  Search as SearchIcon,
   Visibility as VisibilityIcon,
   FilterList as FilterListIcon,
 } from '@mui/icons-material';
@@ -41,7 +40,6 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { useNotificationQueue } from '../../components/NotificationQueue';
 import AdminPortalLayout from '../../components/AdminPortalLayout';
-import { api } from '../../lib/api';
 
 /**
  * Audit log entry structure from API
@@ -52,7 +50,7 @@ interface AuditLog {
   action: string;
   resource_type: string;
   resource_id?: string;
-  changes?: Record<string, any>;
+  changes?: Record<string, unknown>;
   timestamp: string;
   ip_address: string;
 }

@@ -268,7 +268,7 @@ test.describe('Session Management', () => {
       await apiMocker.mockAllEndpoints();
 
       // Track session creation
-      let createdSession: any = null;
+      let createdSession: { name: string; template: string; state: string; status: { phase: string; url: string } } | null = null;
       await page.route('**/api/v1/sessions', async (route) => {
         if (route.request().method() === 'POST') {
           const body = route.request().postDataJSON();

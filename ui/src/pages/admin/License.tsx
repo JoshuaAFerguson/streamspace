@@ -48,6 +48,19 @@ import {
 import { useNotificationQueue } from '../../components/NotificationQueue';
 import AdminPortalLayout from '../../components/AdminPortalLayout';
 
+interface LicenseWarning {
+  severity: string;
+  message: string;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  message: string;
+  tier?: string;
+  expires_at?: string;
+  features?: Record<string, boolean>;
+}
+
 /**
  * License - License management dashboard for administrators
  *
@@ -84,11 +97,11 @@ export default function License() {
   const [activateLicenseDialogOpen, setActivateLicenseDialogOpen] = useState(false);
   const [newLicenseKey, setNewLicenseKey] = useState('');
   const [validateDialogOpen, setValidateDialogOpen] = useState(false);
-  const [validationResult, setValidationResult] = useState<any>(null);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [usageHistoryDays, setUsageHistoryDays] = useState<number>(30);
 
   // Fetch current license
-  const { data: licenseData, isLoading: licenseLoading, error: licenseError, refetch: refetchLicense } = useQuery({
+  const { data: licenseData, isLoading: licenseLoading, refetch: refetchLicense } = useQuery({
     queryKey: ['license'],
     queryFn: async () => {
       const response = await fetch('/api/v1/admin/license', {
@@ -360,13 +373,13 @@ export default function License() {
         {/* Limit warnings */}
         {warnings.length > 0 && (
           <Alert
-            severity={warnings.some((w: any) => w.severity === 'exceeded') ? 'error' : 'warning'}
+            severity={warnings.some((w: LicenseWarning) => w.severity === 'exceeded') ? 'error' : 'warning'}
             sx={{ mb: 2 }}
           >
             <Typography variant="subtitle2" gutterBottom>
               License Limit Warnings:
             </Typography>
-            {warnings.map((warning: any, index: number) => (
+            {warnings.map((warning: LicenseWarning, index: number) => (
               <Typography key={index} variant="body2">
                 • {warning.message}
               </Typography>
@@ -451,7 +464,7 @@ export default function License() {
                   Features
                 </Typography>
                 <Grid container spacing={1}>
-                  {license?.features && Object.entries(license.features).map(([key, value]: [string, any]) => (
+                  {license?.features && Object.entries(license.features).map(([key, value]) => (
                     <Grid item xs={6} key={key}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         {value ? (
@@ -715,7 +728,7 @@ export default function License() {
                         primary="Features"
                         secondary={
                           <Box sx={{ mt: 1 }}>
-                            {validationResult.features && Object.entries(validationResult.features).map(([key, value]: [string, any]) => (
+                            {validationResult.features && Object.entries(validationResult.features).map(([key, value]) => (
                               <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                 {value ? (
                                   <CheckIcon fontSize="small" color="success" />

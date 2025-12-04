@@ -19,7 +19,6 @@ import {
   TextField,
   Typography,
   Chip,
-  Alert,
   CircularProgress,
   Paper,
   InputAdornment,
@@ -48,6 +47,17 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNotificationQueue } from '../../components/NotificationQueue';
 import AdminPortalLayout from '../../components/AdminPortalLayout';
+
+interface AlertData {
+  id: string;
+  name: string;
+  description?: string;
+  severity: string;
+  condition: string;
+  threshold: number;
+  status: string;
+  triggeredAt?: string;
+}
 
 /**
  * Monitoring - Alert management and monitoring dashboard
@@ -91,7 +101,7 @@ export default function Monitoring() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [selectedAlert, setSelectedAlert] = useState<any>(null);
+  const [selectedAlert, setSelectedAlert] = useState<AlertData | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -332,7 +342,7 @@ export default function Monitoring() {
     }
   };
 
-  const handleEditClick = (alert: any) => {
+  const handleEditClick = (alert: AlertData) => {
     setSelectedAlert(alert);
     setFormData({
       name: alert.name,
@@ -344,7 +354,7 @@ export default function Monitoring() {
     setEditDialogOpen(true);
   };
 
-  const handleDeleteClick = (alert: any) => {
+  const handleDeleteClick = (alert: AlertData) => {
     setSelectedAlert(alert);
     setDeleteConfirmOpen(true);
   };
@@ -388,16 +398,16 @@ export default function Monitoring() {
     }
   };
 
-  const filteredAlerts = (alertsData || []).filter((alert: any) => {
+  const filteredAlerts = (alertsData || []).filter((alert: AlertData) => {
     return (
       alert.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       alert.description?.toLowerCase().includes(searchQuery.toLowerCase())
     );
   });
 
-  const activeAlerts = filteredAlerts.filter((a: any) => a.status === 'triggered');
-  const acknowledgedAlerts = filteredAlerts.filter((a: any) => a.status === 'acknowledged');
-  const resolvedAlerts = filteredAlerts.filter((a: any) => a.status === 'resolved');
+  const activeAlerts = filteredAlerts.filter((a: AlertData) => a.status === 'triggered');
+  const acknowledgedAlerts = filteredAlerts.filter((a: AlertData) => a.status === 'acknowledged');
+  const resolvedAlerts = filteredAlerts.filter((a: AlertData) => a.status === 'resolved');
 
   if (isLoading) {
     return (
@@ -580,7 +590,7 @@ export default function Monitoring() {
                 (activeTab === 0 ? activeAlerts :
                   activeTab === 1 ? acknowledgedAlerts :
                   activeTab === 2 ? resolvedAlerts :
-                  filteredAlerts).map((alert: any) => (
+                  filteredAlerts).map((alert: AlertData) => (
                   <TableRow key={alert.id}>
                     <TableCell>
                       <Typography variant="body2" fontWeight="medium">

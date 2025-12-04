@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, vi, beforeEach } from 'vitest';
+import { render } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import SecuritySettings from './SecuritySettings';
 
 // Mock the useApi hooks
 vi.mock('../hooks/useApi', () => ({
@@ -59,7 +58,7 @@ const createQueryClient = () => new QueryClient({
   },
 });
 
-const renderWithProviders = (component: React.ReactElement) => {
+const _renderWithProviders = (component: React.ReactElement) => {
   const queryClient = createQueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
@@ -67,6 +66,7 @@ const renderWithProviders = (component: React.ReactElement) => {
     </QueryClientProvider>
   );
 };
+void _renderWithProviders; // Keep for future use when tests are implemented
 
 describe('SecuritySettings', () => {
   beforeEach(() => {

@@ -6,7 +6,7 @@
 
 import { FullConfig } from '@playwright/test';
 
-async function globalSetup(config: FullConfig): Promise<void> {
+async function globalSetup(_config: FullConfig): Promise<void> {
   console.log('🚀 Playwright global setup running...');
 
   // Set environment variable to enable MSW in the app

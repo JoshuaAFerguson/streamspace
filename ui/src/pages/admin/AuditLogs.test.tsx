@@ -22,7 +22,7 @@ vi.mock('../../components/AdminPortalLayout', () => ({
 
 // Mock Material-UI DateTimePicker to avoid date picker complexity
 vi.mock('@mui/x-date-pickers/DateTimePicker', () => ({
-  DateTimePicker: ({ value, onChange, label }: any) => (
+  DateTimePicker: ({ value, onChange, label }: { value: Date | null; onChange: (date: Date | null) => void; label: string }) => (
     <input
       type="datetime-local"
       value={value ? value.toISOString().slice(0, 16) : ''}
@@ -100,7 +100,7 @@ const renderAuditLogs = () => {
 };
 
 // Helper to create mock fetch response
-const createMockResponse = (data: any, ok = true) => ({
+const createMockResponse = (data: unknown, ok = true) => ({
   ok,
   json: () => Promise.resolve(data),
   blob: () => Promise.resolve(new Blob([JSON.stringify(data)])),

@@ -16,13 +16,12 @@ test.describe('User Profile Settings', () => {
         await expect(page.getByText('Profile updated successfully')).toBeVisible();
     });
 
-    test('should upload avatar', async ({ page }) => {
-        // Mock file upload
-        // const fileChooserPromise = page.waitForEvent('filechooser');
-        // await page.getByRole('button', { name: 'Upload Avatar' }).click();
+    test('should upload avatar', async ({ page: _page }) => {
+        // TODO: Mock file upload
+        // const fileChooserPromise = _page.waitForEvent('filechooser');
+        // await _page.getByRole('button', { name: 'Upload Avatar' }).click();
         // const fileChooser = await fileChooserPromise;
         // await fileChooser.setFiles('path/to/avatar.png');
-
-        // await expect(page.getByText('Avatar updated')).toBeVisible();
+        // await expect(_page.getByText('Avatar updated')).toBeVisible();
     });
 });

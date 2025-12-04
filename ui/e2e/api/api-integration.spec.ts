@@ -30,7 +30,7 @@ test.describe('API Integration', () => {
   });
 
   test.describe('Session API Contracts', () => {
-    test('should return expected session structure from GET /api/v1/sessions/:id', async ({ page, request }) => {
+    test('should return expected session structure from GET /api/v1/sessions/:id', async ({ page: _page, request }) => {
       // Login first to get token
       const loginResponse = await request.post(`${API_URL}/api/v1/auth/login`, {
         data: { username: 'admin', password: 'admin123' },
@@ -196,7 +196,7 @@ test.describe('API Integration', () => {
       }
 
       const sessions = await sessionsResponse.json();
-      const hibernatedSession = sessions.find((s: any) => s.state === 'hibernated');
+      const hibernatedSession = sessions.find((s: { state: string; name: string }) => s.state === 'hibernated');
 
       if (!hibernatedSession) {
         test.skip();

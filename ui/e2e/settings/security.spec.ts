@@ -19,10 +19,10 @@ test.describe('Security Settings', () => {
         await expect(page.getByText('Password updated successfully')).toBeVisible();
     });
 
-    test('should toggle 2FA', async ({ page }) => {
-        // Check current state and toggle
-        // const toggle = page.getByRole('switch', { name: 'Two-factor authentication' });
+    test('should toggle 2FA', async ({ page: _page }) => {
+        // TODO: Check current state and toggle
+        // const toggle = _page.getByRole('switch', { name: 'Two-factor authentication' });
         // await toggle.click();
-        // await expect(page.getByText('2FA updated')).toBeVisible();
+        // await expect(_page.getByText('2FA updated')).toBeVisible();
     });
 });

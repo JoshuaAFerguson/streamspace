@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Admin page uses `any` for agent configuration and WebSocket data
+import { useState } from 'react';
 import {
   Box,
   Button,

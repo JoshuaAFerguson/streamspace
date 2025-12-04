@@ -15,7 +15,6 @@ import {
   DialogContent,
   DialogActions,
   Tooltip,
-  Snackbar,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -26,10 +25,8 @@ import {
   Share as ShareIcon,
   People as PeopleIcon,
   Link as LinkIcon,
-  Wifi as ConnectedIcon,
-  WifiOff as DisconnectedIcon,
 } from '@mui/icons-material';
-import { api } from '../lib/api';
+import { api, Session } from '../lib/api';
 import { useUserStore } from '../store/userStore';
 import { useSessionsWebSocket } from '../hooks/useWebSocket';
 import { useEnhancedWebSocket } from '../hooks/useWebSocketEnhancements';
@@ -110,7 +107,7 @@ export default function SessionViewer() {
   const navigate = useNavigate();
   const username = useUserStore((state) => state.user?.username);
 
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -125,7 +122,7 @@ export default function SessionViewer() {
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStateRef = useRef<string | null>(null);
 
   // Enhanced notification system
@@ -133,12 +130,12 @@ export default function SessionViewer() {
 
   // Real-time session updates via WebSocket with notifications
   // Wrap callback in useCallback to prevent reconnection loop
-  const handleSessionUpdate = useCallback((updatedSessions: any[]) => {
+  const handleSessionUpdate = useCallback((updatedSessions: Session[]) => {
     if (!sessionId) return;
 
     // Find this session in the update
     // BUG FIX: Session objects use 'name' property, not 'id'
-    const updatedSession = updatedSessions.find((s: any) => s.name === sessionId);
+    const updatedSession = updatedSessions.find((s) => s.name === sessionId);
     if (updatedSession && session) {
       // Check if state changed
       if (updatedSession.state !== prevStateRef.current && prevStateRef.current !== null) {
@@ -184,6 +181,7 @@ export default function SessionViewer() {
         handleDisconnect();
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, username]);
 
   const loadSession = async () => {
@@ -228,9 +226,10 @@ export default function SessionViewer() {
       startHeartbeat(sessionId, connectionResult.connectionId);
 
       setLoading(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load session:', err);
-      setError(err.response?.data?.message || 'Failed to connect to session');
+      const axiosError = err as { response?: { data?: { message?: string } } };
+      setError(axiosError.response?.data?.message || 'Failed to connect to session');
       setLoading(false);
     }
   };
@@ -290,7 +289,8 @@ export default function SessionViewer() {
 
   const handleRefresh = () => {
     if (iframeRef.current) {
-      iframeRef.current.src = iframeRef.current.src;
+      const currentSrc = iframeRef.current.src;
+      iframeRef.current.src = currentSrc;
     }
   };
 

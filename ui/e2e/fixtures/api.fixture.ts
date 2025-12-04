@@ -5,7 +5,7 @@
  * StreamSpace UI with controlled backend responses.
  */
 
-import { Page, Route } from '@playwright/test';
+import { Page } from '@playwright/test';
 
 export const API_URL = process.env.API_URL || 'http://localhost:8000';
 

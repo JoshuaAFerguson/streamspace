@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Box,
   Card,
@@ -11,7 +11,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   IconButton,
   Chip,
   TextField,
@@ -31,10 +30,8 @@ import {
   LinearProgress,
 } from '@mui/material';
 import {
-  PlayArrow as PlayIcon,
   Download as DownloadIcon,
   Delete as DeleteIcon,
-  Visibility as ViewIcon,
   Close as CloseIcon,
   Add as AddIcon,
   Edit as EditIcon,
@@ -73,15 +70,15 @@ interface RecordingPolicy {
   auto_record: boolean;
   recording_format: string;
   retention_days: number;
-  apply_to_users: any;
-  apply_to_teams: any;
-  apply_to_templates: any;
+  apply_to_users: string[] | null;
+  apply_to_teams: string[] | null;
+  apply_to_templates: string[] | null;
   require_reason: boolean;
   allow_user_playback: boolean;
   allow_user_download: boolean;
   require_approval: boolean;
   notify_on_recording: boolean;
-  metadata: any;
+  metadata: Record<string, unknown> | null;
   enabled: boolean;
   priority: number;
   created_at: string;
@@ -105,8 +102,10 @@ function Recordings() {
 
   // State
   const [activeTab, setActiveTab] = useState(0);
-  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
-  const [playerOpen, setPlayerOpen] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_playerOpen, setPlayerOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [recordingToDelete, setRecordingToDelete] = useState<number | null>(null);
   const [accessLogDialogOpen, setAccessLogDialogOpen] = useState(false);

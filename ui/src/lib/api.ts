@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// API layer uses `any` for flexible response handling from backend
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { toast } from './toast';
 
